@@ -79,14 +79,18 @@
 
 产物路径：`app/build/outputs/apk/<variant>/app-<variant>.apk`
 
-> **正式包说明**：`app/build.gradle.kts` 尚未配置 `signingConfig`，`assembleRelease` 产出的是**未签名包**，
-> 需自备 keystore 后才能安装 / 分发。
+> **正式包说明**：`app/build.gradle.kts` 的 `signingConfig` 从仓库根 `keystore.properties` 读取
+> （该文件与 `keystore/` 均**不入库**）。clone 后若不提供 `keystore.properties`，`assembleRelease`
+> 仍产出**未签名包**；自备 keystore 并创建该文件后即可得到可安装的正式签名包。
 
 ---
 
 ## 📥 下载
 
-正式签名版尚未发布。可关注本仓库的 **Releases** 页面。
+可在 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)** 页面下载正式签名版。
+
+最新版本：**[v1.176](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.176)** ·
+[`huzai-1.176-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.176/huzai-1.176-release.apk)（minSdk 24，正式签名）。
 
 ---
 
