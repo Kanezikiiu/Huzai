@@ -1,0 +1,8 @@
+{
+  "versionCode": 187,
+  "versionName": "1.177",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.177/huzai-1.177-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.177",
+  "changelog": "· 新增「检查更新」功能：关于页可一键比对版本号，发现新版本提示并跳转下载\n· 统一 README 截图区排版，新增 .gitattributes",
+  "forceUpdate": false
+}

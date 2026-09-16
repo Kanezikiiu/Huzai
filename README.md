@@ -36,6 +36,7 @@
 - **登录与互动**：WebView 登录接管 Cookie、帖子推荐、评论点亮 / 取消点亮、发评论、楼中楼回复
 - **私信**：会话列表 + 聊天页（文字 / 单图）、消息中心未读角标
 - **用户主页**：资料卡、关注 / 取关、发帖 / 回帖 / 推荐 / 收藏 / 关注列表
+- **检查更新**：关于页一键比对版本号，发现新版提示并跳转下载
 - **个性化**：主页频道自定义、评分频道自定义、信息流关键词过滤、阅读字号、屏幕刷新率、主题（跟随系统 / 浅色 / 深色）
 
 ---
@@ -137,8 +138,8 @@
 
 可在 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)** 页面下载正式签名版。
 
-最新版本：**[v1.176](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.176)** ·
-[`huzai-1.176-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.176/huzai-1.176-release.apk)（minSdk 24，正式签名）。
+最新版本：**[v1.177](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.177)** ·
+[`huzai-1.177-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.177/huzai-1.177-release.apk)（minSdk 24，正式签名）。
 
 ---
 

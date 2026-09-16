@@ -55,9 +55,15 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.java.myapplication.BuildConfig
 import com.java.myapplication.R
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.window.Dialog
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.data.HupuUpdate
+import com.java.myapplication.data.HupuUpdateInfo
+import com.java.myapplication.data.HupuUpdateResult
+import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -121,6 +127,10 @@ fun AboutPage(onClose: () -> Unit) {
     }
 
     var toast by remember { mutableStateOf<String?>(null) }
+    // 1.177: 检查更新（手动触发）
+    val scope = rememberCoroutineScope()
+    var updateChecking by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<HupuUpdateInfo?>(null) }
     LaunchedEffect(toast) {
         if (toast != null) {
             kotlinx.coroutines.delay(2000)
@@ -272,7 +282,20 @@ fun AboutPage(onClose: () -> Unit) {
                     CircleIconButton(HupuIcons.Globe, "开源仓库") { openUrl(HUPU_REPO) }
                     CircleIconButton(HupuIcons.Code, "开源许可") { sub = AboutSub.LICENSE }
                     CircleIconButton(HupuIcons.CloudDownload, "检查更新") {
-                        toast = "当前已是最新版本 v" + BuildConfig.VERSION_NAME
+                        // 1.177: 拉取 version.json 比对 versionCode（手动触发，失败静默提示）
+                        if (!updateChecking) {
+                            updateChecking = true
+                            scope.launch {
+                                when (val r = HupuUpdate.check(BuildConfig.VERSION_CODE)) {
+                                    is HupuUpdateResult.Available -> updateInfo = r.info
+                                    HupuUpdateResult.Latest ->
+                                        toast = "当前已是最新版本 v" + BuildConfig.VERSION_NAME
+                                    HupuUpdateResult.Failed ->
+                                        toast = "检查更新失败，请稍后重试"
+                                }
+                                updateChecking = false
+                            }
+                        }
                     }
                 }
             }
@@ -321,6 +344,92 @@ fun AboutPage(onClose: () -> Unit) {
                 )
             }
         }
+
+        // 1.177: 发现新版本对话框
+        updateInfo?.let { info ->
+            UpdateDialog(
+                info = info,
+                onDismiss = { updateInfo = null },
+                onDownload = {
+                    openUrl(info.apkUrl.ifEmpty { info.releaseUrl })
+                    updateInfo = null
+                },
+            )
+        }
+    }
+}
+
+/**
+ * 1.177: 检查更新弹窗（iOS 风格：大圆角卡片、标题/正文居左、取消浅灰 + 确认蓝色大圆角按钮）。
+ */
+@Composable
+private fun UpdateDialog(
+    info: HupuUpdateInfo,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(20.dp),
+        ) {
+            Text(
+                "发现新版本 v" + info.versionName,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "当前版本 v" + BuildConfig.VERSION_NAME,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (info.changelog.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    info.changelog,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DialogAction("稍后", primary = false, modifier = Modifier.weight(1f), onClick = onDismiss)
+                DialogAction("去下载", primary = true, modifier = Modifier.weight(1f), onClick = onDownload)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DialogAction(
+    text: String,
+    primary: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier
+            .height(46.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (primary) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            fontSize = 15.sp,
+            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
