@@ -58,10 +58,22 @@
   <img src="screenshots/zone_detail.png" width="260" alt="专区 · 分区帖子流" />
 </p>
 
-<!-- 后续补充：帖子详情 / 评分 / 私信 / 用户主页
+**评分 · 主题流 / 赛程 / 对局 / 选手打分**
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/score.png" width="260" alt="通用评分主题流" /><br/>通用评分主题流</td>
+    <td align="center"><img src="screenshots/score_schedule.png" width="260" alt="赛事赛程" /><br/>赛事赛程</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/score_match.png" width="260" alt="对局详情" /><br/>对局详情</td>
+    <td align="center"><img src="screenshots/score_player.png" width="260" alt="选手详情与打分" /><br/>选手详情 · 打分</td>
+  </tr>
+</table>
+
+<!-- 后续补充：帖子详情 / 私信 / 用户主页
 <p align="center">
   <img src="screenshots/thread.png" width="24%" />
-  <img src="screenshots/score.png" width="24%" />
 </p>
 -->
 
