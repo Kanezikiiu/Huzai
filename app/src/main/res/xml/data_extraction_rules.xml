@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Data Extraction Rules（API 31+）：同时约束云备份与设备间迁移。
+   1.133：排除 hupu_account（登录 Cookie / 会话凭据）与异常取证文件。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="hupu_account.xml" />
+        <exclude domain="file" path="crash_last.txt" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="hupu_account.xml" />
+        <exclude domain="file" path="crash_last.txt" />
+    </device-transfer>
+</data-extraction-rules>

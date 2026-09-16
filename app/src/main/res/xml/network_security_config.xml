@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   1.133 网络安全配置：默认禁止明文 HTTP（取代全局 usesCleartextTraffic="true"）。
+   - 站点接口全部是 https；正文图片/视频 CDN（i*.hoopchina.com.cn 等）历史上可能返回
+     http:// 直链，渲染层未统一升级，故对虎扑自有域名保留明文放行，避免加载被拦截。
+   - 其余任何第三方域名一律禁止明文，杜绝「任意域名可被降级/中间人」的全局风险。
+   后续若确认所有媒体均为 https，可删除 domain-config 实现完全禁用。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">hupu.com</domain>
+        <domain includeSubdomains="true">hoopchina.com.cn</domain>
+    </domain-config>
+</network-security-config>

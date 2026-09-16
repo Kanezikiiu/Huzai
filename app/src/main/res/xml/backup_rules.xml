@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Auto Backup（API < 31）规则。
+   1.133：登录 Cookie / 会话凭据存在 hupu_account 这个 SharedPreferences 里，
+   绝不能进入云备份或换机迁移（会泄露账号会话，且可能恢复出已过期的登录态）。
+   其余偏好（阅读字号、主题、频道自定义等）仍允许备份。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="hupu_account.xml" />
+    <!-- 异常堆栈取证文件（仅 debug 构建会写），不参与备份 -->
+    <exclude domain="file" path="crash_last.txt" />
+</full-backup-content>

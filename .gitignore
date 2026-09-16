@@ -1,0 +1,33 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# 构建产物 / 本地环境
+*.apk
+.kotlin/
+.operit/
+.backup/
+
+# 本地接口探测/实现记录（不公开）
+docs/
+
+# 本地 proot 构建用二进制（体积大，不入库；正常环境由 AGP 自动获取 aapt2）
+tools/aapt2/
+
+# 签名与密钥（绝不入库）
+*.jks
+*.keystore
+keystore.properties
+keystore/

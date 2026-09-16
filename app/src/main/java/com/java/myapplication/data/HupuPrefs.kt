@@ -1,0 +1,480 @@
+package com.java.myapplication.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.runtime.setValue
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * 轻量用户偏好（SharedPreferences）。
+ * 当前：主页频道自定义（「我的」页编辑，首页横滑条消费）。
+ */
+object HupuPrefs {
+
+    private const val KEY_HOME_TOPICS = "home_topics_v1"
+    private const val KEY_SEARCH_HISTORY = "search_history_v1"
+    private const val KEY_HISTORY = "browsing_history_v1"
+    private const val KEY_SCORE_GAMES = "score_games_v1"
+    private const val KEY_FILTER_KEYWORDS = "filter_keywords_v1"
+    private const val KEY_REFRESH_MODE = "refresh_mode_v1"
+
+    /** 主页频道数量上限：横滑条是高频快捷入口，超过会滑不过来 */
+    const val MAX_HOME_TOPICS = 20
+
+    /** 搜索历史上限 */
+    const val MAX_SEARCH_HISTORY = 12
+
+    /** 浏览记录上限：300 条（每条约 200B JSON，总上限约 60KB，SharedPreferences 可承受） */
+    const val MAX_HISTORY = 300
+    /** 评分页频道（项目）上限：与主页横滑条一致 */
+    const val MAX_SCORE_GAMES = 20
+    /** 过滤关键词每组上限：足够重度用户沉淀屏蔽词表 */
+    const val MAX_FILTER_KEYWORDS = 100
+
+    private lateinit var prefs: SharedPreferences
+
+    fun init(context: Context) {
+        prefs = context.getSharedPreferences("hupu_prefs", Context.MODE_PRIVATE)
+        disclaimerAccepted = prefs.getBoolean(KEY_DISCLAIMER_ACCEPTED, false)
+    }
+
+    /**
+     * 1.154 免责声明同意状态。false = 必须在「免责声明」门禁页同意后才能使用本应用；
+     * 同意后持久化，卸载或清除数据才会重置。UI 读它决定显示门禁还是主界面。
+     */
+    var disclaimerAccepted by mutableStateOf(false)
+        private set
+
+    /** 用户点击「同意并继续」——持久化并放行主界面 */
+    fun acceptDisclaimer() {
+        prefs.edit().putBoolean(KEY_DISCLAIMER_ACCEPTED, true).apply()
+        disclaimerAccepted = true
+    }
+
+    /** 版本号：设置页保存后 +1，首页观察到变化即刷新横滑条 */
+    var homeTopicsVersion by mutableIntStateOf(0)
+        private set
+
+    /** 是否自定义过（区分「没配过=用官方热门」与「配成空=只留热帖」） */
+    fun hasCustomHomeTopics(): Boolean = prefs.contains(KEY_HOME_TOPICS)
+
+    fun loadHomeTopics(): List<HupuTopicInfo> {
+        val json = prefs.getString(KEY_HOME_TOPICS, null) ?: return emptyList()
+        return decodeHomeTopicsJson(json)
+    }
+
+    fun saveHomeTopics(list: List<HupuTopicInfo>) {
+        prefs.edit().putString(KEY_HOME_TOPICS, encodeHomeTopicsJson(list)).apply()
+        homeTopicsVersion++
+    }
+
+    /** 恢复默认（清除自定义，首页回到官方热门话题） */
+    fun clearHomeTopics() {
+        prefs.edit().remove(KEY_HOME_TOPICS).apply()
+        homeTopicsVersion++
+    }
+
+    /** 搜索历史：最多 12 条，新搜索置顶去重 */
+    fun addSearchHistory(query: String) {
+        if (query.isBlank()) return
+        val cur = loadSearchHistory().toMutableList()
+        cur.removeAll { it == query }
+        cur.add(0, query)
+        while (cur.size > MAX_SEARCH_HISTORY) cur.removeAt(cur.size - 1)
+        prefs.edit().putString(KEY_SEARCH_HISTORY, JSONArray(cur).toString()).apply()
+        searchHistoryVersion++
+    }
+
+    fun removeSearchHistory(query: String) {
+        val cur = loadSearchHistory().toMutableList()
+        if (cur.removeAll { it == query }) {
+            prefs.edit().putString(KEY_SEARCH_HISTORY, JSONArray(cur).toString()).apply()
+            searchHistoryVersion++
+        }
+    }
+
+    fun loadSearchHistory(): List<String> {
+        val json = prefs.getString(KEY_SEARCH_HISTORY, null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(json)
+            (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { s -> s.isNotEmpty() } }
+        }.getOrDefault(emptyList())
+    }
+
+    fun clearSearchHistory() {
+        prefs.edit().remove(KEY_SEARCH_HISTORY).apply()
+        searchHistoryVersion++
+    }
+    /** 搜索历史版本号：变化时搜索页历史条刷新 */
+    var searchHistoryVersion by mutableIntStateOf(0)
+        private set
+
+    // ---------- 浏览记录（帖子详情打开时写入；「我的」页可查看/查找/清空） ----------
+
+    /** 浏览记录版本号：变化时历史页刷新 */
+    var historyVersion by mutableIntStateOf(0)
+        private set
+
+    /** 记录一次浏览：同 tid 去重置顶，超限尾部裁剪 */
+    fun addHistory(e: HupuHistoryEntry) {
+        if (e.tid.isBlank()) return
+        val cur = loadHistory().toMutableList()
+        cur.removeAll { it.tid == e.tid }
+        cur.add(0, e)
+        while (cur.size > MAX_HISTORY) cur.removeAt(cur.size - 1)
+        prefs.edit().putString(KEY_HISTORY, encodeHistoryJson(cur)).apply()
+        historyVersion++
+    }
+
+    fun loadHistory(): List<HupuHistoryEntry> {
+        val json = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
+        return decodeHistoryJson(json)
+    }
+
+    fun removeHistory(tid: String) {
+        val cur = loadHistory().toMutableList()
+        if (cur.removeAll { it.tid == tid }) {
+            prefs.edit().putString(KEY_HISTORY, encodeHistoryJson(cur)).apply()
+            historyVersion++
+        }
+    }
+
+    fun clearHistory() {
+        prefs.edit().remove(KEY_HISTORY).apply()
+        historyVersion++
+    }
+
+    /** 首页实际使用的频道列表：有自定义用自定义，否则回退官方热门 */
+    fun effectiveHomeTopics(fallback: List<HupuTopicInfo>): List<HupuTopicInfo> =
+        if (hasCustomHomeTopics()) loadHomeTopics() else fallback
+
+    // ---------- 评分频道自定义（镜像主页频道自定义模式） ----------
+    /** 版本号：评分频道保存后 +1，评分页观察到变化即刷新横滑条 */
+    var scoreGamesVersion by mutableIntStateOf(0)
+        private set
+
+    /** 是否自定义过评分频道（区分「未配置=全量」与「配置成空」） */
+    fun hasCustomScoreGames(): Boolean = prefs.contains(KEY_SCORE_GAMES)
+
+    fun loadScoreGames(): List<String> {
+        val json = prefs.getString(KEY_SCORE_GAMES, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { it.isNotEmpty() } }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    /** 保存评分频道 id 列表（保存合法 id；不合法 id 丢弃） */
+    fun saveScoreGames(list: List<String>) {
+        val arr = JSONArray()
+        list.filter { it.isNotBlank() }.forEach { arr.put(it) }
+        prefs.edit().putString(KEY_SCORE_GAMES, arr.toString()).apply()
+        scoreGamesVersion++
+    }
+
+    fun clearScoreGames() {
+        prefs.edit().remove(KEY_SCORE_GAMES).apply()
+        scoreGamesVersion++
+    }
+
+    /** 评分页实际频道：自定义保留 GAMES 顺序（id 有效性防护），未配置=全量 */
+    fun effectiveScoreGames(all: List<Pair<String, String>>): List<Pair<String, String>> {
+        if (!hasCustomScoreGames()) return all
+        val byId = all.associate { it.first to it }
+        return loadScoreGames().mapNotNull { byId[it] }
+    }
+
+    // ---------- 浏览流关键词过滤（我的→浏览流设置） ----------
+    /** 版本号：关键词保存后 +1，各列表订阅刷新 */
+    var filterVersion by mutableIntStateOf(0)
+        private set
+
+    private var cachedKeywords: HupuFilter.Keywords? = null
+
+    fun loadFilterKeywords(): HupuFilter.Keywords {
+        cachedKeywords?.let { return it }
+        val json = prefs.getString(KEY_FILTER_KEYWORDS, null) ?: return HupuFilter.Keywords()
+        val kw = decodeFilterKeywordsJson(json)
+        cachedKeywords = kw
+        return kw
+    }
+
+    fun saveFilterKeywords(kw: HupuFilter.Keywords) {
+        prefs.edit().putString(KEY_FILTER_KEYWORDS, encodeFilterKeywordsJson(kw)).apply()
+        cachedKeywords = kw
+        filterVersion++
+    }
+
+    fun clearFilterKeywords() {
+        prefs.edit().remove(KEY_FILTER_KEYWORDS).apply()
+        cachedKeywords = null
+        filterVersion++
+    }
+    // ---------- Reading font size (Profile -> TextSize; thread detail body only) ----------
+    /** Scale range of the reading font size */
+    const val FONT_SCALE_MIN = 0.8f
+    const val FONT_SCALE_MAX = 1.6f
+    private const val KEY_FONT_SCALE = "font_scale_v1"
+    /** Version: saved font scale bumps this, detail page recomposes live */
+    var fontScaleVersion by mutableIntStateOf(0)
+    fun loadFontScale(): Float = prefs.getFloat(KEY_FONT_SCALE, 1.0f)
+    fun saveFontScale(v: Float) {
+        prefs.edit().putFloat(KEY_FONT_SCALE, v.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)).apply()
+        fontScaleVersion++
+    }
+
+    /** 屏幕刷新率档位：-1=自动（系统默认），>0 为 preferredDisplayModeId */
+    fun loadRefreshMode(): Int = prefs.getInt(KEY_REFRESH_MODE, -1)
+    fun saveRefreshMode(v: Int) {
+        prefs.edit().putInt(KEY_REFRESH_MODE, v).apply()
+    }
+
+    // ---------- 1.130 主题模式（跟随系统 / 浅色 / 深色） ----------
+    const val THEME_SYSTEM = "system"
+    const val THEME_LIGHT = "light"
+    const val THEME_DARK = "dark"
+    // ---------- 1.148 games 写端点版本号自愈 ----------
+
+    private const val KEY_GAMES_VER = "games_ver_"
+
+    /** games 写端点当前生效的版本段（按端点族分别持久化，空串=未自愈过，用代码内置基线）。
+     *  背景：服务端会随时间抬高最低版本号（`应用版本过旧，请升级到最新版本`）；
+     *  命中后由 HupuAccount 自愈阶梯试更高版本，成功的值写回这里，后续请求直接使用。
+     */
+    fun gamesVersionOf(family: String): String =
+        prefs.getString(KEY_GAMES_VER + family, "") ?: ""
+
+    fun saveGamesVersion(family: String, version: String) {
+        if (version.isBlank()) return
+        prefs.edit().putString(KEY_GAMES_VER + family, version).apply()
+    }
+
+    fun clearGamesVersion() {
+        val ed = prefs.edit()
+        for (f in listOf("score", "publish", "light")) ed.remove(KEY_GAMES_VER + f)
+        ed.apply()
+    }
+
+    private const val KEY_THEME_MODE = "theme_mode_v1"
+    /** 1.154：免责声明是否已同意（false = 首次启动，必须同意才能使用） */
+    private const val KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted_v1"
+
+    /** 主题模式变更版本：MainActivity / 主题计算观察到即重组（切换即时生效，无需重启） */
+    var themeModeVersion by mutableIntStateOf(0)
+        private set
+
+    fun loadThemeMode(): String =
+        prefs.getString(KEY_THEME_MODE, THEME_SYSTEM) ?: THEME_SYSTEM
+
+    fun saveThemeMode(mode: String) {
+        val m = when (mode) {
+            THEME_LIGHT, THEME_DARK -> mode
+            else -> THEME_SYSTEM
+        }
+        prefs.edit().putString(KEY_THEME_MODE, m).apply()
+        themeModeVersion++
+    }
+
+    // ---------- 1.94 收藏表情包 ----------
+    private const val KEY_STICKERS = "stickers_v1"
+    /** 收藏上限 */
+    const val MAX_STICKERS = 60
+    /** 表情包集合变更版本：表情面板观察到即刷新 */
+    var stickersVersion by mutableIntStateOf(0)
+        private set
+
+    /**
+     * 1.170: 表情集合版本自增统一切回主线程。
+     * addSticker/removeSticker/importLocalSticker 会在 IO 线程被调用，
+     * 直写 Compose 快照虽可用但存在时序不确定性，这里保证在主线程变更。
+     */
+    private fun bumpStickers() {
+        if (Looper.myLooper() == Looper.getMainLooper()) stickersVersion++
+        else Handler(Looper.getMainLooper()).post { stickersVersion++ }
+    }
+    /** 收藏/删除的一次性反馈文案（页面消费后置空） */
+    var stickerToast by mutableStateOf<String?>(null)
+    /** 1.96: 长按图片的「收藏」气泡——url + 图片在根坐标中的位置（null = 不显示） */
+    var stickerBubbleUrl by mutableStateOf<String?>(null)
+    var stickerBubbleRect by mutableStateOf(Rect.Zero)
+
+    fun loadStickers(): List<HupuSticker> =
+        prefs.getString(KEY_STICKERS, null)?.let { decodeStickersJson(it) } ?: emptyList()
+
+    fun isStickerSaved(url: String): Boolean = loadStickers().any { it.url == url }
+
+    /** 收藏（新的排最前）：已存在返回 false，写入成功返回 true */
+    fun addSticker(url: String): Boolean {
+        if (url.isEmpty()) return false
+        val cur = loadStickers()
+        if (cur.any { it.url == url }) return false
+        val next = (listOf(HupuSticker(url)) + cur).take(MAX_STICKERS)
+        prefs.edit().putString(KEY_STICKERS, encodeStickersJson(next)).apply()
+        bumpStickers()
+        return true
+    }
+
+    fun removeSticker(url: String) {
+        // 1.165: 本地导入的表情连同落盘文件一并删除（远程收藏只删记录）
+        localStickerFile(url)?.let { runCatching { it.delete() } }
+        val next = loadStickers().filterNot { it.url == url }
+        prefs.edit().putString(KEY_STICKERS, encodeStickersJson(next)).apply()
+        bumpStickers()
+    }
+
+    /**
+     * 1.168: 从相册导入一张图片为「我的表情」。
+     * 文件名 = 内容哈希（+ 魔数嗅探出的扩展名），因此**同一张图必然落到同一个 URL**，
+     * 天然复用 `addSticker` 的「URL 已存在则拒绝」检测机制 → 不会重复添加
+     * （与收藏表情时的去重口径一致）。
+     */
+    fun importLocalSticker(context: Context, uri: android.net.Uri): LocalStickerImport {
+        // 1.170: 带上限读取（>32MB 或读取失败 → null），避免超大图整段入内存
+        val bytes = HupuImage.readCapped(context.contentResolver, uri)
+        if (bytes == null || bytes.isEmpty()) return LocalStickerImport.FAILED
+        val ext = HupuImage.sniffExtension(bytes) ?: "jpg"
+        val dir = java.io.File(context.filesDir, "stickers_local").apply { mkdirs() }
+        val f = java.io.File(dir, "sticker_" + stickerContentKey(bytes) + "." + ext)
+        return try {
+            if (!f.exists()) f.writeBytes(bytes)
+            val url = "file://" + f.absolutePath
+            if (addSticker(url)) LocalStickerImport.ADDED else LocalStickerImport.DUPLICATE
+        } catch (e: Exception) {
+            LocalStickerImport.FAILED
+        }
+    }
+}
+
+/** 1.168: 本地表情导入结果（用于向上层如实反馈，区分「重复」与「失败」） */
+enum class LocalStickerImport { ADDED, DUPLICATE, FAILED }
+
+/**
+ * 1.168: 图片内容指纹（SHA-256 前 16 字节的十六进制）——纯函数，可单测。
+ * 相同字节 → 相同指纹；用于本地表情的「内容级去重」文件名。
+ */
+internal fun stickerContentKey(bytes: ByteArray): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+    return digest.joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(32)
+}
+
+/** 浏览记录纯 JSON 编码（便于单测，不依赖 Android） */
+internal fun encodeHistoryJson(list: List<HupuHistoryEntry>): String {
+    val arr = JSONArray()
+    list.forEach { e ->
+        val o = JSONObject()
+        o.put("tid", e.tid)
+        o.put("title", e.title)
+        o.put("topicName", e.topicName)
+        o.put("lights", e.lights)
+        o.put("replies", e.replies)
+        o.put("read", e.read)
+        o.put("visitedAt", e.visitedAt)
+        arr.put(o)
+    }
+    return arr.toString()
+}
+
+/** 浏览记录纯 JSON 解码（便于单测）：坏数据返回空列表 */
+internal fun decodeHistoryJson(json: String): List<HupuHistoryEntry> {
+    return runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            HupuHistoryEntry(
+                tid = o.optString("tid"),
+                title = o.optString("title"),
+                topicName = o.optString("topicName"),
+                lights = o.optInt("lights", 0),
+                replies = o.optInt("replies", 0),
+                read = o.optInt("read", 0),
+                visitedAt = o.optLong("visitedAt", 0L),
+            )
+        }
+    }.getOrDefault(emptyList())
+}
+
+/** 纯 JSON 编码（便于单测，不依赖 Android）：[{"topicId","name","url","logo"?}] */
+internal fun encodeHomeTopicsJson(list: List<HupuTopicInfo>): String {
+    val arr = JSONArray()
+    list.forEach { t ->
+        val o = JSONObject()
+        o.put("topicId", t.topicId)
+        o.put("name", t.name)
+        o.put("url", t.url)
+        t.logo?.let { o.put("logo", it) }
+        arr.put(o)
+    }
+    return arr.toString()
+}
+
+/** 纯 JSON 解码（便于单测）：坏数据/空串返回空列表 */
+/** 过滤关键词纯 JSON 编解码（便于单测，不依赖 Android） */
+internal fun encodeFilterKeywordsJson(kw: HupuFilter.Keywords): String {
+    val o = JSONObject()
+    o.put("title", JSONArray(kw.title))
+    o.put("zone", JSONArray(kw.zone))
+    o.put("comment", JSONArray(kw.comment))
+    return o.toString()
+}
+
+internal fun decodeFilterKeywordsJson(json: String): HupuFilter.Keywords {
+    return try {
+        val o = JSONObject(json)
+        fun arr(k: String): List<String> {
+            val a = o.optJSONArray(k) ?: return emptyList()
+            return (0 until a.length()).mapNotNull { i -> a.optString(i).takeIf { it.isNotEmpty() } }
+        }
+        HupuFilter.Keywords(title = arr("title"), zone = arr("zone"), comment = arr("comment"))
+    } catch (e: Exception) { HupuFilter.Keywords() }
+}
+
+/** 收藏表情包条目：只存图片 URL（虎扑没有专门的表情包通道，发出的表情包就是图片） */
+data class HupuSticker(val url: String)
+
+/** 1.165: 本地导入的表情以 file:// 前缀标识（文件存于 filesDir/stickers_local）；纯函数，可单测 */
+internal fun isLocalStickerUrl(url: String): Boolean = url.startsWith("file://")
+
+/** 1.165: file:// URL → 本地文件（非本地返回 null）；纯函数，可单测 */
+internal fun localStickerFile(url: String): java.io.File? =
+    if (url.startsWith("file://")) java.io.File(url.removePrefix("file://")) else null
+
+/** 表情包纯 JSON 编解码（便于单测，不依赖 Android） */
+internal fun encodeStickersJson(list: List<HupuSticker>): String {
+    val arr = JSONArray()
+    list.forEach { s -> arr.put(s.url) }
+    return arr.toString()
+}
+
+internal fun decodeStickersJson(json: String): List<HupuSticker> {
+    return runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            // 兼容 1.94 的 {"url":..,"token":..} 对象形式
+            val v = arr.opt(i)
+            val u = if (v is JSONObject) v.optString("url") else v?.toString() ?: ""
+            if (u.isEmpty()) null else HupuSticker(u)
+        }
+    }.getOrDefault(emptyList())
+}
+
+internal fun decodeHomeTopicsJson(json: String): List<HupuTopicInfo> {
+    return runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            HupuTopicInfo(
+                topicId = o.optString("topicId"),
+                name = o.optString("name"),
+                url = o.optString("url"),
+                logo = o.optString("logo").ifEmpty { null },
+            )
+        }
+    }.getOrDefault(emptyList())
+}
