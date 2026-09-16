@@ -44,7 +44,7 @@
 
 **首页 · 自适应布局**（手机 / 平板）
 
-<table>
+<table align="center">
   <tr>
     <td align="center"><img src="screenshots/home_phone.png" width="260" alt="首页 · 手机" /><br/>手机</td>
     <td align="center"><img src="screenshots/home_tablet.jpg" width="560" alt="首页 · 平板" /><br/>平板</td>
@@ -53,14 +53,16 @@
 
 **专区 · 子分区浏览与分区帖子流**
 
-<p align="center">
-  <img src="screenshots/zones.png" width="260" alt="专区 · 子分区浏览" />
-  <img src="screenshots/zone_detail.png" width="260" alt="专区 · 分区帖子流" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="screenshots/zones.png" width="260" alt="专区 · 子分区浏览" /><br/>子分区浏览</td>
+    <td align="center"><img src="screenshots/zone_detail.png" width="260" alt="专区 · 分区帖子流" /><br/>分区帖子流</td>
+  </tr>
+</table>
 
 **评分 · 主题流 / 赛程 / 对局 / 选手打分**
 
-<table>
+<table align="center">
   <tr>
     <td align="center"><img src="screenshots/score.png" width="260" alt="通用评分主题流" /><br/>通用评分主题流</td>
     <td align="center"><img src="screenshots/score_schedule.png" width="260" alt="赛事赛程" /><br/>赛事赛程</td>
@@ -73,24 +75,30 @@
 
 **帖子详情 · 图文混排与发帖**
 
-<p align="center">
-  <img src="screenshots/thread.png" width="260" alt="帖子详情 · 图文混排" />
-  <img src="screenshots/newpost.png" width="260" alt="发帖编辑器" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="screenshots/thread.png" width="260" alt="帖子详情 · 图文混排" /><br/>帖子详情</td>
+    <td align="center"><img src="screenshots/newpost.png" width="260" alt="发帖编辑器" /><br/>发帖编辑器</td>
+  </tr>
+</table>
 
 **消息 · 会话列表与聊天**
 
-<p align="center">
-  <img src="screenshots/messages.png" width="260" alt="消息中心 · 会话列表" />
-  <img src="screenshots/chat.png" width="260" alt="私信聊天页" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="screenshots/messages.png" width="260" alt="消息中心 · 会话列表" /><br/>会话列表</td>
+    <td align="center"><img src="screenshots/chat.png" width="260" alt="私信聊天页" /><br/>私信聊天</td>
+  </tr>
+</table>
 
 **用户主页 · 个性化设置**
 
-<p align="center">
-  <img src="screenshots/profile.png" width="260" alt="用户主页" />
-  <img src="screenshots/mine.png" width="260" alt="我的 · 个性化设置" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="screenshots/profile.png" width="260" alt="用户主页" /><br/>用户主页</td>
+    <td align="center"><img src="screenshots/mine.png" width="260" alt="我的 · 个性化设置" /><br/>个性化设置</td>
+  </tr>
+</table>
 
 ---
 
