@@ -78,11 +78,19 @@
   <img src="screenshots/newpost.png" width="260" alt="发帖编辑器" />
 </p>
 
-<!-- 后续补充：私信 / 用户主页
+**消息 · 会话列表与聊天**
+
 <p align="center">
-  <img src="screenshots/dm.png" width="24%" />
+  <img src="screenshots/messages.png" width="260" alt="消息中心 · 会话列表" />
+  <img src="screenshots/chat.png" width="260" alt="私信聊天页" />
 </p>
--->
+
+**用户主页 · 个性化设置**
+
+<p align="center">
+  <img src="screenshots/profile.png" width="260" alt="用户主页" />
+  <img src="screenshots/mine.png" width="260" alt="我的 · 个性化设置" />
+</p>
 
 ---
 
