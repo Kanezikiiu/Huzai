@@ -51,6 +51,13 @@
   </tr>
 </table>
 
+**专区 · 子分区浏览与分区帖子流**
+
+<p align="center">
+  <img src="screenshots/zones.png" width="260" alt="专区 · 子分区浏览" />
+  <img src="screenshots/zone_detail.png" width="260" alt="专区 · 分区帖子流" />
+</p>
+
 <!-- 后续补充：帖子详情 / 评分 / 私信 / 用户主页
 <p align="center">
   <img src="screenshots/thread.png" width="24%" />
