@@ -32,7 +32,7 @@
 - **首页**：热帖 / 推荐 / 话题横滑条，双形态卡片流，骨架屏 + 下拉刷新 + 缓存秒开
 - **专区**：二百余个子分区浏览，二级盖入式帖子流
 - **评分**：通用评分主题流 + 电竞项目赛程；赛程卡、对局 / 选手详情、评论楼中楼、打分与点亮
-- **帖子详情**：纯 Compose HTML 渲染（图文保序）、视频播放（小窗 / 全屏）、回复排序 / 只看楼主、楼中楼逐层、发帖 / 编辑 / 删除、投票
+- **帖子详情**：纯 Compose HTML 渲染（图文保序）、视频播放（小窗 / 全屏）、赛事战报等结构化正文、回复排序 / 只看楼主、楼中楼逐层、发帖 / 编辑 / 删除、投票
 - **登录与互动**：WebView 登录接管 Cookie、帖子推荐、评论点亮 / 取消点亮、发评论、楼中楼回复
 - **私信**：会话列表 + 聊天页（文字 / 单图）、消息中心未读角标
 - **用户主页**：资料卡、关注 / 取关、发帖 / 回帖 / 推荐 / 收藏 / 关注列表
@@ -138,8 +138,8 @@
 
 可在 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)** 页面下载正式签名版。
 
-最新版本：**[v1.177](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.177)** ·
-[`huzai-1.177-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.177/huzai-1.177-release.apk)（minSdk 24，正式签名）。
+最新版本：**[v1.178](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.178)** ·
+[`huzai-1.178-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.178/huzai-1.178-release.apk)（minSdk 24，正式签名）。
 
 ---
 

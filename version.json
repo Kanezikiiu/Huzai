@@ -1,8 +1,8 @@
 {
-  "versionCode": 187,
-  "versionName": "1.177",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.177/huzai-1.177-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.177",
-  "changelog": "· 新增「检查更新」功能：关于页可一键比对版本号，发现新版本提示并跳转下载\n· 统一 README 截图区排版，新增 .gitattributes",
+  "versionCode": 188,
+  "versionName": "1.178",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.178/huzai-1.178-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.178",
+  "changelog": "· 修复赛事战报类帖子正文显示为原始 JSON 的问题：结构化正文改为卡片，点击可查看完整战报\n· 底部悬浮 Tab 栏整体抬高，不再贴底",
   "forceUpdate": false
 }

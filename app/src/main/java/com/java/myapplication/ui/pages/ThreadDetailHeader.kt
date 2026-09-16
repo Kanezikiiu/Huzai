@@ -125,6 +125,7 @@ import com.java.myapplication.data.HupuVoteApi
 import com.java.myapplication.data.HupuVoteOption
 import com.java.myapplication.data.HupuVoteResult
 import com.java.myapplication.data.HupuParser
+import com.java.myapplication.data.HupuEmbedParser
 import androidx.compose.foundation.text.appendInlineContent
 import com.java.myapplication.ui.components.EmojiSegment
 import com.java.myapplication.ui.components.ErrorRetry
@@ -296,6 +297,8 @@ internal fun MainPost(
     onOpenUser: (String) -> Unit = {},
     /** 1.121: 投票交互（未登录/提交失败）提示出口 */
     onToast: (String) -> Unit = {},
+    /** 1.178: 结构化正文（赛事战报等）点击出口 */
+    onOpenEmbed: (com.java.myapplication.data.HupuEmbed) -> Unit = {},
 ) {
     Column(
         Modifier
@@ -349,17 +352,24 @@ internal fun MainPost(
             modifier = Modifier.padding(bottom = 8.dp),
         )
 
-        // 1.122: 投票占位符在正文中内联渲染（与图片同机制）；正文无占位符（旧数据）时兜底挂末尾
-        val voteInline = remember(d.contentHtml) {
-            HupuParser.contentTokens(d.contentHtml).any { it is HupuParser.ContentToken.Vote }
+        // 1.178: 结构化正文（赛事战报等）——官方存的是 JSON 描述符而非 HTML，
+        // 识别后渲染成卡片并「点开进 WebView」，避免把这段 JSON 当文本原样显示
+        val embed = remember(d.contentHtml) { HupuEmbedParser.parse(d.contentHtml) }
+        if (embed != null) {
+            EmbedCard(embed) { onOpenEmbed(embed) }
+        } else {
+            // 1.122: 投票占位符在正文中内联渲染（与图片同机制）；正文无占位符（旧数据）时兜底挂末尾
+            val voteInline = remember(d.contentHtml) {
+                HupuParser.contentTokens(d.contentHtml).any { it is HupuParser.ContentToken.Vote }
+            }
+            HtmlContent(
+                d.contentHtml,
+                onImageClick = onImageClick,
+                vote = d.vote,
+                onToast = onToast,
+            )
+            if (d.vote != null && !voteInline) VoteCard(d.vote, onToast)
         }
-        HtmlContent(
-            d.contentHtml,
-            onImageClick = onImageClick,
-            vote = d.vote,
-            onToast = onToast,
-        )
-        if (d.vote != null && !voteInline) VoteCard(d.vote, onToast)
         if (d.thread.hasVideo && d.thread.video.isNotBlank()) {
             VideoPlayer(
                 url = d.thread.video,

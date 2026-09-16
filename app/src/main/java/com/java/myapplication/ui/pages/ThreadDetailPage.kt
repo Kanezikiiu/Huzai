@@ -673,6 +673,8 @@ fun ThreadDetailOverlay(
     // 图片全屏查看器（正文/回复/楼中楼内任意图片点击进入）
     var imageViewerUrl by remember { mutableStateOf<String?>(null) }
     val openImage: (String) -> Unit = { url -> imageViewerUrl = url }
+    // 1.178: 结构化正文（赛事战报等）承载页
+    var embedPage by remember { mutableStateOf<com.java.myapplication.data.HupuEmbed?>(null) }
 
     // 帖子详情页正在退出：楼中楼 sheet 栈同步折叠清空（防止退场中途残留孤儿层，
     // 其 onClosed 回调在组件销毁后仍操作已失效的栈导致崩溃）
@@ -883,6 +885,7 @@ fun ThreadDetailOverlay(
                                         onReplyClick = { replyQuotePid = ""; replyQuoteName = ""; replyBoxOpen = true },
                                         onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else replyToast = "\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55" } },
                                         onToast = { replyToast = it },
+                                        onOpenEmbed = { embedPage = it },
                                     )
                                 }
                                 item(key = "r-count") {
@@ -1383,6 +1386,12 @@ fun ThreadDetailOverlay(
         // 图片全屏查看器（zIndex 10 盖过一切层级；点击图片任意处进入，单击/返回键/关闭按钮退出）
         imageViewerUrl?.let { url ->
             com.java.myapplication.ui.components.ImageViewer(url = url) { imageViewerUrl = null }
+        }
+        // 1.178: 结构化正文（赛事战报等）承载页——盖入式二级页，按 url 键控（重开重建 WebView）
+        embedPage?.let { e ->
+            androidx.compose.runtime.key(e.url) {
+                EmbedWebPage(e) { embedPage = null }
+            }
         }
         // 1.112: 编辑页（盖入式，与用户主页同级的嵌套二级页）
         editingTid?.let { etid ->

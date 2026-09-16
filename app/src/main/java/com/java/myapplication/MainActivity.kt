@@ -176,7 +176,7 @@ fun PocketLedgerApp() {
             }
         }
 
-        // 玻璃 Tab 栏层（整体抬高 6dp，避免贴底过近）：二级页打开时弹性滑出隐藏，返回时 Q 弹回归
+        // 玻璃 Tab 栏层（整体抬高 12dp，避免贴底过近）：二级页打开时弹性滑出隐藏，返回时 Q 弹回归
         val tabHidden = SecondaryPage.count > 0
         val tabProgress by animateFloatAsState(
             targetValue = if (tabHidden) 1f else 0f,
@@ -190,7 +190,7 @@ fun PocketLedgerApp() {
             Modifier
                 .align(Alignment.BottomCenter)
                 .safeContentPadding()
-                .padding(bottom = 6.dp)
+                .padding(bottom = 12.dp)
                 .graphicsLayer {
                     translationY = (size.height + imeBottomPx + 30.dp.toPx()) * tabProgress
                 }
