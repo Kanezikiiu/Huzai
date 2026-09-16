@@ -71,9 +71,16 @@
   </tr>
 </table>
 
-<!-- 后续补充：帖子详情 / 私信 / 用户主页
+**帖子详情 · 图文混排与发帖**
+
 <p align="center">
-  <img src="screenshots/thread.png" width="24%" />
+  <img src="screenshots/thread.png" width="260" alt="帖子详情 · 图文混排" />
+  <img src="screenshots/newpost.png" width="260" alt="发帖编辑器" />
+</p>
+
+<!-- 后续补充：私信 / 用户主页
+<p align="center">
+  <img src="screenshots/dm.png" width="24%" />
 </p>
 -->
 
