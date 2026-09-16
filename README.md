@@ -42,15 +42,21 @@
 
 ## 📸 截图
 
-<!-- 建议补充 2~3 张截图后取消注释（图片放仓库根目录 screenshots/）：
+**首页 · 自适应布局**（手机 / 平板）
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/home_phone.png" width="260" alt="首页 · 手机" /><br/>手机</td>
+    <td align="center"><img src="screenshots/home_tablet.jpg" width="560" alt="首页 · 平板" /><br/>平板</td>
+  </tr>
+</table>
+
+<!-- 后续补充：帖子详情 / 评分 / 私信 / 用户主页
 <p align="center">
-  <img src="screenshots/home.png" width="24%" />
   <img src="screenshots/thread.png" width="24%" />
   <img src="screenshots/score.png" width="24%" />
 </p>
 -->
-
-> 截图待补充。
 
 ---
 
