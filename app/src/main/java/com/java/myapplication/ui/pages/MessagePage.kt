@@ -81,9 +81,8 @@ import org.json.JSONObject
 internal const val NOTICE_MENTION = 1
 internal const val NOTICE_REPLY = 2
 internal const val NOTICE_LIGHT = 3
+// 1.179: 三入口图标色改为跟随色彩主题（原为硬编码品牌蓝，导致切主题时不跟随）
 
-/** 1.99: 三入口统一图标色（墨绿） */
-private val NoticeIconTint = androidx.compose.ui.graphics.Color(0xFF00639A)
 
 internal fun noticeEndpoint(kind: Int): String = when (kind) {
     NOTICE_MENTION -> "getMentionedRemindList?plate=2&pageStr="
@@ -269,17 +268,17 @@ fun MessageCenterPage(onClose: () -> Unit) {
                         .padding(horizontal = 16.dp, vertical = 20.dp),
                 ) {
                     NoticeEntry(
-                        icon = { Icon(HupuIcons.At, contentDescription = null, tint = NoticeIconTint, modifier = Modifier.size(26.dp)) },
+                        icon = { Icon(HupuIcons.At, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) },
                         label = "提到我的", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.mention,
                     ) { openedKind = NOTICE_MENTION; listEpoch++ }
                     NoticeEntry(
-                        icon = { Icon(HupuIcons.Comment, contentDescription = null, tint = NoticeIconTint, modifier = Modifier.size(24.dp)) },
+                        icon = { Icon(HupuIcons.Comment, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) },
                         label = "评论", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.reply,
                     ) { openedKind = NOTICE_REPLY; listEpoch++ }
                     NoticeEntry(
-                        icon = { Icon(HupuIcons.Light, contentDescription = null, tint = NoticeIconTint, modifier = Modifier.size(26.dp)) },
+                        icon = { Icon(HupuIcons.Light, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) },
                         label = "亮了/推荐", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.light,
                     ) { openedKind = NOTICE_LIGHT; listEpoch++ }

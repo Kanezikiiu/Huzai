@@ -403,7 +403,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
         val parsed = HupuApi.postSpaceApiJson("pm/getPmDetail", body.toString())?.let { parsePmDetail(it) }
         if (parsed != null && parsed.first.isNotEmpty()) {
             messages.value = parsed.first
-            listState.animateScrollToItem(parsed.first.size - 1)
+            listState.animateScrollToItem(0)
         }
     }
 
@@ -418,7 +418,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
         val parsed = HupuApi.postSpaceApiJson("pm/getPmDetail", body.toString())?.let { parsePmDetail(it) }
         if (parsed != null) {
             messages.value = parsed.first
-            if (parsed.first.isNotEmpty()) listState.scrollToItem(parsed.first.size - 1)
+            if (parsed.first.isNotEmpty()) listState.scrollToItem(0)
         } else {
             messages.value = emptyList()
         }
@@ -442,7 +442,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
             if (fresh.isNotEmpty()) {
                 val merged = (cur + fresh).sortedBy { it.time }
                 messages.value = merged
-                listState.animateScrollToItem(merged.size - 1)
+                listState.animateScrollToItem(0)
             }
         }
     }
@@ -573,13 +573,13 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
                     }
                     else -> {
                         LazyColumn(
-                            state = listState,
+                            state = listState, reverseLayout = true,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(msgList.size) { idx ->
-                                PmBubble(msgList[idx])
+                                PmBubble(msgList[msgList.size - 1 - idx])
                             }
                         }
                     }
