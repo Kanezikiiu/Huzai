@@ -2,41 +2,47 @@ package com.java.myapplication.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.java.myapplication.data.HupuPrefs
 
-private val DarkColorScheme = darkColorScheme(
-    primary = LedgerPrimaryDark,
-    onPrimary = LedgerOnPrimaryDark,
-    primaryContainer = LedgerPrimaryContainerDark,
-    onPrimaryContainer = LedgerOnPrimaryContainerDark,
-    secondary = LedgerPrimaryDark,
-    background = LedgerBackgroundDark,
-    onBackground = LedgerOnSurfaceDark,
-    surface = LedgerSurfaceDark,
-    onSurface = LedgerOnSurfaceDark,
-    surfaceVariant = LedgerSurfaceVariantDark
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = LedgerPrimaryLight,
-    onPrimary = LedgerOnPrimaryLight,
-    primaryContainer = LedgerPrimaryContainerLight,
-    onPrimaryContainer = LedgerOnPrimaryContainerLight,
-    secondary = LedgerPrimaryLight,
+/** 浅色方案：中性底色 + 指定调色板的强调色。 */
+internal fun lightSchemeOf(p: AccentPalette): ColorScheme = lightColorScheme(
+    primary = p.lightPrimary,
+    onPrimary = p.lightOnPrimary,
+    primaryContainer = p.lightPrimaryContainer,
+    onPrimaryContainer = p.lightOnPrimaryContainer,
+    secondary = p.lightPrimary,
     background = LedgerBackgroundLight,
     onBackground = LedgerOnSurfaceLight,
     surface = LedgerSurfaceLight,
     onSurface = LedgerOnSurfaceLight,
-    surfaceVariant = LedgerSurfaceVariantLight
+    surfaceVariant = LedgerSurfaceVariantLight,
 )
+
+/** 深色方案：同上，取调色板的深色档。 */
+internal fun darkSchemeOf(p: AccentPalette): ColorScheme = darkColorScheme(
+    primary = p.darkPrimary,
+    onPrimary = p.darkOnPrimary,
+    primaryContainer = p.darkPrimaryContainer,
+    onPrimaryContainer = p.darkOnPrimaryContainer,
+    secondary = p.darkPrimary,
+    background = LedgerBackgroundDark,
+    onBackground = LedgerOnSurfaceDark,
+    surface = LedgerSurfaceDark,
+    onSurface = LedgerOnSurfaceDark,
+    surfaceVariant = LedgerSurfaceVariantDark,
+)
+
+/** 动态取色是否可用（Material You 需 Android 12 / API 31+）。 */
+fun isDynamicColorAvailable(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 /**
  * 1.130: 按用户主题偏好解析「是否深色」——跟随系统 / 浅色 / 深色。
@@ -52,20 +58,26 @@ fun isAppDarkTheme(): Boolean {
     }
 }
 
+/**
+ * 1.179: 主题 = 深浅模式（由 darkTheme 决定）× 色彩主题（由 HupuPrefs 决定）。
+ *
+ * 色彩主题订阅 [HupuPrefs.colorThemeVersion]，设置页点选后立即重组生效，无需重启。
+ * 选「动态取色」且系统为 Android 12+ 时使用壁纸衍生配色（其余情况按 id 查调色板）。
+ */
 @Composable
 fun LedgerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // 动态取色 M3 再接入；M1 固定品牌蓝，保证玻璃栏视觉一致
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
+    val context = LocalContext.current
+    val accentId = remember(HupuPrefs.colorThemeVersion) { HupuPrefs.loadColorTheme() }
+    val colorScheme: ColorScheme = when {
+        accentId == ACCENT_DYNAMIC && isDynamicColorAvailable() ->
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        else -> {
+            val p = accentPaletteOf(accentId)
+            if (darkTheme) darkSchemeOf(p) else lightSchemeOf(p)
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
     }
     MaterialTheme(
         colorScheme = colorScheme,

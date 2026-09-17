@@ -4,7 +4,9 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +49,10 @@ import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.theme.ACCENT_DYNAMIC
+import com.java.myapplication.ui.theme.AccentPalettes
+import com.java.myapplication.ui.theme.accentPaletteOf
+import com.java.myapplication.ui.theme.isDynamicColorAvailable
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -81,6 +90,8 @@ fun ThemeSettingsPage(onClose: () -> Unit) {
     }
 
     var mode by remember { mutableStateOf(HupuPrefs.loadThemeMode()) }
+    // 1.179: 色彩主题（含动态取色的伪 id）
+    var accentId by remember { mutableStateOf(HupuPrefs.loadColorTheme()) }
     val options = listOf(
         Triple(HupuPrefs.THEME_SYSTEM, "跟随系统", "跟随手机系统的深色 / 浅色设置"),
         Triple(HupuPrefs.THEME_LIGHT, "浅色", "始终使用浅色主题"),
@@ -118,7 +129,7 @@ fun ThemeSettingsPage(onClose: () -> Unit) {
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "主题模式",
+                    "主题",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -129,8 +140,9 @@ fun ThemeSettingsPage(onClose: () -> Unit) {
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                GroupLabel("深浅模式")
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -156,6 +168,66 @@ fun ThemeSettingsPage(onClose: () -> Unit) {
                                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
                             )
                         }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                // 1.179: 色彩主题——只换强调色（中性底色不变），色块圆点横向滚动，点选即时生效
+                GroupLabel("色彩主题")
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            if (isDynamicColorAvailable()) {
+                                AccentDot(
+                                    label = "动态",
+                                    brush = Brush.sweepGradient(
+                                        listOf(
+                                            Color(0xFF4285F4), Color(0xFF34A853),
+                                            Color(0xFFFBBC05), Color(0xFFEA4335),
+                                            Color(0xFF4285F4),
+                                        )
+                                    ),
+                                    selected = accentId == ACCENT_DYNAMIC,
+                                    checkTint = Color.White,
+                                    onClick = {
+                                        accentId = ACCENT_DYNAMIC
+                                        HupuPrefs.saveColorTheme(ACCENT_DYNAMIC)
+                                    },
+                                )
+                            }
+                            AccentPalettes.forEach { p ->
+                                AccentDot(
+                                    label = p.label,
+                                    color = p.swatch,
+                                    selected = accentId == p.id,
+                                    checkTint = if (p.swatch.luminance() > 0.6f) Color(0xFF1A1A1A) else Color.White,
+                                    onClick = {
+                                        accentId = p.id
+                                        HupuPrefs.saveColorTheme(p.id)
+                                    },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            if (accentId == ACCENT_DYNAMIC) {
+                                "动态取色 · 跟随壁纸自动配色（Android 12+）"
+                            } else {
+                                "当前色彩：" + accentPaletteOf(accentId).label
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -200,5 +272,67 @@ private fun ThemeOptionRow(
                 modifier = Modifier.size(20.dp),
             )
         }
+    }
+}
+
+/** 1.179: 分组标题（把「深浅模式」与「色彩主题」分开，避免语义混淆）。 */
+@Composable
+private fun GroupLabel(text: String) {
+    Text(
+        text,
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+    )
+}
+
+/**
+ * 1.179: 色彩主题色块（圆形）。
+ * [brush] 用于「动态取色」的彩虹渐变；固定主题传 [color]。
+ * 选中态：主题色描边 + 对勾（勾的颜色按底色调明暗，保证可见）。
+ */
+@Composable
+private fun AccentDot(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    color: Color? = null,
+    brush: Brush? = null,
+    checkTint: Color = Color.White,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .then(
+                    if (brush != null) Modifier.background(brush)
+                    else Modifier.background(color ?: Color.Gray)
+                )
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f),
+                    shape = CircleShape,
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = "已选中",
+                    tint = checkTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            label,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

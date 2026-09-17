@@ -282,6 +282,24 @@ object HupuPrefs {
         themeModeVersion++
     }
 
+    // ---------- 1.179 色彩主题（强调色） ----------
+    private const val KEY_COLOR_THEME = "color_theme_v1"
+    /** 默认色彩主题 id（与 AccentPalettes 第一套一致） */
+    const val DEFAULT_COLOR_THEME = "blue"
+
+    /** 色彩主题变更版本：设置页点选后整个应用即时重组（无需重启） */
+    var colorThemeVersion by mutableIntStateOf(0)
+        private set
+
+    /** 当前色彩主题 id；也可能是 ACCENT_DYNAMIC（动态取色）。 */
+    fun loadColorTheme(): String =
+        prefs.getString(KEY_COLOR_THEME, DEFAULT_COLOR_THEME) ?: DEFAULT_COLOR_THEME
+
+    fun saveColorTheme(id: String) {
+        prefs.edit().putString(KEY_COLOR_THEME, id).apply()
+        colorThemeVersion++
+    }
+
     // ---------- 1.94 收藏表情包 ----------
     private const val KEY_STICKERS = "stickers_v1"
     /** 收藏上限 */

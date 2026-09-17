@@ -69,6 +69,13 @@ fun ProfilePage(modifier: Modifier = Modifier) {
         HupuPrefs.THEME_DARK -> "深色"
         else -> "跟随系统"
     }
+    // 1.179: 色彩主题标签（订阅版本号，切换后本行即时刷新）
+    val themeAccent = remember(HupuPrefs.colorThemeVersion) { HupuPrefs.loadColorTheme() }
+    val themeAccentLabel = if (themeAccent == com.java.myapplication.ui.theme.ACCENT_DYNAMIC) {
+        "动态取色"
+    } else {
+        com.java.myapplication.ui.theme.accentPaletteOf(themeAccent).label
+    }
     // 登录：登录页 epoch 键控挂载 + 退出确认展开态
     var loginEpoch by remember { mutableIntStateOf(0) }
     var logoutAsk by remember { mutableStateOf(false) }
@@ -232,8 +239,8 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     )
                     SettingRow(
                         icon = HupuIcons.DarkMode,
-                        title = "主题模式",
-                        subtitle = themeModeLabel,
+                        title = "主题",
+                        subtitle = themeModeLabel + " · " + themeAccentLabel,
                         onClick = { themeEpoch++ },
                     )
                     // 1.134 关于改为二级页入口（替代原内联关于区块）
