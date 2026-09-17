@@ -287,6 +287,23 @@ object HupuPrefs {
     /** 默认色彩主题 id（与 AccentPalettes 第一套一致） */
     const val DEFAULT_COLOR_THEME = "blue"
 
+    // ---------- 1.179 打开软件自动检查更新（12h 节流，静默；有新版才弹窗） ----------
+    private const val KEY_LAST_UPDATE_CHECK = "last_update_check_v1"
+    /** 自动检查更新节流间隔：12 小时（每次冷启动最多触发一次静默检查） */
+    const val AUTO_UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000
+
+    /** 上次自动检查更新的时间戳（0 = 从未检查过） */
+    fun lastUpdateCheckAt(): Long = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+
+    /** 记录一次自动检查（无论成功失败都记，避免网络失败时反复重试） */
+    fun markUpdateChecked(at: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, at).apply()
+    }
+
+    /** 是否已过 12h 节流窗口（true = 本次冷启动应做一次静默检查） */
+    fun shouldAutoCheckUpdate(now: Long): Boolean =
+        now - lastUpdateCheckAt() >= AUTO_UPDATE_INTERVAL_MS
+
     /** 色彩主题变更版本：设置页点选后整个应用即时重组（无需重启） */
     var colorThemeVersion by mutableIntStateOf(0)
         private set

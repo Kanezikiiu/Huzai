@@ -1,5 +1,7 @@
 package com.java.myapplication
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,10 +34,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +48,9 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuCache
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuUiSignals
+import com.java.myapplication.data.HupuUpdate
+import com.java.myapplication.data.HupuUpdateInfo
+import com.java.myapplication.data.HupuUpdateResult
 import com.java.myapplication.ui.glass.GlassBottomTabs
 import com.java.myapplication.ui.glass.GlassTab
 import com.java.myapplication.ui.components.SecondaryPage
@@ -52,6 +59,7 @@ import com.java.myapplication.ui.pages.HomePage
 import com.java.myapplication.ui.pages.DisclaimerGate
 import com.java.myapplication.ui.pages.ProfilePage
 import com.java.myapplication.ui.pages.ScorePage
+import com.java.myapplication.ui.pages.UpdateDialog
 import com.java.myapplication.ui.pages.ZonePage
 import com.java.myapplication.ui.theme.LedgerTheme
 import com.java.myapplication.ui.theme.isAppDarkTheme
@@ -119,6 +127,35 @@ fun PocketLedgerApp() {
         drawContent()
     }
     var selectedTab by remember { mutableIntStateOf(0) }
+    // 1.179: 打开软件自动静默检查更新（12h 节流；有新版才弹窗，其余情况完全静默、无 toast）
+    val autoUpdateCtx = LocalContext.current
+    var autoUpdateInfo by remember { mutableStateOf<HupuUpdateInfo?>(null) }
+    LaunchedEffect(Unit) {
+        val now = System.currentTimeMillis()
+        if (!HupuPrefs.shouldAutoCheckUpdate(now)) return@LaunchedEffect
+        // 先记时间：无论成功失败 12h 内不再重试（避免网络异常时反复打扰）
+        HupuPrefs.markUpdateChecked(now)
+        when (val r = HupuUpdate.check(BuildConfig.VERSION_CODE)) {
+            is HupuUpdateResult.Available -> autoUpdateInfo = r.info
+            else -> Unit
+        }
+    }
+    // 发现新版本弹窗（复用关于页 iOS 风格对话框）
+    autoUpdateInfo?.let { info ->
+        UpdateDialog(
+            info = info,
+            onDismiss = { autoUpdateInfo = null },
+            onDownload = {
+                runCatching {
+                    autoUpdateCtx.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(info.apkUrl.ifEmpty { info.releaseUrl }))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+                autoUpdateInfo = null
+            },
+        )
+    }
     // 1.132: 切入评分页信号——页面常驻组合，评分页冷启动首屏加载失败后不会自己重试；
     // 切入时通知评分页做一次补偿重试，避免看到残留的「加载失败」
     LaunchedEffect(selectedTab) {

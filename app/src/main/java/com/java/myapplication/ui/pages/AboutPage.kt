@@ -360,10 +360,10 @@ fun AboutPage(onClose: () -> Unit) {
 }
 
 /**
- * 1.177: 检查更新弹窗（iOS 风格：大圆角卡片、标题/正文居左、取消浅灰 + 确认蓝色大圆角按钮）。
+ * 1.177/1.179: 检查更新弹窗（关于页手动检查 + 打开软件自动检查共用）（iOS 风格：大圆角卡片、标题/正文居左、取消浅灰 + 确认蓝色大圆角按钮）。
  */
 @Composable
-private fun UpdateDialog(
+fun UpdateDialog(
     info: HupuUpdateInfo,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
