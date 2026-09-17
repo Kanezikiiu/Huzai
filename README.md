@@ -37,7 +37,7 @@
 - **私信**：会话列表 + 聊天页（文字 / 单图）、消息中心未读角标
 - **用户主页**：资料卡、关注 / 取关、发帖 / 回帖 / 推荐 / 收藏 / 关注列表
 - **检查更新**：打开软件自动静默检查（12 小时节流）+ 关于页一键手动检查，发现新版提示并跳转下载
-- **个性化**：主页频道自定义、评分频道自定义、信息流关键词过滤、阅读字号、屏幕刷新率、主题（跟随系统 / 浅色 / 深色）
+- **个性化**：主页频道自定义、评分频道自定义、信息流关键词过滤、阅读字号、屏幕刷新率、深浅模式 + 主题（6 套色彩主题 / 动态取色）
 
 ---
 
@@ -138,8 +138,8 @@
 
 可在 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)** 页面下载正式签名版。
 
-最新版本：**[v1.178](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.178)** ·
-[`huzai-1.178-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.178/huzai-1.178-release.apk)（minSdk 24，正式签名）。
+最新版本：**[v1.179](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.179)** ·
+[`huzai-1.179-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.179/huzai-1.179-release.apk)（minSdk 24，正式签名）。
 
 ---
 

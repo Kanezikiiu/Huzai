@@ -1,8 +1,8 @@
 {
-  "versionCode": 188,
-  "versionName": "1.178",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.178/huzai-1.178-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.178",
-  "changelog": "· 修复赛事战报类帖子正文显示为原始 JSON 的问题：结构化正文改为卡片，点击可查看完整战报\n· 底部悬浮 Tab 栏整体抬高，不再贴底",
+  "versionCode": 189,
+  "versionName": "1.179",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.179/huzai-1.179-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.179",
+  "changelog": "· 新增色彩主题：6 套强调色（蓝 / 墨绿 / 紫 / 橙 / 红 / 青）+ 动态取色（Android 12+）\n· 消息中心三入口图标跟随主题色\n· 修复聊天页打开时可能不在底部（含图片的会话）的问题\n· 打开软件自动静默检查更新（12 小时节流），关于页仍可手动检查",
   "forceUpdate": false
 }
