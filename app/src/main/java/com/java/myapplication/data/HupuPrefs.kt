@@ -287,10 +287,10 @@ object HupuPrefs {
     /** 默认色彩主题 id（与 AccentPalettes 第一套一致） */
     const val DEFAULT_COLOR_THEME = "blue"
 
-    // ---------- 1.179 打开软件自动检查更新（12h 节流，静默；有新版才弹窗） ----------
+    // ---------- 1.181 打开软件自动检查更新（每次冷启动检查，10min 去重；有新版才弹窗） ----------
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check_v1"
-    /** 自动检查更新节流间隔：12 小时（每次冷启动最多触发一次静默检查） */
-    const val AUTO_UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000
+    /** 自动检查更新的短去重窗口：10 分钟（防异常重启 / 连环重开刷请求） */
+    const val AUTO_UPDATE_INTERVAL_MS = 10L * 60 * 1000
 
     /** 上次自动检查更新的时间戳（0 = 从未检查过） */
     fun lastUpdateCheckAt(): Long = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
@@ -300,9 +300,20 @@ object HupuPrefs {
         prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, at).apply()
     }
 
-    /** 是否已过 12h 节流窗口（true = 本次冷启动应做一次静默检查） */
+    /** 是否已过去重窗口（true = 本次冷启动应做一次静默检查） */
     fun shouldAutoCheckUpdate(now: Long): Boolean =
         now - lastUpdateCheckAt() >= AUTO_UPDATE_INTERVAL_MS
+
+    // 1.181: 记住被「忽略此版本」的 versionCode（自动弹窗不再打扰该版本）
+    private const val KEY_UPDATE_IGNORED_VERSION = "update_ignored_version_v1"
+
+    /** 被忽略的版本号（0 = 未忽略过任何版本） */
+    fun ignoredUpdateVersion(): Int = prefs.getInt(KEY_UPDATE_IGNORED_VERSION, 0)
+
+    /** 忽略某个版本（点「忽略此版本」时调用） */
+    fun ignoreUpdateVersion(versionCode: Int) {
+        prefs.edit().putInt(KEY_UPDATE_IGNORED_VERSION, versionCode).apply()
+    }
 
     /** 色彩主题变更版本：设置页点选后整个应用即时重组（无需重启） */
     var colorThemeVersion by mutableIntStateOf(0)

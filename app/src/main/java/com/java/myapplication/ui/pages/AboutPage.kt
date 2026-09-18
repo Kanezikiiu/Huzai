@@ -60,6 +60,7 @@ import androidx.compose.ui.window.Dialog
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuUpdate
 import com.java.myapplication.data.HupuUpdateInfo
 import com.java.myapplication.data.HupuUpdateResult
@@ -349,7 +350,11 @@ fun AboutPage(onClose: () -> Unit) {
         updateInfo?.let { info ->
             UpdateDialog(
                 info = info,
-                onDismiss = { updateInfo = null },
+                onDismiss = {
+                    // 1.181: 手动检查里点「忽略此版本」同样记住，自动弹窗不再打扰
+                    HupuPrefs.ignoreUpdateVersion(info.versionCode)
+                    updateInfo = null
+                },
                 onDownload = {
                     openUrl(info.apkUrl.ifEmpty { info.releaseUrl })
                     updateInfo = null
@@ -399,7 +404,7 @@ fun UpdateDialog(
             }
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DialogAction("稍后", primary = false, modifier = Modifier.weight(1f), onClick = onDismiss)
+                DialogAction("忽略此版本", primary = false, modifier = Modifier.weight(1f), onClick = onDismiss)
                 DialogAction("去下载", primary = true, modifier = Modifier.weight(1f), onClick = onDownload)
             }
         }

@@ -127,16 +127,20 @@ fun PocketLedgerApp() {
         drawContent()
     }
     var selectedTab by remember { mutableIntStateOf(0) }
-    // 1.179: 打开软件自动静默检查更新（12h 节流；有新版才弹窗，其余情况完全静默、无 toast）
+    // 1.181: 每次冷启动静默检查更新（10min 去重；有新版才弹窗，其余完全静默）
     val autoUpdateCtx = LocalContext.current
     var autoUpdateInfo by remember { mutableStateOf<HupuUpdateInfo?>(null) }
     LaunchedEffect(Unit) {
         val now = System.currentTimeMillis()
         if (!HupuPrefs.shouldAutoCheckUpdate(now)) return@LaunchedEffect
-        // 先记时间：无论成功失败 12h 内不再重试（避免网络异常时反复打扰）
+        // 先记时间：短窗口内不重复请求（避免网络异常时反复打扰）
         HupuPrefs.markUpdateChecked(now)
         when (val r = HupuUpdate.check(BuildConfig.VERSION_CODE)) {
-            is HupuUpdateResult.Available -> autoUpdateInfo = r.info
+            // 1.181: 被「忽略此版本」的不再打扰；出现更高版本 / 强制更新时才弹
+            is HupuUpdateResult.Available ->
+                if (r.info.forceUpdate || r.info.versionCode > HupuPrefs.ignoredUpdateVersion()) {
+                    autoUpdateInfo = r.info
+                }
             else -> Unit
         }
     }
@@ -144,7 +148,11 @@ fun PocketLedgerApp() {
     autoUpdateInfo?.let { info ->
         UpdateDialog(
             info = info,
-            onDismiss = { autoUpdateInfo = null },
+            onDismiss = {
+                // 1.181: 「忽略此版本」→ 记住版本号，自动弹窗不再打扰
+                HupuPrefs.ignoreUpdateVersion(info.versionCode)
+                autoUpdateInfo = null
+            },
             onDownload = {
                 runCatching {
                     autoUpdateCtx.startActivity(

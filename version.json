@@ -1,8 +1,8 @@
 {
-  "versionCode": 190,
-  "versionName": "1.180",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.180/huzai-1.180-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.180",
-  "changelog": "· 虎扑评分刷新后自动回顶（仅该频道，不影响赛事评分）\n· 用户主页点「粉丝 / 关注」可直达「关注」下的对应分组\n· 登录页：系统 WebView 版本过低时给出更新引导\n· 登录页加载失败时显示具体错误与重试入口（判定更严谨，避免误报）",
+  "versionCode": 191,
+  "versionName": "1.181",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.181/huzai-1.181-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.181",
+  "changelog": "· 自动检查更新：改为每次启动检查（10 分钟去重），打开 App 即可发现新版本\n· 更新弹窗「稍后」改为「忽略此版本」：忽略后同一版本不再提示，出现更高版本才会再提醒",
   "forceUpdate": false
 }
