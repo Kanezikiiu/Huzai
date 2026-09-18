@@ -126,7 +126,8 @@ fun PocketLedgerApp() {
         drawRect(backgroundColor)
         drawContent()
     }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // 1.182: 默认启动页（设置页可选；冷启动读取）
+    var selectedTab by remember { mutableIntStateOf(HupuPrefs.loadStartTab()) }
     // 1.181: 每次冷启动静默检查更新（10min 去重；有新版才弹窗，其余完全静默）
     val autoUpdateCtx = LocalContext.current
     var autoUpdateInfo by remember { mutableStateOf<HupuUpdateInfo?>(null) }

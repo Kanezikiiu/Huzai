@@ -3,6 +3,7 @@ package com.java.myapplication.ui.pages
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +42,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import androidx.compose.runtime.LaunchedEffect
 import com.java.myapplication.data.HupuAccount
@@ -63,6 +67,9 @@ fun ProfilePage(modifier: Modifier = Modifier) {
     var themeEpoch by remember { mutableIntStateOf(0) }
     // 1.134 关于页挂载（epoch 键控，同其他二级页）
     var aboutEpoch by remember { mutableIntStateOf(0) }
+    // 1.182 默认启动页：标准设置行 + iOS 风格选择弹窗（改动下次冷启动生效）
+    var startTabAsk by remember { mutableStateOf(false) }
+    var startTabIdx by remember { mutableIntStateOf(HupuPrefs.loadStartTab()) }
     val themeMode = remember(HupuPrefs.themeModeVersion) { HupuPrefs.loadThemeMode() }
     val themeModeLabel = when (themeMode) {
         HupuPrefs.THEME_LIGHT -> "浅色"
@@ -243,6 +250,13 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         subtitle = themeModeLabel + " · " + themeAccentLabel,
                         onClick = { themeEpoch++ },
                     )
+                    // 1.182 默认启动页：与相邻行同构的设置行（点击弹选择框，改动下次冷启动生效）
+                    SettingRow(
+                        icon = Icons.Rounded.Home,
+                        title = "默认启动页",
+                        subtitle = START_TAB_LABELS.getOrNull(startTabIdx) ?: "首页",
+                        onClick = { startTabAsk = true },
+                    )
                     // 1.134 关于改为二级页入口（替代原内联关于区块）
                     SettingRow(
                         icon = HupuIcons.Info,
@@ -288,6 +302,19 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     }
                 }
         }
+        }
+
+        // 1.182 默认启动页选择弹窗
+        if (startTabAsk) {
+            StartTabDialog(
+                current = startTabIdx,
+                onPick = { i ->
+                    startTabIdx = i
+                    HupuPrefs.saveStartTab(i)
+                    startTabAsk = false
+                },
+                onDismiss = { startTabAsk = false },
+            )
         }
 
         // 选版块页：从右盖入、返回滑出
@@ -415,3 +442,75 @@ private fun SettingRow(
         )
     }
 }
+/** 1.182: 默认启动页可选项（与底部 Tab 一一对应） */
+private val START_TAB_LABELS = listOf("首页", "专区", "评分", "我的")
+
+/**
+ * 1.182: 默认启动页选择弹窗
+ * iOS 风格：大圆角卡片、标题居左、选项行右侧打勾、取消浅灰大圆角，与项目其它弹窗一致。
+ */
+@Composable
+private fun StartTabDialog(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(20.dp),
+        ) {
+            Text(
+                "默认启动页",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(10.dp))
+            START_TAB_LABELS.forEachIndexed { i, name ->
+                val on = i == current
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onPick(i) }
+                        .padding(horizontal = 12.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        name,
+                        fontSize = 15.sp,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (on) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    .clickable(onClick = onDismiss),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "取消",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+

@@ -1,8 +1,8 @@
 {
-  "versionCode": 191,
-  "versionName": "1.181",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.181/huzai-1.181-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.181",
-  "changelog": "· 自动检查更新：改为每次启动检查（10 分钟去重），打开 App 即可发现新版本\n· 更新弹窗「稍后」改为「忽略此版本」：忽略后同一版本不再提示，出现更高版本才会再提醒",
+  "versionCode": 192,
+  "versionName": "1.182",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.182/huzai-1.182-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.182",
+  "changelog": "· 帖子详情 / 评分评价的楼中楼面板高度提升至 80%，一屏可见更多回复\n· 搜索页「选择专区」面板打开即展开，固定 72% 高度、免去二次上拉\n· 新增「默认启动页」设置（我的 → 设置）：可选 首页 / 专区 / 评分 / 我的\n· 关于页「检查更新」按钮新增转圈反馈：点击即刻可见，不再被误认为未响应",
   "forceUpdate": false
 }

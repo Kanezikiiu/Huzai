@@ -315,6 +315,16 @@ object HupuPrefs {
         prefs.edit().putInt(KEY_UPDATE_IGNORED_VERSION, versionCode).apply()
     }
 
+    // ---------- 1.182 默认启动页（底部 Tab；下次冷启动生效） ----------
+    private const val KEY_START_TAB = "start_tab_v1"
+
+    /** 默认启动的底部 Tab 下标（0 首页 / 1 专区 / 2 评分 / 3 我的）；越界回落首页 */
+    fun loadStartTab(): Int = prefs.getInt(KEY_START_TAB, 0).coerceIn(0, 3)
+
+    fun saveStartTab(index: Int) {
+        prefs.edit().putInt(KEY_START_TAB, index.coerceIn(0, 3)).apply()
+    }
+
     /** 色彩主题变更版本：设置页点选后整个应用即时重组（无需重启） */
     var colorThemeVersion by mutableIntStateOf(0)
         private set

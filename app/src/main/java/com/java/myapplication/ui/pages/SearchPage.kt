@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -556,7 +557,7 @@ private fun SearchItemRow(it: HupuSearchItem, onOpen: (HupuSearchItem) -> Unit) 
 
 /**
  * 专区选择器（ModalBottomSheet）：
- * - 初始半屏（Half），上拉可展开全屏（Expanded）浏览 254 个版块
+ * - 1.182: 固定 72% 屏高、默认展开（打开即完整展示，不再停在小半屏）
  * - 顶部「所有专区」恢复全站搜索；大类 chips 过滤；搜索框过滤版块名
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -567,7 +568,8 @@ private fun ForumPickerSheet(
     onSelect: (String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    // 1.182: 固定 72% 高度 + 默认展开（skipPartiallyExpanded=true → 打开即 Expanded，不再停在半屏）
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf("") }
     var selectedCate by remember { mutableStateOf<String?>(null) }
 
@@ -586,7 +588,7 @@ private fun ForumPickerSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.background,
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.72f)) {
             // 标题
             Text(
                 "选择专区",

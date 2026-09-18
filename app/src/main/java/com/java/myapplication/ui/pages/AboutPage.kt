@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -282,12 +283,20 @@ fun AboutPage(onClose: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     CircleIconButton(HupuIcons.Globe, "开源仓库") { openUrl(HUPU_REPO) }
                     CircleIconButton(HupuIcons.Code, "开源许可") { sub = AboutSub.LICENSE }
-                    CircleIconButton(HupuIcons.CloudDownload, "检查更新") {
+                    // 1.182: 忙碌时按钮即时转圈（见 CircleIconButton busy），杜绝"像没点上"
+                    CircleIconButton(HupuIcons.CloudDownload, "检查更新", busy = updateChecking) {
                         // 1.177: 拉取 version.json 比对 versionCode（手动触发，失败静默提示）
                         if (!updateChecking) {
                             updateChecking = true
                             scope.launch {
-                                when (val r = HupuUpdate.check(BuildConfig.VERSION_CODE)) {
+                                val startedAt = System.currentTimeMillis()
+                                val r = HupuUpdate.check(BuildConfig.VERSION_CODE)
+                                // 网络很快时也让转圈至少可见 CHECK_SPIN_MIN_MS，否则一闪而过仍会被感知为"没反应"
+                                val used = System.currentTimeMillis() - startedAt
+                                if (used < CHECK_SPIN_MIN_MS) {
+                                    kotlinx.coroutines.delay(CHECK_SPIN_MIN_MS - used)
+                                }
+                                when (r) {
                                     is HupuUpdateResult.Available -> updateInfo = r.info
                                     HupuUpdateResult.Latest ->
                                         toast = "当前已是最新版本 v" + BuildConfig.VERSION_NAME
@@ -438,22 +447,42 @@ private fun DialogAction(
     }
 }
 
+/** 1.182: 手动检查更新时，转圈动画的最短可见时长（网络过快也不至于"一闪而过"） */
+private const val CHECK_SPIN_MIN_MS = 700L
+
 @Composable
-private fun CircleIconButton(icon: ImageVector, desc: String, onClick: () -> Unit) {
+private fun CircleIconButton(
+    icon: ImageVector,
+    desc: String,
+    busy: Boolean = false,
+    onClick: () -> Unit,
+) {
     Box(
         Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            .background(
+                if (busy) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            icon,
-            contentDescription = desc,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(22.dp),
-        )
+        if (busy) {
+            // 1.182: 忙碌反馈——按钮内即时显示转圈（同时圆底染主题色），用户一看就知道已经点上了
+            CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                icon,
+                contentDescription = desc,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(22.dp),
+            )
+        }
     }
 }
 

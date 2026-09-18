@@ -213,7 +213,7 @@ fun SubCommentSheet(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(0.72f)
+                .fillMaxHeight(0.80f)
                 .graphicsLayer { translationY = (1f - progress.value) * size.height }
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(MaterialTheme.colorScheme.background)
