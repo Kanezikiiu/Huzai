@@ -480,7 +480,17 @@ fun UserProfilePage(
                             )
                         }
                         // \u7edf\u8ba1\u884c
-                        item(key = "stats") { StatsRow(p) }
+                        item(key = "stats") {
+                            // 1.179: 点子数据直达「关注」tab 对应分组：
+                            //   粉丝 → 关注我的/关注TA的（followType=2）
+                            //   关注 → 我关注的/TA关注的（followType=1）
+                            // 仅登录态可点（未登录无「关注」tab，做预防性禁用）
+                            val openFollowers: (() -> Unit)? =
+                                if (logged) ({ tab = 4; followType = 2 }) else null
+                            val openFollowing: (() -> Unit)? =
+                                if (logged) ({ tab = 4; followType = 1 }) else null
+                            StatsRow(p, openFollowers, openFollowing)
+                        }
                         // \u53cc Tab
                         item(key = "tabs") {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -877,7 +887,11 @@ private fun FollowButton(followed: Boolean, busy: Boolean, onClick: () -> Unit) 
 
 /** \u7edf\u8ba1\u884c\uff1a\u7c89\u4e1d/\u5173\u6ce8/\u88ab\u70b9\u4eae/\u88ab\u63a8\u8350\uff08\u540e\u4e24\u8005\u4e0d\u5c01\u9876\uff09 */
 @Composable
-private fun StatsRow(p: HupuUserProfile) {
+private fun StatsRow(
+    p: HupuUserProfile,
+    onOpenFollowers: (() -> Unit)? = null,
+    onOpenFollowing: (() -> Unit)? = null,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -886,16 +900,22 @@ private fun StatsRow(p: HupuUserProfile) {
             .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        StatCell("\u7c89\u4e1d", p.followers)
-        StatCell("\u5173\u6ce8", p.following)
+        StatCell("\u7c89\u4e1d", p.followers, onOpenFollowers)
+        StatCell("\u5173\u6ce8", p.following, onOpenFollowing)
         StatCell("\u88ab\u70b9\u4eae", p.beLightCount)
         StatCell("\u88ab\u63a8\u8350", p.beRecommendCount)
     }
 }
 
 @Composable
-private fun StatCell(label: String, value: Int) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun StatCell(label: String, value: Int, onClick: (() -> Unit)? = null) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        // 1.179: 可点（粉丝/关注）时加点击反馈；不可点保持原样（不占额外尺寸）
+        modifier = if (onClick != null) {
+            Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
+        } else Modifier,
+    ) {
         Text(
             formatCount(value),
             fontSize = 16.sp,

@@ -69,8 +69,17 @@ internal fun CommonSubjectsFeed(
     subjects: List<HupuCommonSubject>,
     onOpenSubject: (HupuCommonSubject) -> Unit,
     onOpenItem: (HupuScoreItem) -> Unit,
+    scrollToTopTick: Int = 0,
 ) {
+    // 1.179: 显式持有列表状态。「虎扑评分」每次刷新会整批换新卡，
+    // 刷新完必须回顶——否则会停在刷新前的位置（旧卡已不存在，体验错乱）。
+    // 仅本 feed 回顶；赛事/电竞 tab 走另一分支，不受影响。
+    val listState = rememberLazyListState()
+    LaunchedEffect(scrollToTopTick) {
+        if (scrollToTopTick > 0) listState.scrollToItem(0)
+    }
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp, top = 8.dp, bottom = 140.dp,
         ),

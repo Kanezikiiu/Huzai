@@ -1,8 +1,8 @@
 {
-  "versionCode": 189,
-  "versionName": "1.179",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.179/huzai-1.179-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.179",
-  "changelog": "· 新增色彩主题：6 套强调色（蓝 / 墨绿 / 紫 / 橙 / 红 / 青）+ 动态取色（Android 12+）\n· 消息中心三入口图标跟随主题色\n· 修复聊天页打开时可能不在底部（含图片的会话）的问题\n· 打开软件自动静默检查更新（12 小时节流），关于页仍可手动检查",
+  "versionCode": 190,
+  "versionName": "1.180",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.180/huzai-1.180-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.180",
+  "changelog": "· 虎扑评分刷新后自动回顶（仅该频道，不影响赛事评分）\n· 用户主页点「粉丝 / 关注」可直达「关注」下的对应分组\n· 登录页：系统 WebView 版本过低时给出更新引导\n· 登录页加载失败时显示具体错误与重试入口（判定更严谨，避免误报）",
   "forceUpdate": false
 }

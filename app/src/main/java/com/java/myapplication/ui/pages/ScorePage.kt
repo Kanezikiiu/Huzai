@@ -284,6 +284,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
     var commonSubjects by remember { mutableStateOf<List<HupuCommonSubject>>(emptyList()) }
     var commonLoading by remember { mutableStateOf(false) }
     var commonFailed by remember { mutableStateOf(false) }
+    var commonScrollTick by remember { mutableIntStateOf(0) } // 1.179: 虎扑评分刷新完回顶信号
     var openedCommon by remember { mutableStateOf<HupuCommonSubject?>(null) }
     var commonClosing by remember { mutableStateOf(false) }
     var commonDetailLoading by remember { mutableStateOf(false) }
@@ -347,6 +348,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
             }
             if (list.isNotEmpty()) {
                 commonSubjects = list
+                // 1.179: 刷新（forceNetwork）拿到的是全新一批卡 → 回顶
+                if (forceNetwork) commonScrollTick++
             } else if (commonSubjects.isEmpty()) {
                 commonFailed = true
             }
@@ -597,6 +600,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                             subjects = commonSubjects,
                             onOpenSubject = { openCommon(it) },
                             onOpenItem = { openPlayer(it) },
+                            scrollToTopTick = commonScrollTick,
                         )
                     }
                 }
