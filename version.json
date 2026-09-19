@@ -1,8 +1,8 @@
 {
-  "versionCode": 193,
-  "versionName": "1.183",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.183/huzai-1.183-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.183",
-  "changelog": "· 修复二级页底部残留：安全区较大的机型（如手势区被上报为 47dp）进入二级页后 Tab 栏不再漏出一截\n· 悬浮 Tab 栏按导航模式自适应贴底：手势模式统一 20dp，三键导航仍避开导航按钮，各机型位置一致\n· 统一退场时序：从首页 / 专区 / 评分返回一级页时，Tab 栏弹出与页面滑出同步，「我的」页同款 Q 弹手感",
+  "versionCode": 194,
+  "versionName": "1.184",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.184/huzai-1.184-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.184",
+  "changelog": "· 修复三键导航下悬浮 Tab 栏偏低、与底部导航键同高的问题（导航模式改用导航条高度判定：三键让开按钮，手势仍贴底）",
   "forceUpdate": false
 }

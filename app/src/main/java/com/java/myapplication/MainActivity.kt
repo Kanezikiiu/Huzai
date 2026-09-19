@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -126,14 +125,18 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * 1.183: 悬浮 Tab 栏「栏底到屏幕底」的留白，按导航模式分档：
- * - 手势模式：底部没有可见 UI（只有一条极细手势条），手势区只是系统"预留的拦截区域"，
- *   部分 ROM 还会把它虚报到 ≈47dp（真机实测 safe=47.06 / gesture=47.06 / nav=22.18）。
- *   这类机型只需退到细手势条之上 → 用固定小留白，观感更贴底且各机型一致。
- * - 三键导航：底部是可见的导航按钮，必须让开 → 导航条之上再留一点间距。
+ * 1.183: 悬浮 Tab 栏「栏底到屏幕底」的留白，按底部是否有「可见且可点的系统 UI」分档：
+ * - 三键导航：底部是一排可见、可点的导航按钮，必须让开 → 导航条之上再留一点间距；
+ * - 手势导航：底部只有一条极细手势条（导航条只是系统"预留的拦截区域"，部分 ROM 甚至
+ *   虚报到 ≈47dp，真机实测 safe=47.06 / gesture=47.06 / nav=22.18）→ 贴到极细手势条之上即可。
+ *
+ * 判据用「导航条高度」而不是「systemGestures 是否存在」：**三键模式下系统同样会暴露边缘
+ * 返回手势区**，用 systemGestures 会把三键误判成手势，导致 Tab 栏压低后压在导航按钮上
+ * （真机踩坑）。三键的导航条通常 48dp，手势的只有 16~24dp，用高度阈值区分才可靠。
  */
 private val TAB_GAP_GESTURE = 20.dp
 private val TAB_GAP_BUTTON_EXTRA = 12.dp
+private val TAB_BUTTON_NAV_MIN = 30.dp
 
 @Composable
 fun PocketLedgerApp() {
@@ -192,16 +195,17 @@ fun PocketLedgerApp() {
     val imeBottomPx = WindowInsets.ime.getBottom(insetsDensity)
     // 1.183: 底部留白不再用 safeContent（= max(导航条, 手势区, 可点区, 刘海, IME)）——
     // 手势区在部分 ROM 上虚高到 ≈47dp，会把悬浮栏顶得过高。改为按导航模式分档（见上方常量）。
-    val navBottomPx = WindowInsets.navigationBars.getBottom(insetsDensity)
-    val cutBottomPx = WindowInsets.displayCutout.getBottom(insetsDensity)
-    val gestureBottomPx = WindowInsets.systemGestures.getBottom(insetsDensity)
+    val reservedBottomPx = maxOf(
+        WindowInsets.navigationBars.getBottom(insetsDensity),
+        WindowInsets.displayCutout.getBottom(insetsDensity),
+    )
     // 栏底到屏幕底的实际留白（下面 padding 用它，隐藏位移也用它，两者同源）
-    val bottomPadPx = if (gestureBottomPx > 0) {
-        // 手势模式：贴到细手势条之上，固定留白 → 各机型位置一致
-        maxOf(with(insetsDensity) { TAB_GAP_GESTURE.roundToPx() }, cutBottomPx).toFloat()
+    val bottomPadPx = if (reservedBottomPx >= with(insetsDensity) { TAB_BUTTON_NAV_MIN.roundToPx() }) {
+        // 三键导航：导航条高（通常 48dp）→ 让开可见的导航按钮，再留一点间距
+        (reservedBottomPx + with(insetsDensity) { TAB_GAP_BUTTON_EXTRA.roundToPx() }).toFloat()
     } else {
-        // 三键导航：让开可见的导航按钮
-        (maxOf(navBottomPx, cutBottomPx) + with(insetsDensity) { TAB_GAP_BUTTON_EXTRA.roundToPx() }).toFloat()
+        // 手势导航：导航条只是极细手势条 → 贴底（+ 底部刘海兜底）
+        maxOf(with(insetsDensity) { TAB_GAP_GESTURE.roundToPx() }, reservedBottomPx).toFloat()
     }
 
     Box(Modifier.fillMaxSize()) {
