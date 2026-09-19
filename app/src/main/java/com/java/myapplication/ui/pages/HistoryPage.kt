@@ -337,10 +337,10 @@ fun HistoryPage(onClose: () -> Unit) {
                 loadingMore = threadLoadingMore,
                 closing = threadClosing,
                 onBack = { closeDetail() },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     threadClosing = false
                     openedThread = null
-                    SecondaryPage.exit()
                 },
                 onRefresh = {
                     scope.launch {

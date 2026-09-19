@@ -641,10 +641,10 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
                 loadingMore = threadLoadingMore,
                 closing = threadClosing,
                 onBack = { threadClosing = true },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     threadClosing = false
                     openedThread = null
-                    SecondaryPage.exit()
                 },
                 onRefresh = {
                     scope.launch {

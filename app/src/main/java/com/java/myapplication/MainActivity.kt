@@ -11,11 +11,17 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeContentPadding
+import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
@@ -119,6 +125,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * 1.183: 悬浮 Tab 栏「栏底到屏幕底」的留白，按导航模式分档：
+ * - 手势模式：底部没有可见 UI（只有一条极细手势条），手势区只是系统"预留的拦截区域"，
+ *   部分 ROM 还会把它虚报到 ≈47dp（真机实测 safe=47.06 / gesture=47.06 / nav=22.18）。
+ *   这类机型只需退到细手势条之上 → 用固定小留白，观感更贴底且各机型一致。
+ * - 三键导航：底部是可见的导航按钮，必须让开 → 导航条之上再留一点间距。
+ */
+private val TAB_GAP_GESTURE = 20.dp
+private val TAB_GAP_BUTTON_EXTRA = 12.dp
+
 @Composable
 fun PocketLedgerApp() {
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -172,7 +188,21 @@ fun PocketLedgerApp() {
     }
     // 1.78: IME 底部 insets(组合期读取, 键盘弹出/收起自动重组; 回复框打开时把
     // Tab 栏出屏位移量补上键盘高度, 保证彻底推出屏不卡在键盘上缘)
-    val imeBottomPx = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)
+    val insetsDensity = androidx.compose.ui.platform.LocalDensity.current
+    val imeBottomPx = WindowInsets.ime.getBottom(insetsDensity)
+    // 1.183: 底部留白不再用 safeContent（= max(导航条, 手势区, 可点区, 刘海, IME)）——
+    // 手势区在部分 ROM 上虚高到 ≈47dp，会把悬浮栏顶得过高。改为按导航模式分档（见上方常量）。
+    val navBottomPx = WindowInsets.navigationBars.getBottom(insetsDensity)
+    val cutBottomPx = WindowInsets.displayCutout.getBottom(insetsDensity)
+    val gestureBottomPx = WindowInsets.systemGestures.getBottom(insetsDensity)
+    // 栏底到屏幕底的实际留白（下面 padding 用它，隐藏位移也用它，两者同源）
+    val bottomPadPx = if (gestureBottomPx > 0) {
+        // 手势模式：贴到细手势条之上，固定留白 → 各机型位置一致
+        maxOf(with(insetsDensity) { TAB_GAP_GESTURE.roundToPx() }, cutBottomPx).toFloat()
+    } else {
+        // 三键导航：让开可见的导航按钮
+        (maxOf(navBottomPx, cutBottomPx) + with(insetsDensity) { TAB_GAP_BUTTON_EXTRA.roundToPx() }).toFloat()
+    }
 
     Box(Modifier.fillMaxSize()) {
         // 内容层：四页常驻组合（状态保留、切 Tab 不重建），盖入式转场
@@ -235,10 +265,14 @@ fun PocketLedgerApp() {
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
-                .safeContentPadding()
-                .padding(bottom = 12.dp)
+                // 只用上/水平安全区做避让；底部改为下面的精确留白（避免手势区虚高把栏顶上去）
+                .windowInsetsPadding(
+                    WindowInsets.safeContent.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+                )
+                .padding(bottom = with(insetsDensity) { bottomPadPx.toDp() })
                 .graphicsLayer {
-                    translationY = (size.height + imeBottomPx + 30.dp.toPx()) * tabProgress
+                    // 位移 = 栏高 + 实际底部留白 + 键盘高 + 30dp：任何机型都能彻底送出屏幕
+                    translationY = (size.height + bottomPadPx + imeBottomPx + 30.dp.toPx()) * tabProgress
                 }
         ) {
             GlassBottomTabs(

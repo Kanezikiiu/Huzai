@@ -651,10 +651,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 groups = matchGroups[key] ?: emptyList(),
                 groupMembers = groupMembers,
                 onBack = { closeMatch() },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     detailClosing = false
                     openedMatch = null
-                    SecondaryPage.exit()
                 },
                 onRefresh = {
                     val no = om.scoreBizNo ?: return@MatchDetailOverlay
@@ -680,10 +680,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 loadingMore = commonLoadingMore,
                 closing = commonClosing,
                 onBack = { closeCommon() },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     commonClosing = false
                     openedCommon = null
-                    SecondaryPage.exit()
                 },
                 onRefresh = {
                     scope.launch {
@@ -716,10 +716,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 loading = playerLoading,
                 closing = playerClosing,
                 onBack = { closePlayer() },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     playerClosing = false
                     openedPlayer = null
-                    SecondaryPage.exit()
                 },
                 onRefresh = {
                     scope.launch {

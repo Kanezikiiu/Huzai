@@ -286,11 +286,11 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 selectedSort = selectedSort,
                 onSelectSort = { selectedSort = it },
                 onBack = { closeTopic() },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     overlayClosing = false
                     selectedSort = null
                     openedTopic = null
-                    SecondaryPage.exit()
                 },
                 onFirstLoad = { url, sort ->
                     // 首次进入或切排序：无缓存才加载
@@ -368,10 +368,10 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 loadingMore = threadLoadingMore,
                 closing = threadClosing,
                 onBack = { closeThread() },
+                onExitStart = { SecondaryPage.exit() },
                 onClosed = {
                     threadClosing = false
                     openedThread = null
-                    SecondaryPage.exit()
                 },
                 onRefresh = {
                     scope.launch {
@@ -419,6 +419,8 @@ private fun TopicFeedOverlay(
     selectedSort: String?,
     onSelectSort: (String) -> Unit,
     onBack: () -> Unit,
+    /** 1.183: 退场动画开始即回调——父级据此同步减二级页计数，使 Tab 栏与页面同步 Q 弹回归（与「我的」页二级页同款手感） */
+    onExitStart: () -> Unit = {},
     onClosed: () -> Unit,
     onFirstLoad: (url: String, sort: String?) -> Unit,
     onRefresh: () -> Unit,
@@ -432,6 +434,7 @@ private fun TopicFeedOverlay(
     }
     LaunchedEffect(closing) {
         if (closing) {
+            onExitStart()
             progress.animateTo(0f, tween(280))
             onClosed()
         }

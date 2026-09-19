@@ -424,10 +424,10 @@ private fun FeedContent(
             loadingMore = threadLoadingMore,
             closing = threadClosing,
             onBack = { closeThread() },
+            onExitStart = { SecondaryPage.exit() },
             onClosed = {
                 threadClosing = false
                 openedThread = null
-                SecondaryPage.exit()
             },
             onRefresh = {
                 scope.launch {

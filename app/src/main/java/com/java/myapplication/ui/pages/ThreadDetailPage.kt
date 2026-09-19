@@ -182,6 +182,8 @@ fun ThreadDetailOverlay(
     loadingMore: Boolean,
     closing: Boolean,
     onBack: () -> Unit,
+    /** 1.183: 退场动画开始即回调——父级据此同步减二级页计数，使 Tab 栏与页面同步 Q 弹回归（与「我的」页二级页同款手感） */
+    onExitStart: () -> Unit = {},
     onClosed: () -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
@@ -197,6 +199,7 @@ fun ThreadDetailOverlay(
     LaunchedEffect(Unit) { progress.animateTo(1f, tween(280)) }
     LaunchedEffect(closing) {
         if (closing) {
+            onExitStart()
             progress.animateTo(0f, tween(280))
             onClosed()
         }

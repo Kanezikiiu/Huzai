@@ -22,8 +22,8 @@ android {
         applicationId = "com.huzai.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 192
-        versionName = "1.182"
+        versionCode = 193
+        versionName = "1.183"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
