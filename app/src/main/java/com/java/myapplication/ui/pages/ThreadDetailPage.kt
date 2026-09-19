@@ -187,6 +187,8 @@ fun ThreadDetailOverlay(
     onClosed: () -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    /** 1.185: 排序方向切换（true=最新在前/倒序），父层据此重新加载 */
+    onSortChanged: (Boolean) -> Unit = {},
     /** 点击作者/回复者头像打开用户主页（无 euid 时回调不触发） */
     onOpenUser: (String) -> Unit = {},
     floorStates: MutableMap<String, HupuFloorReplies> = mutableMapOf(),
@@ -211,8 +213,14 @@ fun ThreadDetailOverlay(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     // 翻页哨兵：注意依赖 detail（canLoadMore 不能被 remember 的闭包 stale 捕获）
-    val canLoadMore = detail != null && detail.replyPage < detail.replyTotalPages
-    val shouldLoadMore by remember(detail?.replyPage, loadingMore, detail?.replyTotalPages) {
+    // 1.185: 排序三态 0=默认(正序) 1=最新(倒序) 2=最热(本地按点亮降序)；点击循环（声明上提：可加载性依赖它）
+    var sortMode by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val sortExpectedDesc = sortMode == 1
+    // 切换进行中（数据方向 ≠ 期望方向）时禁止触发翻页，避免旧方向翻页结果与新方向互相覆盖
+    val sortPending = detail?.let { it.descReplies != sortExpectedDesc } == true
+    // 方向感知（倒序从最后一页往前翻）；sortPending 期间不再触发翻页
+    val canLoadMore = detail?.let { !sortPending && (if (it.descReplies) it.replyPage > 1 else it.replyPage < it.replyTotalPages) } == true
+    val shouldLoadMore by remember(detail?.replyPage, loadingMore, detail?.replyTotalPages, detail?.descReplies, sortMode) {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             canLoadMore && !loadingMore && last >= listState.layoutInfo.totalItemsCount - 4
@@ -787,7 +795,24 @@ fun ThreadDetailOverlay(
                             }
                             // Reply toolbar state: only-OP filter + hot sort (stable, applied over keyword filter)
                             var onlyOp by remember { mutableStateOf(false) }
-                            var hotSort by remember { mutableStateOf(false) }
+                            val hotSort = sortMode == 2
+                            // 1.185: 切换排序的加载反馈（否则要等两次请求回来才突变，像卡住）
+                            var sortSwitching by remember { mutableStateOf(false) }
+                            // 1.185c: 期望方向以 sortMode 为准。每次「期望或数据」变化都上报一次意图，
+                            // 父层据此推进序号（丢弃迟到的旧响应）并在方向不一致时才真正加载。
+                            // 可自愈：连点来回闪、迟到乱序响应、二次进入残留旧方向。
+                            LaunchedEffect(sortMode, detail?.descReplies) {
+                                val wantDesc = sortMode == 1
+                                onSortChanged(wantDesc)
+                                sortSwitching = detail != null && detail.descReplies != wantDesc
+                            }
+                            // 兜底：加载失败时避免一直转圈
+                            LaunchedEffect(sortSwitching) {
+                                if (sortSwitching) {
+                                    delay(8000)
+                                    sortSwitching = false
+                                }
+                            }
                             // 乐观楼层 + 服务端楼层合并：page 翻页累积时真 pid
                             // 出现即去重顶替本地副本，不会双份
                             val displayReplies = remember(filteredReplies, onlyOp, hotSort, localReplies, floorCountDelta.toMap()) {
@@ -920,19 +945,29 @@ fun ThreadDetailOverlay(
                                                 .clickable { onlyOp = !onlyOp }
                                                 .padding(horizontal = 12.dp, vertical = 6.dp),
                                         )
-                                        Text(
-                                            if (hotSort) "\u6700\u70ed" else "\u9ed8\u8ba4\u987a\u5e8f",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(14.dp))
-                                                .background(
-                                                    MaterialTheme.colorScheme.surface
-                                                )
-                                                .clickable { hotSort = !hotSort }
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .clickable { sortMode = (sortMode + 1) % 3 }
                                                 .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        )
+                                        ) {
+                                            if (sortSwitching) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(12.dp),
+                                                    strokeWidth = 1.5.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+                                            Text(
+                                                when (sortMode) { 0 -> "\u9ed8\u8ba4\u987a\u5e8f"; 1 -> "\u6700\u65b0"; else -> "\u6700\u70ed" },
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                     }
                                 }
                                 items(displayReplies, key = { it.pid }) { r ->

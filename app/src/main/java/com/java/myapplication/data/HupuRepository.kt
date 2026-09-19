@@ -55,6 +55,42 @@ class HupuRepository {
         return withContext(Dispatchers.Default) { HupuParser.parseThreadDetail(html) }
     }
 
+    /** 1.185: 方向感知——是否还有更多回复 */
+    fun hasMoreReplies(cur: HupuThreadDetail): Boolean =
+        if (cur.descReplies) cur.replyPage > 1 else cur.replyPage < cur.replyTotalPages
+
+    /** 1.185: 首屏/切向——desc=true 时从最后一页取（页内反转），正序同 threadDetail */
+    suspend fun threadDetailDirected(tid: String, desc: Boolean, refresh: Boolean = false): HupuThreadDetail? {
+        val base = threadDetail(tid, refresh) ?: return null
+        if (!desc) return base.copy(descReplies = false)
+        val total = base.replyTotalPages
+        if (total <= 1) return base.copy(replies = base.replies.reversed(), descReplies = true)
+        val last = threadReplies(tid, total) ?: return base.copy(descReplies = true)
+        return base.copy(replies = last.replies.reversed(), replyPage = total, descReplies = true)
+    }
+
+    /** 1.185: 方向感知翻页（倒序递减）。返回 null = 无更多 */
+    suspend fun threadRepliesNext(tid: String, cur: HupuThreadDetail): HupuThreadDetail? {
+        val total = cur.replyTotalPages
+        val next = if (cur.descReplies) cur.replyPage - 1 else cur.replyPage + 1
+        if (next < 1 || next > total) return null
+        return threadReplies(tid, next)?.let {
+            it.copy(replies = if (cur.descReplies) it.replies.reversed() else it.replies, descReplies = cur.descReplies)
+        }
+    }
+
+    /** 1.185: 仅切换回帖方向——保留主楼与统计（thread），只替换 replies，避免数字抖动 */
+    suspend fun repliesDirected(tid: String, base: HupuThreadDetail, desc: Boolean): HupuThreadDetail? {
+        if (!desc) {
+            val p1 = threadReplies(tid, 1) ?: return null
+            return base.copy(replies = p1.replies, replyPage = 1, descReplies = false)
+        }
+        val total = base.replyTotalPages
+        if (total <= 1) return base.copy(replies = base.replies.reversed(), descReplies = true)
+        val last = threadReplies(tid, total) ?: return null
+        return base.copy(replies = last.replies.reversed(), replyPage = total, descReplies = true)
+    }
+
     /** 用户主页（资料卡 + 主题帖/回帖首屏，SSR 一次请求） */
     // ---------- PC 个人中心（my.hupu.com 契约，登录态） ----------
 

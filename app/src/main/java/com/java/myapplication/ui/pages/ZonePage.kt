@@ -143,6 +143,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
     var threadClosing by remember { mutableStateOf(false) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadLoadingMore by remember { mutableStateOf(false) }
+    var threadSortSeq by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val threadDetails = remember { mutableStateMapOf<String, HupuThreadDetail>() }
 
     // ---------- 楼中楼（数据外置缓存；打开瞬间同步置 loading） ----------
@@ -178,27 +179,28 @@ fun ZonePage(modifier: Modifier = Modifier) {
     LaunchedEffect(openedThread?.tid) {
         val t = openedThread ?: return@LaunchedEffect
         val tid = t.tid
+        val mySeq = threadSortSeq
         if (threadDetails.containsKey(tid)) {
             val old = threadDetails[tid]
             val fresh = repo.threadDetail(tid, refresh = true)
-            if (fresh != null && openedThread?.tid == tid) {
+            if (fresh != null && openedThread?.tid == tid && mySeq == threadSortSeq) {
                 threadDetails[tid] = repo.mergeThreadDetail(old, fresh)
             }
         } else {
             threadLoading = true
             val cached = repo.threadDetailCached(tid)
-            if (cached != null && openedThread?.tid == tid) {
+            if (cached != null && openedThread?.tid == tid && mySeq == threadSortSeq) {
                 threadDetails[tid] = cached
                 threadLoading = false
                 val fresh = repo.threadDetail(tid, refresh = true)
-                if (fresh != null && openedThread?.tid == tid) {
+                if (fresh != null && openedThread?.tid == tid && mySeq == threadSortSeq) {
                     threadDetails[tid] = repo.mergeThreadDetail(threadDetails[tid], fresh)
                 }
             } else {
                 delay(300)
                 if (threadDetails.containsKey(tid)) return@LaunchedEffect
                 val d = repo.threadDetail(tid)
-                if (d != null) threadDetails[tid] = d
+                if (d != null && mySeq == threadSortSeq) threadDetails[tid] = d
                 if (openedThread?.tid == tid) threadLoading = false
             }
         }
@@ -374,24 +376,39 @@ fun ZonePage(modifier: Modifier = Modifier) {
                     openedThread = null
                 },
                 onRefresh = {
+                    val mySeq = threadSortSeq
                     scope.launch {
                         threadLoading = true
-                        val nd = repo.threadDetail(ot.tid, refresh = true)
-                        if (nd != null) threadDetails[ot.tid] = repo.mergeThreadDetail(threadDetails[ot.tid], nd)
+                        val cur = threadDetails[ot.tid]
+                        val desc = cur?.descReplies == true
+                        val nd = repo.threadDetailDirected(ot.tid, desc, refresh = true)
+                        if (nd != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) threadDetails[ot.tid] = if (desc) nd else repo.mergeThreadDetail(cur, nd)
                         threadLoading = false
                     }
                 },
                 onLoadMore = {
                     val cur = threadDetails[ot.tid] ?: return@ThreadDetailOverlay
-                    if (threadLoadingMore || cur.replyPage >= cur.replyTotalPages) return@ThreadDetailOverlay
+                    if (threadLoadingMore || !repo.hasMoreReplies(cur)) return@ThreadDetailOverlay
+                    val mySeq = threadSortSeq
                     scope.launch {
                         threadLoadingMore = true
-                        val next = repo.threadReplies(ot.tid, cur.replyPage + 1)
-                        if (next != null) {
+                        val next = repo.threadRepliesNext(ot.tid, cur)
+                        if (next != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) {
                             val merged = (cur.replies + next.replies).distinctBy { it.pid }
                             threadDetails[ot.tid] = next.copy(replies = merged)
                         }
                         threadLoadingMore = false
+                    }
+                },
+                onSortChanged = { desc ->
+                    // 1.185c: 每次意图推进序号——迟到的旧响应据此被丢弃（连点不再来回闪）
+                    val mySeq = ++threadSortSeq
+                    val cur = threadDetails[ot.tid]
+                    if (cur != null && cur.descReplies != desc) {
+                        scope.launch {
+                            val d = repo.repliesDirected(ot.tid, cur, desc)
+                            if (d != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) threadDetails[ot.tid] = d
+                        }
                     }
                 },
                 floorStates = floorStates,

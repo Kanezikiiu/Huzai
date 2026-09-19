@@ -141,6 +141,8 @@ data class HupuThreadDetail(
     val replyCount: Int,
     val replyPage: Int,
     val replyTotalPages: Int,
+    /** 1.185: 回复展示方向（true=最新在前，倒序分页）；默认 false=正序 */
+    val descReplies: Boolean = false,
     val isLocked: Boolean = false,
     /** 1.119: 正文里的投票（无投票帖为 null） */
     val vote: HupuVote? = null,
