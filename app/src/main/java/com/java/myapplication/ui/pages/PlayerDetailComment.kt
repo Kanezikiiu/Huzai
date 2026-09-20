@@ -119,7 +119,7 @@ internal fun CommentRow(
     /** 1.163: 点作者头像/昵称进入用户主页（userId 为空时不响应） */
     onOpenUser: (String) -> Unit = {},
     onOpenSub: (HupuScoreComment) -> Unit = {},
-    onImageClick: (String) -> Unit = {},
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     onLight: () -> Unit = {},
     lightState: Map<String, Boolean> = emptyMap(),
     onReply: () -> Unit = {},
@@ -176,7 +176,7 @@ internal fun CommentRow(
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
-        c.images.forEach { img ->
+        c.images.forEachIndexed { i, img ->
             AsyncImage(
                 model = normalizeImageUrl(img),
                 contentDescription = null,
@@ -185,7 +185,7 @@ internal fun CommentRow(
                     .widthIn(max = 320.dp)
                     .heightIn(max = 320.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { onImageClick(img) },
+                    .clickable { onImageClick(c.images, i) },
             )
             Spacer(Modifier.height(6.dp))
         }
@@ -318,7 +318,7 @@ internal fun SubCommentRow(
     grandState: GrandExpandState = GrandExpandState(),
     grandLoading: Boolean = false,
     onExpandGrand: () -> Unit = {},
-    onImageClick: (String) -> Unit = {},
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     onLight: () -> Unit = {},
     onLightGrand: (HupuScoreComment) -> Unit = {},
     lightState: Map<String, Boolean> = emptyMap(),
@@ -366,7 +366,7 @@ internal fun SubCommentRow(
             lineHeight = 19.sp,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        sub.images.forEach { img ->
+        sub.images.forEachIndexed { i, img ->
             AsyncImage(
                 model = normalizeImageUrl(img),
                 contentDescription = null,
@@ -375,7 +375,7 @@ internal fun SubCommentRow(
                     .widthIn(max = 300.dp)
                     .heightIn(max = 300.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { onImageClick(img) },
+                    .clickable { onImageClick(sub.images, i) },
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -81,6 +81,7 @@ import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.TopicFeedState
 import com.java.myapplication.ui.components.normalizeCover
+import com.java.myapplication.ui.components.tabSwipeSwitch
 
 /**
  * 专区页：13 大类 → 版块网格（3 列）→ 版块话题流（盖入式二级页）。
@@ -240,9 +241,26 @@ fun ZonePage(modifier: Modifier = Modifier) {
     }
     val opened = openedTopic
 
+    // 1.186: 顶部大类 Tab 左右滑动切换（仅本大页面内）
+    val cateIds = remember(categories) { categories?.map { it.cateId } ?: emptyList() }
+    fun swipeCate(delta: Int) {
+        val cur = cateIds.indexOf(selectedCateId)
+        if (cur < 0) return
+        val ni = cur + delta
+        if (ni !in cateIds.indices) return
+        selectedCateId = cateIds[ni]
+    }
+
     Box(modifier.fillMaxSize()) {
         // ---------- 一级页 ----------
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .tabSwipeSwitch(
+                    onPrevious = { swipeCate(-1) },
+                    onNext = { swipeCate(1) },
+                ),
+        ) {
             PageHeader(title = "专区")
             when {
                 categories == null && loading -> SkeletonHome()

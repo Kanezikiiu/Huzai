@@ -370,7 +370,8 @@ internal fun CommentImage(
 internal fun HtmlContent(
     html: String,
     modifier: Modifier = Modifier,
-    onImageClick: (String) -> Unit = {},
+    /** 1.186: 回传「本条消息内的全部图片 + 被点图片下标」，支持全屏查看时左右切换 */
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     /** 1.122: 正文内联投票（主楼传入；回复 HTML 不传） */
     vote: HupuVote? = null,
     onToast: (String) -> Unit = {},
@@ -379,11 +380,15 @@ internal fun HtmlContent(
     val primary = MaterialTheme.colorScheme.primary
     val fs = remember(HupuPrefs.fontScaleVersion) { HupuPrefs.loadFontScale() }
     val blocks = remember(html) { parseHtmlBlocks(html) }
+    // 1.186: 本条消息内的全部图片（与正文渲染同序）——全屏查看时可在其中左右切换
+    val imageUrls = remember(blocks) { blocks.filterIsInstance<HtmlBlock.Image>().map { it.url } }
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEach { b ->
+        blocks.forEachIndexed { bi, b ->
             when (b) {
                 is HtmlBlock.Image -> {
+                    // 1.186: 被点图片在本条消息图片集合中的下标（供多图全屏左右切换）
+                    val imgIndex = blocks.subList(0, bi).count { it is HtmlBlock.Image }
                     // 图片自适应：虎扑 CDN 图片 URL 自带真实像素尺寸（…_o_w_107_h_132_…），
                     // 直接从 URL 解析出固有宽高（无需等待网络加载），按内容宽度等比缩放：
                     // - 小图/表情包按真实尺寸显示（不放大到全宽）
@@ -408,7 +413,7 @@ internal fun HtmlContent(
                                     .clip(RoundedCornerShape(8.dp)),
                                 url = b.url,
                                 contentScale = ContentScale.Fit,
-                                onClick = { onImageClick(b.url) },
+                                onClick = { onImageClick(imageUrls, imgIndex) },
                             )
                         }
                     } else {
@@ -428,7 +433,7 @@ internal fun HtmlContent(
                                     .clip(RoundedCornerShape(8.dp)),
                                 url = b.url,
                                 contentScale = ContentScale.Fit,
-                                onClick = { onImageClick(b.url) },
+                                onClick = { onImageClick(imageUrls, imgIndex) },
                             )
                         }
                     }

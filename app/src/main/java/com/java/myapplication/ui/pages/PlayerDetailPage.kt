@@ -200,9 +200,9 @@ fun PlayerDetailOverlay(
     onReplyPanelToKeyboard: () -> Unit = {},
 ) {
     // 1.64 打分结果提示条（点击消失；2600ms 自动清除由 ScorePage 侧管理）
-    // 图片全屏查看器（盖过页面/楼中楼一切层级；单击/返回键/关闭按钮退出）
-    var viewerUrl by remember { mutableStateOf<String?>(null) }
-    val openImage: (String) -> Unit = { url -> viewerUrl = url }
+    // 图片全屏查看器（盖过页面/楼中楼一切层级；单击/返回键/关闭按钮退出；1.186: 同一条消息内可左右切换）
+    var viewer by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    val openImage: (List<String>, Int) -> Unit = { urls, i -> viewer = urls to i }
     // 1.163: 评分评论作者 → 用户主页（盖入式叠层；未登录给提示，与帖子详情同款交互）
     val userPageStack = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var userToast by remember { mutableStateOf<String?>(null) }
@@ -830,8 +830,8 @@ fun PlayerDetailOverlay(
             }
         }
         // 图片全屏查看器：盖过一切（页面 + 楼中楼）
-        viewerUrl?.let { url ->
-            com.java.myapplication.ui.components.ImageViewer(url = url) { viewerUrl = null }
+        viewer?.let { (urls, i) ->
+            com.java.myapplication.ui.components.ImageViewer(urls = urls, initialIndex = i) { viewer = null }
         }
     }
 }

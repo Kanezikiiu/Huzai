@@ -430,7 +430,7 @@ internal fun ThreadReplyBox(
 internal fun ReplyRow(
     r: HupuReply,
     onOpenFloor: () -> Unit,
-    onImageClick: (String) -> Unit = {},
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     onLight: () -> Unit = {},
     isLit: Boolean = false,
     onOpenUser: (String) -> Unit = {},

@@ -139,7 +139,7 @@ fun SubCommentSheet(
     onSortChange: (String) -> Unit = {},
     onRetry: () -> Unit = {},
     onExpandGrand: (HupuScoreComment) -> Unit = {},
-    onImageClick: (String) -> Unit = {},
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     onLightComment: (HupuScoreComment) -> Unit = {},
     lightState: Map<String, Boolean> = emptyMap(),
     /** (root 母评论, target 被回复评论) */
@@ -329,7 +329,7 @@ fun SubCommentSheet(
                                             color = MaterialTheme.colorScheme.onSurface,
                                             lineHeight = 20.sp,
                                         )
-                                        sheet.parent.images.forEach { img ->
+                                        sheet.parent.images.forEachIndexed { i, img ->
                                             AsyncImage(
                                                 model = normalizeImageUrl(img),
                                                 contentDescription = null,
@@ -338,7 +338,7 @@ fun SubCommentSheet(
                                                     .widthIn(max = 320.dp)
                                                     .heightIn(max = 320.dp)
                                                     .clip(RoundedCornerShape(10.dp))
-                                                    .clickable { onImageClick(img) },
+                                                    .clickable { onImageClick(sheet.parent.images, i) },
                                             )
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {

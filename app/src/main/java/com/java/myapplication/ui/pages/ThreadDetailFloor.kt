@@ -179,7 +179,7 @@ internal fun FloorSheet(
     onClosed: () -> Unit,
     onLoadMore: (HupuFloorReplies) -> Unit,
     onOpenSub: (HupuSubReply) -> Unit,
-    onImageClick: (String) -> Unit = {},
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     onOpenUser: (String) -> Unit = {},
     onQuoteReply: (String, String) -> Unit = { _, _ -> },
     onLightSub: (String, String) -> Unit = { _, _ -> },
@@ -425,7 +425,7 @@ internal fun FloorSheet(
 
 /** 楼中楼一条子回复（nestedCount>0 时整卡可点，压栈展开深层） */
 @Composable
-internal fun SubReplyRow(sub: HupuSubReply, onExpand: () -> Unit, onImageClick: (String) -> Unit = {}, onOpenUser: (String) -> Unit = {}, onQuoteReply: () -> Unit = {}, onLight: () -> Unit = {}, isLit: Boolean = false) {
+internal fun SubReplyRow(sub: HupuSubReply, onExpand: () -> Unit, onImageClick: (List<String>, Int) -> Unit = { _, _ -> }, onOpenUser: (String) -> Unit = {}, onQuoteReply: () -> Unit = {}, onLight: () -> Unit = {}, isLit: Boolean = false) {
     Column(
         Modifier
             .fillMaxWidth()

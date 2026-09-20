@@ -310,8 +310,31 @@ private fun FeedContent(
         refreshTick++
     }
 
+    // 1.186: 顶部 Tab 左右滑动切换（仅本大页面内；顺序与横滑条一致：「热帖」+ 各话题）
+    val tabUrls = remember(effectiveTopics) { listOf("hot") + effectiveTopics.map { it.url } }
+    fun swipeTab(delta: Int) {
+        val cur = tabUrls.indexOf(selected).let { if (it >= 0) it else 0 }
+        val ni = cur + delta
+        if (ni !in tabUrls.indices) return
+        val target = tabUrls[ni]
+        if (target == selected) return
+        if (target == "hot") {
+            selected = "hot"
+        } else {
+            selected = target
+            selectedSort = null
+        }
+    }
+
     Box(modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .tabSwipeSwitch(
+                onPrevious = { swipeTab(-1) },
+                onNext = { swipeTab(1) },
+            ),
+    ) {
         PageHeader(title = "虎扑") {
             Box(
                 Modifier

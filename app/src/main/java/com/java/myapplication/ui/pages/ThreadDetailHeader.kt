@@ -287,7 +287,7 @@ internal fun MainPost(
     host: VideoHost,
     isFullscreen: Boolean,
     onToggleFullscreen: (Boolean) -> Unit,
-    onImageClick: (String) -> Unit = {},
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
     isRecommended: Boolean = false,
     recommendCount: Int = 0,
     onRecommend: (Boolean) -> Unit = {},

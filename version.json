@@ -1,8 +1,8 @@
 {
-  "versionCode": 195,
-  "versionName": "1.185",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.185/huzai-1.185-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.185",
-  "changelog": "· 帖子详情新增「最新」排序：回复列表可在「默认 / 最新 / 最热」之间循环切换，按时间倒序浏览（最新回复在前）",
+  "versionCode": 196,
+  "versionName": "1.186",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.186/huzai-1.186-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.186",
+  "changelog": "· 图片全屏查看支持在同一条消息内左右滑动切换（未放大时横滑翻页，放大后横滑用于平移）· 首页 / 专区 / 评分三个页面的顶部 Tab 支持左右滑动切换",
   "forceUpdate": false
 }

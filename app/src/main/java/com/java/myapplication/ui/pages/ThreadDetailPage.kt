@@ -681,9 +681,9 @@ fun ThreadDetailOverlay(
         }
     }
 
-    // 图片全屏查看器（正文/回复/楼中楼内任意图片点击进入）
-    var imageViewerUrl by remember { mutableStateOf<String?>(null) }
-    val openImage: (String) -> Unit = { url -> imageViewerUrl = url }
+    // 图片全屏查看器（正文/回复/楼中楼内任意图片点击进入；1.186: 同一条消息内可左右切换）
+    var imageViewer by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    val openImage: (List<String>, Int) -> Unit = { urls, i -> imageViewer = urls to i }
     // 1.178: 结构化正文（赛事战报等）承载页
     var embedPage by remember { mutableStateOf<com.java.myapplication.data.HupuEmbed?>(null) }
 
@@ -1422,8 +1422,8 @@ fun ThreadDetailOverlay(
             }
         }
         // 图片全屏查看器（zIndex 10 盖过一切层级；点击图片任意处进入，单击/返回键/关闭按钮退出）
-        imageViewerUrl?.let { url ->
-            com.java.myapplication.ui.components.ImageViewer(url = url) { imageViewerUrl = null }
+        imageViewer?.let { (urls, i) ->
+            com.java.myapplication.ui.components.ImageViewer(urls = urls, initialIndex = i) { imageViewer = null }
         }
         // 1.178: 结构化正文（赛事战报等）承载页——盖入式二级页，按 url 键控（重开重建 WebView）
         embedPage?.let { e ->

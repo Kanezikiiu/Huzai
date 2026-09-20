@@ -74,6 +74,7 @@ import com.java.myapplication.ui.components.PageHeader
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.normalizeCover
+import com.java.myapplication.ui.components.tabSwipeSwitch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -543,8 +544,37 @@ fun ScorePage(modifier: Modifier = Modifier) {
         if (loadingGame == selectedGame) loadingGame = null
     }
 
+    // 1.186: 顶部 Tab 左右滑动切换（仅本大页面内；顺序与横滑条一致：虎扑评分 + 各赛事项目）
+    fun swipeScoreTab(delta: Int) {
+        val cur = if (commonOpen) 0 else {
+            val i = effectiveGames.indexOfFirst { it.first == selectedGame }
+            if (i < 0) 0 else i + 1
+        }
+        val ni = cur + delta
+        if (ni < 0 || ni > effectiveGames.size) return
+        if (ni == 0) {
+            if (commonOpen) return
+            commonOpen = true
+            if (commonSubjects.isEmpty() && !commonFailed) commonLoading = true
+            if (commonSubjects.isEmpty()) loadCommonSubjects()
+        } else {
+            val id = effectiveGames[ni - 1].first
+            if (!commonOpen && selectedGame == id) return
+            commonOpen = false
+            selectedGame = id
+            if (!schedules.containsKey(id)) loadingGame = id
+        }
+    }
+
     Box(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .tabSwipeSwitch(
+                    onPrevious = { swipeScoreTab(-1) },
+                    onNext = { swipeScoreTab(1) },
+                ),
+        ) {
             PageHeader(title = "评分")
         // 项目横滑条（与首页/专区同款裁剪）——首项为通用评分（虎扑评分，非赛事体系）
         val barState = rememberLazyListState()
