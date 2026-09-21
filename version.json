@@ -1,8 +1,8 @@
 {
-  "versionCode": 196,
-  "versionName": "1.186",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.186/huzai-1.186-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.186",
-  "changelog": "· 图片全屏查看支持在同一条消息内左右滑动切换· 首页 / 专区 / 评分三个页面的顶部 Tab 支持左右滑动切换",
+  "versionCode": 197,
+  "versionName": "1.187",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.187/huzai-1.187-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.187",
+  "changelog": "· 帖子详情页与评分评价页的用户名统一跟随主题色（原先仅楼主有主题色）· 新增「iOS 蓝」色彩主题（共 7 套），底部 Tab 栏选中色跟随主题色· 评分频道自定义改为自适应标签流（长按仍可拖动排序）· 修复评分卡片在主题无简介时多渲染出一行 null 字样",
   "forceUpdate": false
 }

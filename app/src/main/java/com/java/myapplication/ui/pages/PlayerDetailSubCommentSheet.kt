@@ -307,7 +307,7 @@ fun SubCommentSheet(
                                                 sheet.parent.userName,
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurface,
+                                                color = MaterialTheme.colorScheme.primary,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier

@@ -151,7 +151,7 @@ internal fun CommentRow(
                 c.userName,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -352,7 +352,7 @@ internal fun SubCommentRow(
                 sub.userName,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -456,7 +456,7 @@ internal fun SubCommentRow(
                             grand.userName,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier

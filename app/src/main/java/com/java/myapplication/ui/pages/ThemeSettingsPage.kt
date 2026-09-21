@@ -309,10 +309,12 @@ private fun AccentDot(
                     if (brush != null) Modifier.background(brush)
                     else Modifier.background(color ?: Color.Gray)
                 )
+                // 1.187: 选中描边不再取主题色。此前「亮色填充 + 主题色描边」会让同一颗圆点上
+                // 出现两个蓝（如蓝套：#0A84FF 填充 + #00639A 描边），像并存两套配色；
+                // 现统一中性描边，选中态只靠加粗 + 对勾表达。
                 .border(
                     width = if (selected) 2.dp else 1.dp,
-                    color = if (selected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f),
                     shape = CircleShape,
                 )
                 .clickable(onClick = onClick),

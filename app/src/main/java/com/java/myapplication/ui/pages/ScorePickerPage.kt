@@ -11,7 +11,8 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,14 +25,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
@@ -208,50 +207,49 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
             )
-            // 全部项目网格（3 列，勾选态高亮）
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
-                ),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            // 1.187: 全部项目改为自适应 chip 流（FlowRow），与「浏览流关键词」同款形态。
+            // 旧版固定 3 列等宽胶囊有两个毛病：
+            //   ① 名称 2~4 字宽窄不一（英超 / 网球 vs 王者荣耀），等宽格子里短名大量留白；
+            //   ② 勾选时在胶囊内插入 16dp 对勾 → 文字被挤位移，并引发整行重排。
+            // 现在 chip 宽度由文字决定，选中态只用「实心填充 + 白字」表达（不再插入对勾），
+            // 因此点击选中 / 取消时 chip 尺寸恒定：不位移、不重排，只有颜色变化。
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp),
             ) {
-                items(games, key = { it.first }) { (id, name) ->
-                    val checked = id in selected
-                    Box(
-                        Modifier
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
-                            .border(
-                                width = 1.dp,
-                                color = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                shape = RoundedCornerShape(22.dp),
-                            )
-                            .clickable { toggle(id) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (checked) {
-                                Icon(
-                                    Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(16.dp),
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    games.forEach { (id, name) ->
+                        val checked = id in selected
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = RoundedCornerShape(999.dp),
                                 )
-                                Spacer(Modifier.width(4.dp))
-                            }
+                                .clickable { toggle(id) }
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text(
                                 name,
                                 fontSize = 13.sp,
+                                fontWeight = if (checked) FontWeight.Medium else FontWeight.Normal,
                                 color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                             )
                         }
                     }
                 }
+                // 底部留白（等价于旧网格 contentPadding 的 bottom = 140.dp）
+                Spacer(Modifier.height(140.dp))
             }
         }
     }

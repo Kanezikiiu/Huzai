@@ -48,11 +48,25 @@ data class AccentPalette(
 val AccentPalettes: List<AccentPalette> = listOf(
     AccentPalette(
         id = "blue", label = "蓝",
-        swatch = Color(0xFF0A84FF),
+        // 1.187: 原为 iOS 亮蓝 #0A84FF——与本套实际应用的 #00639A 差 ΔE 17.2，
+        // 同一颗圆点上像并存两个不同的蓝。现 iOS 亮蓝已单独成一套主题，
+        // 这里改回本套的实际色感，做到「色块 ≈ 应用色」。
+        swatch = Color(0xFF00639A),
         lightPrimary = Color(0xFF00639A), lightOnPrimary = Color(0xFFFFFFFF),
         lightPrimaryContainer = Color(0xFFCCE5FF), lightOnPrimaryContainer = Color(0xFF001D33),
         darkPrimary = Color(0xFF97CBFF), darkOnPrimary = Color(0xFF003254),
         darkPrimaryContainer = Color(0xFF004A77), darkOnPrimaryContainer = Color(0xFFCCE5FF),
+    ),
+    AccentPalette(
+        id = "ios", label = "iOS蓝",
+        // 1.187: iOS 系统蓝。swatch 取 iOS 亮蓝（也是「蓝」套沿用至今的品牌亮色），
+        // primary 取同色相的 tone40 档：纯 #0A84FF 用白底小字只有 4.0:1，
+        // 压到 #0A6CE0 后对 #F7F9FC 达 4.7:1、对纯白 4.96:1，观感仍是 iOS 蓝。
+        swatch = Color(0xFF0A84FF),
+        lightPrimary = Color(0xFF0A6CE0), lightOnPrimary = Color(0xFFFFFFFF),
+        lightPrimaryContainer = Color(0xFFCCE4FF), lightOnPrimaryContainer = Color(0xFF001B3D),
+        darkPrimary = Color(0xFF8CC2FF), darkOnPrimary = Color(0xFF00305F),
+        darkPrimaryContainer = Color(0xFF00468A), darkOnPrimaryContainer = Color(0xFFD3E4FF),
     ),
     AccentPalette(
         id = "teal", label = "墨绿",

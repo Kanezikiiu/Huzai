@@ -470,7 +470,7 @@ internal fun ReplyRow(
                 r.author?.name ?: "虎扑JR",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (r.isStarter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),

@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -67,9 +68,10 @@ fun GlassBottomTabs(
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = !isAppDarkTheme()
-    val accentColor =
-        if (isLightTheme) Color(0xFF0088FF)
-        else Color(0xFF0091FF)
+    // 1.187: 选中色跟随色彩主题。此前是按 iOS 系统蓝写死的 #0088FF / #0091FF，
+    // 于是换任何主题时底部 Tab 栏恒为蓝色、且与主题色并非同一个蓝。
+    // 取 colorScheme.primary 后：浅色/深色档由主题自动切换，换主题即时生效。
+    val accentColor = MaterialTheme.colorScheme.primary
     val containerColor =
         if (isLightTheme) Color(0xFFFAFAFA).copy(0.4f)
         else Color(0xFF121212).copy(0.4f)

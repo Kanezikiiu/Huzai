@@ -299,7 +299,7 @@ internal fun FloorSheet(
                                                 parent.author?.name ?: "虎扑JR",
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = if (parent.isStarter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                color = MaterialTheme.colorScheme.primary,
                                             )
                                             if (parent.isStarter) {
                                                 Spacer(Modifier.width(4.dp))
@@ -460,7 +460,7 @@ internal fun SubReplyRow(sub: HupuSubReply, onExpand: () -> Unit, onImageClick: 
                 sub.author?.name ?: "虎扑JR",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (sub.isStarter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
