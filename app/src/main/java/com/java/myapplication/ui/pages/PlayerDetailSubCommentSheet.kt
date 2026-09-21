@@ -330,7 +330,7 @@ fun SubCommentSheet(
                                             lineHeight = 20.sp,
                                         )
                                         sheet.parent.images.forEachIndexed { i, img ->
-                                            AsyncImage(
+                                            CommentAsyncImageCompact(
                                                 model = normalizeImageUrl(img),
                                                 contentDescription = null,
                                                 contentScale = ContentScale.Fit,

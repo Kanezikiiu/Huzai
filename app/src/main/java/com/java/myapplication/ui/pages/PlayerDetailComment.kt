@@ -177,7 +177,7 @@ internal fun CommentRow(
             )
         }
         c.images.forEachIndexed { i, img ->
-            AsyncImage(
+            CommentAsyncImageCompact(
                 model = normalizeImageUrl(img),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
@@ -268,7 +268,7 @@ internal fun CommentRow(
                     if (sub.images.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             sub.images.take(3).forEach { img ->
-                                AsyncImage(
+                                CommentAsyncImage(
                                     model = normalizeImageUrl(img),
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
@@ -367,7 +367,7 @@ internal fun SubCommentRow(
             color = MaterialTheme.colorScheme.onSurface,
         )
         sub.images.forEachIndexed { i, img ->
-            AsyncImage(
+            CommentAsyncImageCompact(
                 model = normalizeImageUrl(img),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,

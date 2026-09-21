@@ -99,6 +99,7 @@ import androidx.compose.ui.platform.LocalView
 import android.content.pm.ActivityInfo
 import android.app.Activity
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -339,13 +340,21 @@ internal fun CommentImage(
     imageModifier: Modifier,
     contentScale: ContentScale,
     onClick: () -> Unit,
+    /**
+     * 1.188: 加载态占位修饰符。调用点已有确定尺寸（URL 固有尺寸已算好 / 固定尺寸）时
+     * 用默认的 fillMaxSize()；只有 max 约束、加载前尺寸为 0 的兜底分支传
+     * Modifier.commentImageLoadingBox(corner)，用紧凑占位把位置撑起来。
+     */
+    loadingModifier: Modifier = Modifier.fillMaxSize(),
 ) {
     val rectRef = remember { RectRef() }
     Box {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = model,
             contentDescription = null,
             contentScale = contentScale,
+            loading = { ImageLoadingBox(loadingModifier) },
+            error = { ImageErrorBox(loadingModifier) },
             modifier = imageModifier
                 .onGloballyPositioned { rectRef.value = it.boundsInRoot() }
                 .combinedClickable(
@@ -431,6 +440,7 @@ internal fun HtmlContent(
                                     .widthIn(max = maxW)
                                     .heightIn(max = 320.dp)
                                     .clip(RoundedCornerShape(8.dp)),
+                                loadingModifier = Modifier.commentImageLoadingBox(8.dp),
                                 url = b.url,
                                 contentScale = ContentScale.Fit,
                                 onClick = { onImageClick(imageUrls, imgIndex) },

@@ -11,14 +11,15 @@ import org.json.JSONObject
  * 数据源为仓库根目录的 `version.json`（匿名可读；仓库转 public 后生效）：
  * ```json
  * {
- *   "versionCode": 187,
- *   "versionName": "1.177",
- *   "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.177/huzai-1.177-release.apk",
- *   "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.177",
- *   "changelog": "· 新增检查更新…",
+ *   "versionCode": 198,
+ *   "versionName": "1.188",
+ *   "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.188/huzai-1.188-release.apk",
+ *   "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.188",
+ *   "changelog": ["· 第一条更新说明", "· 第二条更新说明"],
  *   "forceUpdate": false
  * }
  * ```
+ * `changelog` 自 1.188 起为**数组**（源文件一眼可读、无需转义换行）；旧版字符串写法仍兼容。
  *
  * 为什么不用 GitHub API `releases/latest`：该接口**不返回 versionCode**（只有 tag_name），
  * 且匿名限流 60 次/小时；自建 `version.json` 可控、可携带版本号 / 更新说明 / 强制更新标记。
@@ -37,6 +38,9 @@ data class HupuUpdateInfo(
  * 字段缺失或非法（versionCode<=0 或 versionName 为空）时返回 null，由调用方静默处理。
  */
 object HupuUpdateParser {
+    /** 更新说明条目的前缀圆点（用转义写，避免多字节字面量在管道里被归一化） */
+    private const val BULLET = '\u00B7'
+
     fun parse(json: String): HupuUpdateInfo? {
         return try {
             val o = JSONObject(json)
@@ -48,12 +52,40 @@ object HupuUpdateParser {
                 versionName = name,
                 apkUrl = o.optString("apkUrl").trim(),
                 releaseUrl = o.optString("releaseUrl").trim(),
-                changelog = o.optString("changelog").trim(),
+                changelog = readChangelog(o),
                 forceUpdate = o.optBoolean("forceUpdate", false),
             )
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 1.188: 读取更新说明，统一归一化为「逐条成行」的字符串。
+     *
+     * 1) 数组格式（推荐）：`"changelog": ["· 第一条", "· 第二条"]`
+     *    —— 源文件一眼可读，不需要在 JSON 里写 `\n` 转义（历史上就是这里踩过坑）。
+     * 2) 字符串格式（保留兼容）：`"changelog": "· 第一条\n· 第二条"`，内部换行原样保留。
+     * 3) 兜底：字符串里只有 `·` 分隔却没有换行（历史误写成一整行），按 `·` 自动拆行。
+     * JSON null / 字段缺失 → 空串。
+     */
+    private fun readChangelog(o: JSONObject): String {
+        o.optJSONArray("changelog")?.let { arr ->
+            val items = (0 until arr.length())
+                .mapNotNull { i -> arr.optString(i).trim().takeIf { it.isNotEmpty() } }
+            if (items.isNotEmpty()) return items.joinToString("\n")
+        }
+        val rawVal = o.opt("changelog") ?: return ""
+        if (rawVal == JSONObject.NULL) return ""
+        val raw = rawVal.toString().trim()
+        if (raw.isEmpty()) return ""
+        if (!raw.contains('\n') && raw.contains(BULLET)) {
+            return raw.split(BULLET)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString("\n") { "$BULLET $it" }
+        }
+        return raw
     }
 }
 

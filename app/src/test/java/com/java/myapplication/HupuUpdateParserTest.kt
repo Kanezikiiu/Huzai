@@ -89,7 +89,77 @@ class HupuUpdateParserTest {
     }
 
     @Test
+    fun changelogLineBreakEscapeBecomesRealNewlines() {
+        // version.json 里条目之间的换行按 JSON 规范写成 \n（反斜杠 + n 两个字符）；
+        // 解析后必须是「真正的换行符」，Compose 的 Text 才能逐条成行。
+        // 这条同时锁定：optString + trim 不会把内部换行吃掉、也不会留下 \n 字面量。
+        val info = HupuUpdateParser.parse(fullJson)!!
+        assertEquals(
+            "应解出 2 条（真换行）",
+            2,
+            info.changelog.split("\n").size,
+        )
+        assertFalse("不应残留反斜杠 n 字面量", info.changelog.contains("\\n"))
+    }
+
+    @Test
+    fun fourItemChangelogDecodesFourLines() {
+        // 与线上 version.json（1.187）同形的 4 条更新说明
+        val json = """
+            {
+              "versionCode": 197,
+              "versionName": "1.187",
+              "changelog": "· 第一条\n· 第二条\n· 第三条\n· 第四条",
+              "forceUpdate": false
+            }
+        """.trimIndent()
+        val info = HupuUpdateParser.parse(json)!!
+        val lines = info.changelog.split("\n")
+        assertEquals("4 条更新说明应解出 4 行", 4, lines.size)
+        assertTrue(lines[0].startsWith("· 第一条"))
+        assertTrue(lines[3].startsWith("· 第四条"))
+    }
+
+    @Test
     fun decideFailedWhenInfoNull() {
         assertEquals(HupuUpdateResult.Failed, HupuUpdate.decide(186, null))
+    }
+
+    @Test
+    fun changelogArrayJoinsWithNewline() {
+        // 1.188: 数组格式（推荐）——源文件一眼可读，无需在 JSON 里写 \n 转义
+        val json = """{"versionCode":198,"versionName":"1.188","changelog":["\u00B7 甲","\u00B7 乙","\u00B7 丙"]}"""
+        val info = HupuUpdateParser.parse(json)!!
+        val lines = info.changelog.split("\n")
+        assertEquals("数组 3 条应解出 3 行", 3, lines.size)
+        assertTrue(lines[0].endsWith("甲"))
+        assertTrue(lines[2].endsWith("丙"))
+        assertFalse("不应残留反斜杠 n 字面量", info.changelog.contains("\\n"))
+    }
+
+    @Test
+    fun changelogArraySkipsBlankItems() {
+        // 数组里的空串 / 纯空白条目应被丢弃，不产生空行
+        val json = """{"versionCode":198,"versionName":"1.188","changelog":["\u00B7 甲","  ","","\u00B7 乙"]}"""
+        val info = HupuUpdateParser.parse(json)!!
+        assertEquals(2, info.changelog.split("\n").size)
+    }
+
+    @Test
+    fun changelogSingleLineBulletSplitFallback() {
+        // 历史误写成一整行（只有 · 分隔、没有换行）→ 自动按 · 拆行兜底
+        val json = """{"versionCode":198,"versionName":"1.188","changelog":"\u00B7 甲\u00B7 乙\u00B7 丙"}"""
+        val info = HupuUpdateParser.parse(json)!!
+        val lines = info.changelog.split("\n")
+        assertEquals("整行 3 条应被拆成 3 行", 3, lines.size)
+        assertTrue(lines[0].endsWith("甲"))
+    }
+
+    @Test
+    fun changelogJsonNullIsEmpty() {
+        // JSON null 不得渲染成 "null" 字面量
+        val json = """{"versionCode":198,"versionName":"1.188","changelog":null}"""
+        val info = HupuUpdateParser.parse(json)!!
+        assertEquals("", info.changelog)
     }
 }
