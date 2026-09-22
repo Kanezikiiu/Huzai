@@ -15,11 +15,13 @@ import org.json.JSONObject
  *   "versionName": "1.188",
  *   "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.188/huzai-1.188-release.apk",
  *   "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.188",
- *   "changelog": ["· 第一条更新说明", "· 第二条更新说明"],
+ *   "changelog": "· 第一条更新说明\n· 第二条更新说明",
  *   "forceUpdate": false
  * }
  * ```
- * `changelog` 自 1.188 起为**数组**（源文件一眼可读、无需转义换行）；旧版字符串写法仍兼容。
+ * `changelog` 兼容两种写法：**字符串**（线上采用——旧客户端用 `optString` 也能正确逐行显示）
+ * 与**数组**（1.188+ 支持）。⚠️ 数组只有 1.188 及以后能解析，旧客户端会渲染出原始 JSON 文本
+ * （如 `["…","…"]`），所以线上 `version.json` 必须保持字符串格式；解析器保留数组支持仅为向前兼容。
  *
  * 为什么不用 GitHub API `releases/latest`：该接口**不返回 versionCode**（只有 tag_name），
  * 且匿名限流 60 次/小时；自建 `version.json` 可控、可携带版本号 / 更新说明 / 强制更新标记。

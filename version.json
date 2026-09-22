@@ -3,9 +3,6 @@
   "versionName": "1.188",
   "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.188/huzai-1.188-release.apk",
   "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.188",
-  "changelog": [
-    "· 评论 / 回复图片加载时显示进度圈，加载失败显示「图片加载失败」提示（此前加载期间为一片空白）",
-    "· 更新说明改为数组格式，修复说明条目换行依赖转义的问题"
-  ],
+  "changelog": "· 评论 / 回复图片加载时显示进度圈，加载失败显示「图片加载失败」提示（此前加载期间为一片空白）",
   "forceUpdate": false
 }

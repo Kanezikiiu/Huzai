@@ -162,4 +162,21 @@ class HupuUpdateParserTest {
         val info = HupuUpdateParser.parse(json)!!
         assertEquals("", info.changelog)
     }
+
+    @Test
+    fun changelogMustBeStringForLegacyClients() {
+        // 回归守卫：旧客户端（<= 1.187）的解析器只有 optString("changelog")：
+        //  - 字符串 → 读到原文（能正确逐行显示）
+        //  - 数组   → 读到 JSON 数组文本 ["…","…"]，弹窗会直接把原始 JSON 显示出来（1.188 发版时踩过）
+        // 因此线上 version.json 必须保持字符串格式；解析器的数组支持仅是向前兼容能力。
+        val strJson = """{"versionCode":198,"versionName":"1.188","changelog":"\u00B7 甲\n\u00B7 乙"}"""
+        val arrJson = """{"versionCode":198,"versionName":"1.188","changelog":["\u00B7 甲","\u00B7 乙"]}"""
+        val legacyReadsString = org.json.JSONObject(strJson).optString("changelog").trim()
+        val legacyReadsArray = org.json.JSONObject(arrJson).optString("changelog").trim()
+        assertFalse("字符串格式不应带 JSON 数组外壳", legacyReadsString.startsWith("[\""))
+        assertTrue("数组格式在旧客户端会被读成数组文本（这正是要避免的）", legacyReadsArray.startsWith("[\""))
+        // 新解析器两种都能正确逐行
+        assertEquals(2, HupuUpdateParser.parse(strJson)!!.changelog.split("\n").size)
+        assertEquals(2, HupuUpdateParser.parse(arrJson)!!.changelog.split("\n").size)
+    }
 }
