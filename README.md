@@ -139,8 +139,8 @@
 
 可在 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)** 页面下载正式签名版。
 
-最新版本：**[v1.188](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.188)** ·
-[`huzai-1.188-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.188/huzai-1.188-release.apk)（minSdk 24，正式签名）。
+最新版本：**[v1.189](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.189)** ·
+[`huzai-1.189-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.189/huzai-1.189-release.apk)（minSdk 24，正式签名）。
 
 ---
 

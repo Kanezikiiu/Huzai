@@ -31,6 +31,8 @@ data class HupuThread(
     val read: Int = 0,
     val createdAt: Long = 0L,
     val createdAtText: String = "",
+    /** 1.189: 主楼发布地（官方 detail JSON 的 `location`，如「上海」；可为空） */
+    val location: String = "",
     val hasVideo: Boolean = false,
     val video: String = "",
     val videoCover: String = "",

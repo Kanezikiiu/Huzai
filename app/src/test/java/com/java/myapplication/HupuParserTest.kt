@@ -166,4 +166,30 @@ class HupuParserTest {
             assertTrue(r.tid.isNotEmpty())
         }
     }
+
+    @Test
+    fun `thread main post parses publish time and location`() {
+        // 1.189: 主楼元信息行改为「发布时间 · 发布于地 · 浏览数」，两字段均取自
+        // detail JSON 的 thread.createdAtFormat / thread.location（实测 2026-09-22）
+        val html = """<html><head><script id="__NEXT_DATA__" type="application/json">""" +
+            """{"props":{"pageProps":{"detail":{"thread":""" +
+            """{"tid":"642545906","title":"t","createdAtFormat":"5小时前","location":"上海","read":123},""" +
+            """"replies":{"current":1,"count":0,"total":1,"list":[]}}}}}</script></head></html>"""
+        val d = HupuParser.parseThreadDetail(html)
+        assertNotNull(d)
+        assertEquals("5小时前", d!!.thread.createdAtText)
+        assertEquals("上海", d.thread.location)
+    }
+
+    @Test
+    fun `thread location defaults to empty when absent`() {
+        // 部分帖子无发布地（实测 thread.location 为空串）→ 解析为空，UI 自动隐藏该段
+        val html = """<html><head><script id="__NEXT_DATA__" type="application/json">""" +
+            """{"props":{"pageProps":{"detail":{"thread":{"tid":"1","title":"t"},""" +
+            """"replies":{"current":1,"count":0,"total":1,"list":[]}}}}}</script></head></html>"""
+        val d = HupuParser.parseThreadDetail(html)
+        assertNotNull(d)
+        assertEquals("", d!!.thread.location)
+        assertEquals("", d.thread.createdAtText)
+    }
 }

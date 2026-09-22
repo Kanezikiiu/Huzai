@@ -246,7 +246,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     )
                     SettingRow(
                         icon = HupuIcons.DarkMode,
-                        title = "主题",
+                        title = "界面设置",
                         subtitle = themeModeLabel + " · " + themeAccentLabel,
                         onClick = { themeEpoch++ },
                     )

@@ -167,14 +167,12 @@ import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.HupuAuthor
 import kotlinx.coroutines.launch
 
-/** 顶栏：返回＋居中专区名＋（本人帖的编辑）＋分享 */
+/** 顶栏：返回＋居中专区名＋（本人帖的编辑 / 删除入口） */
 @Composable
 internal fun ThreadHeader(
     forumName: String,
     onBack: () -> Unit,
-    shareText: String = "",
-    shareUrl: String = "",
-    /** 1.112: 非空时在分享左侧显示编辑入口（仅本人帖传入） */
+    /** 1.112: 非空时在右侧显示编辑入口（仅本人帖传入） */
     onEdit: (() -> Unit)? = null,
     /** 1.119: 非空时在编辑左侧显示删除入口（仅本人帖传入） */
     onDelete: (() -> Unit)? = null,
@@ -182,7 +180,8 @@ internal fun ThreadHeader(
     Box(
         Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
+            // 1.190: 状态栏避让已上提到列表视口层（LazyColumn 的 windowInsetsPadding），
+            // 这里不再自带 statusBarsPadding —— 否则头条会多留一份状态栏高度。
             .padding(top = 8.dp, bottom = 10.dp),
     ) {
         Box(
@@ -209,17 +208,21 @@ internal fun ThreadHeader(
             modifier = Modifier
                 .align(Alignment.Center)
                 .padding(horizontal = when {
-                    onDelete != null -> 144.dp
-                    onEdit != null -> 96.dp
+                    // 1.190: 分享按钮移除后，右侧图标整体右移一格 → 标题的对称留白同步收窄
+                    // （右侧最内图标左缘 + 16dp 呼吸位；else 保持与左侧返回按钮对称的 48dp）
+                    onDelete != null -> 104.dp
+                    onEdit != null -> 64.dp
                     else -> 48.dp
                 }),
         )
-        // 1.119: 删除入口（仅本人帖）：放在编辑左侧
+        // 1.119: 删除入口（仅本人帖）：紧挨编辑左侧
+        // 1.190: 分享按钮移除后右侧整体右移一格——编辑占最右（距右缘 8dp，与左侧返回对称），
+        // 删除在其左（48dp），不再为已删除的分享留位
         if (onDelete != null) {
             Box(
                 Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 88.dp)
+                    .padding(end = 48.dp)
                     .size(40.dp)
                     .clip(CircleShape)
                     .clickable { onDelete() },
@@ -232,12 +235,12 @@ internal fun ThreadHeader(
                 )
             }
         }
-        // 编辑入口（仅本人帖）：放在分享左侧
+        // 编辑入口（仅本人帖）：顶部右侧最外一格
         if (onEdit != null) {
             Box(
                 Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 48.dp)
+                    .padding(end = 8.dp)
                     .size(40.dp)
                     .clip(CircleShape)
                     .clickable { onEdit() },
@@ -250,34 +253,26 @@ internal fun ThreadHeader(
                 )
             }
         }
-        if (shareUrl.isNotEmpty()) {
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            Box(
-                Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 8.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable {
-                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(
-                                android.content.Intent.EXTRA_TEXT,
-                                if (shareText.isNotEmpty()) "$shareText $shareUrl" else shareUrl,
-                            )
-                        }
-                        ctx.startActivity(android.content.Intent.createChooser(send, "分享帖子"))
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    HupuIcons.IosShare,
-                    contentDescription = "分享",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
     }
+}
+
+/**
+ * 1.189: 帖子分享（顶栏与常驻操作条共用，避免两份实现漂移）。
+ * 分享内容 = 「标题 + 链接」，与官方网页版一致。
+ */
+internal fun shareThreadToSystem(
+    ctx: android.content.Context,
+    shareText: String,
+    shareUrl: String,
+) {
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(
+            android.content.Intent.EXTRA_TEXT,
+            if (shareText.isNotEmpty()) "$shareText $shareUrl" else shareUrl,
+        )
+    }
+    runCatching { ctx.startActivity(android.content.Intent.createChooser(send, "分享帖子")) }
 }
 
 /** 主楼：作者行 + 正文 + 视频 + 元信息 */
@@ -288,12 +283,6 @@ internal fun MainPost(
     isFullscreen: Boolean,
     onToggleFullscreen: (Boolean) -> Unit,
     onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
-    isRecommended: Boolean = false,
-    recommendCount: Int = 0,
-    onRecommend: (Boolean) -> Unit = {},
-    isCollected: Boolean = false,
-    onCollect: (Boolean) -> Unit = {},
-    onReplyClick: () -> Unit = {},
     onOpenUser: (String) -> Unit = {},
     /** 1.121: 投票交互（未登录/提交失败）提示出口 */
     onToast: (String) -> Unit = {},
@@ -333,17 +322,10 @@ internal fun MainPost(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(Modifier.width(8.dp))
-                if (d.thread.createdAtText.isNotBlank()) {
-                    Text(
-                        d.thread.createdAtText,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
-                Text(
+
+        Text(
             d.thread.title,
             fontSize = (17 * fs).sp,
             fontWeight = FontWeight.Bold,
@@ -379,75 +361,21 @@ internal fun MainPost(
                 onToggleFullscreen = onToggleFullscreen,
             )
         }
+        // 1.189: 元信息行——「推荐 / 收藏」已上移到常驻操作条（滚到评论区也能操作），
+        // 这里改显示「发布时间 · 发布于地 · 浏览数」，凑齐三条，与官方网页版口径一致。
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { onRecommend(!isRecommended) }
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-            ) {
-                Icon(
-                    if (isRecommended) Icons.Rounded.Favorite else Icons.Rounded.ThumbUp,
-                    contentDescription = null,
-                    tint = if (isRecommended) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    formatCount(recommendCount),
-                    fontSize = 12.sp,
-                    color = if (isRecommended) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            val metas = buildList {
+                if (d.thread.createdAtText.isNotBlank()) add(d.thread.createdAtText)
+                if (d.thread.location.isNotBlank()) add("发布于${d.thread.location}")
+                add("浏览 ${formatCount(d.thread.read)}")
             }
-            Spacer(Modifier.width(14.dp))
-            // 1.67 云端收藏：星形（金色=已收藏，灰=未收藏），点击乐观翻转
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { onCollect(!isCollected) }
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.Star,
-                    contentDescription = null,
-                    tint = if (isCollected) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    if (isCollected) "已收藏" else "收藏",
-                    fontSize = 12.sp,
-                    color = if (isCollected) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Text(
-                "浏览 ${formatCount(d.thread.read)}",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { onReplyClick() }
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.Edit,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    "回复",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            metas.forEachIndexed { i, s ->
+                if (i > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("·", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(s, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

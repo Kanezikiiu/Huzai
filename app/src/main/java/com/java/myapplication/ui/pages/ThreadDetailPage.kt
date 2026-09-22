@@ -1,5 +1,8 @@
 package com.java.myapplication.ui.pages
 
+import com.java.myapplication.TAB_BUTTON_NAV_MIN
+import com.java.myapplication.TAB_GAP_BUTTON_EXTRA
+import com.java.myapplication.TAB_GAP_GESTURE
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.BackEventCompat
 import kotlin.coroutines.cancellation.CancellationException
@@ -44,6 +47,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Check
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.autoHideScroll
+import com.java.myapplication.ui.components.rememberAutoHideBarState
 import com.java.myapplication.ui.components.StickerAddCell
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Share
@@ -141,9 +146,17 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.animation.core.animateFloatAsState
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -212,6 +225,13 @@ fun ThreadDetailOverlay(
     // 1.119: 删除帖子确认弹窗（本人帖顶栏入口触发）
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val actionBarBg = MaterialTheme.colorScheme.background
+    // 1.189: 常驻操作条的毛玻璃底——采样「列表内容」这一层（不含操作条自身，
+    // 避免自采样糊成一团）。与 MainActivity 的全局 backdrop 同一套引擎。
+    val actionBackdrop = rememberLayerBackdrop {
+        drawRect(actionBarBg)
+        drawContent()
+    }
     // 翻页哨兵：注意依赖 detail（canLoadMore 不能被 remember 的闭包 stale 捕获）
     // 1.185: 排序三态 0=默认(正序) 1=最新(倒序) 2=最热(本地按点亮降序)；点击循环（声明上提：可加载性依赖它）
     var sortMode by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -457,6 +477,30 @@ fun ThreadDetailOverlay(
                 mainRecommended = !on
                 recommendDelta = 0
                 replyToast = err
+            }
+        }
+    }
+
+    /**
+     * 1.189: 收藏动作（主楼卡片与常驻操作条共用，避免两份实现漂移）。
+     * 乐观翻转 → 失败回滚；未登录只提示不动作。
+     */
+    fun doCollect(tid: String, on: Boolean) {
+        if (!HupuAccount.isLoggedIn) {
+            replyToast = "请先在「我的」页登录"
+            return
+        }
+        val prev = collected
+        collected = on
+        collectChecking = true
+        scope.launch {
+            val err = HupuAccount.threadCollect(tid, on)
+            collectChecking = false
+            if (err != null) {
+                collected = prev  // 失败回滚
+                replyToast = err
+            } else {
+                replyToast = if (on) "已收藏" else "已取消收藏"
             }
         }
     }
@@ -751,6 +795,21 @@ fun ThreadDetailOverlay(
         }
     }
 
+    // 1.190: 「滚动时自动隐藏底栏」——挂在根节点即可覆盖本页所有滚动（正文/回复列表、
+    // 楼中楼 sheet 内的列表）；开启开关后手指上滑收起操作条、下滑弹出
+    val autoHideBar = rememberAutoHideBarState()
+    // 操作条「栏底到屏幕底」的留白：与悬浮 Tab 栏同一分档（手势区在部分 ROM 虚高到 ≈47dp，
+    // 直接用 navigationBarsPadding 会把栏顶得过高）
+    val reservedBottomPx = maxOf(
+        WindowInsets.navigationBars.getBottom(density),
+        WindowInsets.displayCutout.getBottom(density),
+    )
+    val actionBarBottomPadPx = if (reservedBottomPx >= with(density) { TAB_BUTTON_NAV_MIN.roundToPx() }) {
+        (reservedBottomPx + with(density) { TAB_GAP_BUTTON_EXTRA.roundToPx() }).toFloat()
+    } else {
+        maxOf(with(density) { TAB_GAP_GESTURE.roundToPx() }, reservedBottomPx).toFloat()
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -758,7 +817,8 @@ fun ThreadDetailOverlay(
             .graphicsLayer { translationX = (1f - progress.value) * size.width }
             .background(MaterialTheme.colorScheme.background)
             // 穿透守卫：失败态/加载态空白点击由本层兜底，不落穿到下层页面
-            .tapGuard(),
+            .tapGuard()
+            .autoHideScroll(autoHideBar),
     ) {
         if (videoFullscreen && videoHost.player != null) {
             FullscreenVideo(videoHost.player!!) { videoFullscreen = false }
@@ -782,7 +842,9 @@ fun ThreadDetailOverlay(
                             isRefreshing = loading,
                             onRefresh = onRefresh,
                             state = pullState,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .layerBackdrop(actionBackdrop),
                         ) {
                             // 浏览流评论关键词过滤：命中的回复不显示（内容是 HTML，剥标签后判定）
                             val ckw = remember(HupuPrefs.filterVersion) { HupuPrefs.loadFilterKeywords() }
@@ -851,14 +913,18 @@ fun ThreadDetailOverlay(
                                     start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxSize(),
+                                // 1.190: 列表「视口」整体从状态栏下方开始。此前只有 item("header")
+                                // 自带 statusBarsPadding，一旦滚到别处（如点评论数跳到 item(2) 的
+                                // 「回复 N」），该 item 会停在屏幕物理顶端被状态栏压住。把避让提到
+                                // 视口层后，任何滚动/跳转停下的 item 都不会进入状态栏区域。
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
                             ) {
                                 item(key = "header") {
                                     ThreadHeader(
                                         d.thread.topic?.name.orEmpty(),
                                         onBack,
-                                        shareText = d.thread.title,
-                                        shareUrl = "https://bbs.hupu.com/${d.thread.tid}.html",
                                         // 1.119: 本人帖显示删除 + 编辑入口
                                         onDelete = if (
                                             HupuAccount.isLoggedIn &&
@@ -887,31 +953,7 @@ fun ThreadDetailOverlay(
                                         isFullscreen = videoFullscreen,
                                         onToggleFullscreen = { videoFullscreen = it },
                                         onImageClick = openImage,
-                                        isRecommended = mainRecommended,
-                                        recommendCount = d.thread.lights + recommendDelta,
-                                        onRecommend = { on -> onRecommend(d.thread.tid, d.thread.fid, on) },
-                                        isCollected = collected,
-                                        onCollect = { on ->
-                                            if (!HupuAccount.isLoggedIn) {
-                                                replyToast = "请先在「我的」页登录"
-                                            } else {
-                                                val prev = collected
-                                                collected = on
-                                                collectChecking = true
-                                                scope.launch {
-                                                    val err = HupuAccount.threadCollect(d.thread.tid, on)
-                                                    collectChecking = false
-                                                    if (err != null) {
-                                                        collected = prev  // 失败回滚
-                                                        replyToast = err
-                                                    } else {
-                                                        replyToast = if (on) "已收藏" else "已取消收藏"
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        onReplyClick = { replyQuotePid = ""; replyQuoteName = ""; replyBoxOpen = true },
-                                        onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else replyToast = "\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55" } },
+                                        onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else replyToast = "请先在「我的」页登录" } },
                                         onToast = { replyToast = it },
                                         onOpenEmbed = { embedPage = it },
                                     )
@@ -1125,6 +1167,79 @@ fun ThreadDetailOverlay(
                     onOpenFloor(asReply)
                 },
             )
+        }
+
+        // 1.189: 常驻操作条——把「写评论 / 评论数 / 推荐 / 收藏 / 转发」从「滚走即不可达」的
+        // 主楼卡片与顶栏里提出来，收成一条贴底悬浮条。回复框（键盘/表情面板）打开时整条
+        // 以 spring 收缩移出屏幕（与悬浮 Tab 栏同款出入场语言）。
+        val barD = detail
+        if (barD != null) {
+            val barProgress by animateFloatAsState(
+                // 1.189: 回复框打开（键盘/表情面板）或楼中楼 sheet 打开时，整条收缩移出屏幕；
+                // 楼中楼是贴底半屏 sheet，操作条会与它叠在一起，必须一起隐藏。
+                // 1.190: 用户主页（盖入式全屏页）打开时同样隐藏；开启「滚动时自动隐藏底栏」
+                // 后，手指上滑（向下浏览）也会收起。
+                // 1.190b: 补齐所有「全屏覆盖层」——图片查看器、视频全屏、结构化正文 WebView 页、
+                // 编辑页，否则它们盖上来时操作条仍悬浮在底下（真机反馈：全屏看图/看视频时底栏还在）。
+                targetValue =
+                    if (replyBoxOpen || floorStack.isNotEmpty() || userPageStack.isNotEmpty() ||
+                        autoHideBar.hidden || videoFullscreen || imageViewer != null ||
+                        embedPage != null || editingTid != null
+                    ) 1f else 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+                label = "threadActionBar",
+            )
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    // zIndex 996：在沉浸底条(997)/表情面板(998)/输入行(1000) 之下，
+                    // 又在空白收起层(900) 之上——既不挡面板，也不被列表盖住
+                    .zIndex(996f)
+                    // 1.190: 位移必须按「含底部留白的整块高度」算——graphicsLayer 放在 padding
+                    // 之前，size.height 才会包含留白；此前只算内容高度，三键导航下会露边
+                    // （与 Tab 栏同款的「收起不完全」问题）。+30dp 余量兜住 spring 过冲。
+                    .graphicsLayer {
+                        translationY = (size.height + 30.dp.toPx()) * barProgress
+                        alpha = 1f - barProgress
+                    }
+                    .padding(bottom = with(density) { actionBarBottomPadPx.toDp() })
+                    // 1.190: 不再额外加 vertical padding——底边距必须与悬浮 Tab 栏**逐 dp 一致**
+                    // （此前多留 8dp，真机看到「详情页底栏比主页 Tab 栏略高」）
+                    .padding(horizontal = 12.dp),
+            ) {
+                ThreadActionBar(
+                    backdrop = actionBackdrop,
+                    replyCount = barD.replyCount,
+                    recommendCount = barD.thread.lights + recommendDelta,
+                    isRecommended = mainRecommended,
+                    isCollected = collected,
+                    onWrite = {
+                        if (!HupuAccount.isLoggedIn) {
+                            replyToast = "请先在「我的」页登录"
+                        } else {
+                            replyQuotePid = ""
+                            replyQuoteName = ""
+                            replyBoxOpen = true
+                        }
+                    },
+                    // 跳到「回复 N」标题——列表第 3 项（header / main / r-count）
+                    onJumpComments = {
+                        scope.launch { runCatching { listState.animateScrollToItem(2) } }
+                    },
+                    onRecommend = { onRecommend(barD.thread.tid, barD.thread.fid, !mainRecommended) },
+                    onCollect = { doCollect(barD.thread.tid, !collected) },
+                    onShare = {
+                        shareThreadToSystem(
+                            replyCtx,
+                            barD.thread.title,
+                            "https://bbs.hupu.com/${barD.thread.tid}.html",
+                        )
+                    },
+                )
+            }
         }
 
         // 底部回复框（1.57 重构：盖在一切层级之上——楼中楼 sheet 之上 zIndex 3f+N，

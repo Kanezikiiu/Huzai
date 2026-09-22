@@ -368,6 +368,8 @@ object HupuParser {
         read = o.optInt("read", 0),
         createdAt = o.optLong("createdAt", 0L),
         createdAtText = o.optString("createdAtFormat"),
+        // 1.189: 主楼发布地（实测 detail JSON thread.location，如「上海」；部分帖为空）
+        location = o.optString("location"),
         hasVideo = o.optBoolean("hasVideo", false),
         video = o.optString("video"),
         videoCover = o.optString("videoCover"),

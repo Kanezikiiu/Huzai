@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -129,7 +130,7 @@ fun ThemeSettingsPage(onClose: () -> Unit) {
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "主题",
+                    "界面设置",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -227,6 +228,51 @@ fun ThemeSettingsPage(onClose: () -> Unit) {
                             },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                // 1.190: 「滚动时自动隐藏底栏」——上滑收起底栏、下滑弹出；
+                // 4 大主页作用于悬浮 Tab 栏，帖子详情页作用于常驻操作条
+                GroupLabel("底栏")
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface),
+                ) {
+                    var autoHideBar by remember { mutableStateOf(HupuPrefs.loadAutoHideBar()) }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                autoHideBar = !autoHideBar
+                                HupuPrefs.saveAutoHideBar(autoHideBar)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "滚动时自动隐藏底栏",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "向上滚动（往下看）时收起底栏，向下滚动时重新出现",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = autoHideBar,
+                            onCheckedChange = {
+                                autoHideBar = it
+                                HupuPrefs.saveAutoHideBar(it)
+                            },
                         )
                     }
                 }

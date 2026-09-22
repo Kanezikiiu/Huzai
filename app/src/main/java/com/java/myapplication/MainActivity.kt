@@ -59,6 +59,8 @@ import com.java.myapplication.data.HupuUpdateResult
 import com.java.myapplication.ui.glass.GlassBottomTabs
 import com.java.myapplication.ui.glass.GlassTab
 import com.java.myapplication.ui.components.SecondaryPage
+import com.java.myapplication.ui.components.autoHideScroll
+import com.java.myapplication.ui.components.rememberAutoHideBarState
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.pages.HomePage
 import com.java.myapplication.ui.pages.DisclaimerGate
@@ -134,9 +136,9 @@ class MainActivity : ComponentActivity() {
  * 返回手势区**，用 systemGestures 会把三键误判成手势，导致 Tab 栏压低后压在导航按钮上
  * （真机踩坑）。三键的导航条通常 48dp，手势的只有 16~24dp，用高度阈值区分才可靠。
  */
-private val TAB_GAP_GESTURE = 20.dp
-private val TAB_GAP_BUTTON_EXTRA = 12.dp
-private val TAB_BUTTON_NAV_MIN = 30.dp
+internal val TAB_GAP_GESTURE = 20.dp
+internal val TAB_GAP_BUTTON_EXTRA = 12.dp
+internal val TAB_BUTTON_NAV_MIN = 30.dp
 
 @Composable
 fun PocketLedgerApp() {
@@ -208,7 +210,16 @@ fun PocketLedgerApp() {
         maxOf(with(insetsDensity) { TAB_GAP_GESTURE.roundToPx() }, reservedBottomPx).toFloat()
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // 1.190: 「滚动时自动隐藏底栏」——挂在根节点即可覆盖 4 大主页里所有可滚动列表
+    // （NestedScroll 会把子树滚动事件上传到最近连接器，无需逐个页面改造）
+    val autoHideBar = rememberAutoHideBarState()
+    // 进入二级页（详情 / 搜索 / 用户主页…）时清掉隐藏态，返回主页时 Tab 栏常驻，
+    // 不让二级页的滚动状态影响主页底栏
+    LaunchedEffect(SecondaryPage.count) {
+        if (SecondaryPage.count > 0) autoHideBar.show()
+    }
+
+    Box(Modifier.fillMaxSize().autoHideScroll(autoHideBar)) {
         // 内容层：四页常驻组合（状态保留、切 Tab 不重建），盖入式转场
         Surface(
             Modifier.fillMaxSize().layerBackdrop(backdrop),
@@ -257,7 +268,7 @@ fun PocketLedgerApp() {
         }
 
         // 玻璃 Tab 栏层（整体抬高 12dp，避免贴底过近）：二级页打开时弹性滑出隐藏，返回时 Q 弹回归
-        val tabHidden = SecondaryPage.count > 0
+        val tabHidden = SecondaryPage.count > 0 || autoHideBar.hidden
         val tabProgress by animateFloatAsState(
             targetValue = if (tabHidden) 1f else 0f,
             animationSpec = spring(

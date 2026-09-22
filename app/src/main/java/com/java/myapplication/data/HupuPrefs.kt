@@ -235,6 +235,21 @@ object HupuPrefs {
     fun saveRefreshMode(v: Int) {
         prefs.edit().putInt(KEY_REFRESH_MODE, v).apply()
     }
+    // ---------- 1.190 「滚动时自动隐藏底栏」 ----------
+    private const val KEY_AUTO_HIDE_BAR = "auto_hide_bar_v1"
+    /** 开关变更版本：MainActivity / 帖子详情页观察到即重新生效（无需重启） */
+    var autoHideBarVersion by mutableIntStateOf(0)
+        private set
+    /**
+     * 滚动时自动隐藏底栏（**默认开**）。
+     * 开启后：手指上滑（内容往下看）→ 底栏收缩隐藏；手指下滑 → 底栏弹出。
+     * 作用对象按当前页面而定——4 大主页收起悬浮 Tab 栏，帖子详情页收起常驻操作条。
+     */
+    fun loadAutoHideBar(): Boolean = prefs.getBoolean(KEY_AUTO_HIDE_BAR, true)
+    fun saveAutoHideBar(v: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_HIDE_BAR, v).apply()
+        autoHideBarVersion++
+    }
 
     // ---------- 1.130 主题模式（跟随系统 / 浅色 / 深色） ----------
     const val THEME_SYSTEM = "system"
