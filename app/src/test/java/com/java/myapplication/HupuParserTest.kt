@@ -1,7 +1,9 @@
 package com.java.myapplication.data
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -191,5 +193,106 @@ class HupuParserTest {
         assertNotNull(d)
         assertEquals("", d!!.thread.location)
         assertEquals("", d.thread.createdAtText)
+    }
+
+    @Test
+    fun `user profile ip location falls back to location field`() {
+        // 1.190: 移动版用户主页 SSR 的 userInfoData 里 location_str 常为空串，IP 属地在 location
+        // （实测 m.hupu.com/user/119424238：location="山西" / location_str=""）
+        // 此前只读 location_str → 网页有属地、App 不显示
+        val html = """<html><head><script id="__NEXT_DATA__" type="application/json">""" +
+            """{"props":{"pageProps":{"userInfoData":{"puid":"119424238","nickname":"t",""" +
+            """"location":"山西","location_str":""},"threadList":[],"replyList":[]}}}""" +
+            """</script></head></html>"""
+        val p = HupuParser.parseUserProfile(html)
+        assertNotNull(p)
+        assertEquals("山西", p!!.locationStr)
+    }
+
+    @Test
+    fun `user profile ip location prefers location_str when present`() {
+        // location_str 有值时仍以它为准（保持旧行为不被回退覆盖）
+        val html = """<html><head><script id="__NEXT_DATA__" type="application/json">""" +
+            """{"props":{"pageProps":{"userInfoData":{"puid":"1","nickname":"t",""" +
+            """"location":"北京","location_str":"上海"},"threadList":[],"replyList":[]}}}""" +
+            """</script></head></html>"""
+        val p = HupuParser.parseUserProfile(html)
+        assertNotNull(p)
+        assertEquals("上海", p!!.locationStr)
+    }
+
+    @Test
+    fun `pc space user info parses reputation`() {
+        // 1.190: PC 个人中心 getUserInfo 的 data.reputation 是对象（{detail_url, value}），
+        // 此前未读取 → 用户主页「声望」恒为 0 而整段隐藏（网页有、App 没有）。
+        // 实测 bbs.hupu.com/pcmapi/pc/space/v1/getUserInfo?euid=17261817455321 → value=35
+        val json = """{"code":1,"internalCode":"PC000000","msg":"success","data":{""" +
+            """"euid":17261817455321,"puid":119424238,"nickname":"t","header":"h",""" +
+            """"location_str":"","location":"山西","reg_time_str":"加入虎扑6天",""" +
+            """"reputation":{"detail_url":"https://x/310013","value":35},"be_light_count":7}}"""
+        val p = HupuParser.parseSpaceUserInfo(json)
+        assertNotNull(p)
+        assertEquals(35L, p!!.reputation.toLong())
+        // 顺带锁定同源字段：加入天数与 IP 属地（location_str 空 → 回退 location）
+        assertEquals("加入虎扑6天", p.regTimeStr)
+        assertEquals("山西", p.locationStr)
+    }
+
+    @Test
+    fun `pc space user info reputation defaults to zero when absent`() {
+        // 老账号/未下发 reputation 时不应崩，声望按 0 处理（UI 自动隐藏该段）
+        val json = """{"code":1,"data":{"euid":1,"puid":1,"nickname":"t"}}"""
+        val p = HupuParser.parseSpaceUserInfo(json)
+        assertNotNull(p)
+        assertEquals(0L, p!!.reputation.toLong())
+    }
+
+    @Test
+    fun `cover parses url from object array`() {
+        // 1.190: 实测 pics 是对象数组 [{url,width,height,is_gif,type}]；旧写法 optString(0)
+        // 拿到的是整个对象的 toString（形如 {"url":…}，不是 URL）→ Coil 加载失败 →
+        // 列表右侧一直留 84×60 空洞，把标题压窄导致「还有很大空间就换行」。
+        val o = JSONObject(
+            """{"tid":"1","pics":[{"url":"https://i11.hoopchina.com.cn/a.jpg",""" +
+                """"width":1256,"height":686,"is_gif":0,"type":"common"}]}"""
+        )
+        assertEquals("https://i11.hoopchina.com.cn/a.jpg", HupuParser.coverFrom(o))
+    }
+
+    @Test
+    fun `cover parses url from legacy string array`() {
+        // 兼容旧的字符串数组形态，避免以后数据源回退时又看不到封面
+        val o = JSONObject("""{"pics":["https://i1.hoopchina.com.cn/b.jpg"]}""")
+        assertEquals("https://i1.hoopchina.com.cn/b.jpg", HupuParser.coverFrom(o))
+    }
+
+    @Test
+    fun `cover is null for empty or dirty pics`() {
+        // 空数组 / 无 pics / 对象里没 url / 传 null → 一律 null（不把脏值喂给图片加载器）
+        assertNull(HupuParser.coverFrom(JSONObject("""{"pics":[]}""")))
+        assertNull(HupuParser.coverFrom(JSONObject("""{"tid":"1"}""")))
+        assertNull(HupuParser.coverFrom(JSONObject("""{"pics":[{"width":10}]}""")))
+        assertNull(HupuParser.coverFrom(null))
+    }
+
+    @Test
+    fun `cover falls back to cover field`() {
+        // 信息流用的是 cover 字段；列表接口若也走这个字段名，封面照样能出来
+        val o = JSONObject("""{"tid":"1","cover":"https://i5.hoopchina.com.cn/d.jpg"}""")
+        assertEquals("https://i5.hoopchina.com.cn/d.jpg", HupuParser.coverFrom(o))
+    }
+
+    @Test
+    fun `user profile thread cover comes from pics url`() {
+        // 端到端：移动版 SSR 的 threadList[0].pics[0].url → HupuProfileThread.cover
+        val html = """<html><head><script id="__NEXT_DATA__" type="application/json">""" +
+            """{"props":{"pageProps":{"userInfoData":{"puid":"1","nickname":"t"},""" +
+            """"threadList":[{"tid":"9","title":"t","pics":""" +
+            """[{"url":"https://i3.hoopchina.com.cn/c.jpg","width":3024}]}],""" +
+            """"replyList":[]}}}</script></head></html>"""
+        val p = HupuParser.parseUserProfile(html)
+        assertNotNull(p)
+        assertEquals(1, p!!.threads.size)
+        assertEquals("https://i3.hoopchina.com.cn/c.jpg", p.threads.first().cover)
     }
 }

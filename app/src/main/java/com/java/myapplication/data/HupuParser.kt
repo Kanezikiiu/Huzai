@@ -398,7 +398,8 @@ object HupuParser {
                 puid = u.optLong("puid", 0L).toString(),
                 name = u.optString("nickname"),
                 avatar = u.optString("header"),
-                locationStr = u.optString("location_str"),
+                // 1.190: PC getUserInfo 也可能只下发 location（location_str 为空串）→ 回退读取
+                locationStr = u.optString("location_str").ifEmpty { u.optString("location") },
                 regTimeStr = u.optString("reg_time_str"),
                 level = u.optString("bbsUserLevel"),
                 levelDesc = u.optString("bbsUserLevelDesc"),
@@ -414,11 +415,36 @@ object HupuParser {
                 postCount = u.optInt("bbs_post_count", 0),
                 recommendCount = u.optInt("bbs_recommend_count", 0),
                 favoriteCount = u.optInt("bbs_favorite_count", 0),
+                // 1.190: PC getUserInfo 下发 reputation 对象（{detail_url, value}），此前未读取，
+                // 导致用户主页「声望」恒为 0 而被整段隐藏（网页有、App 没有）
+                reputation = u.optJSONObject("reputation")?.optInt("value", 0) ?: 0,
                 isSelf = u.optInt("is_self", 0) == 1,
             )
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 1.190: 帖子/回帖封面统一解析（用户主页发帖/回帖/推荐/收藏四类列表共用）。
+     *
+     * 实测数据源里 `pics` 是**对象数组**：`[{"url":"https://…","width":1256,"height":686,
+     * "is_gif":0,"type":"common"}]`；旧代码用 `optString(0)` 取第一项，拿到的是整个对象的
+     * `toString()`（形如 `{"url":…}`）而不是 URL —— Coil 加载失败 → 列表右侧一直留一块
+     * 84×60 的空洞，把标题压窄导致「还有很大空间就换行」，且缩略图从不显示。
+     *
+     * 这里同时兼容对象数组与字符串数组两种形态，并只接受 http(s) 真实地址，
+     * 避免把脏值喂给图片加载器。
+     */
+    fun coverFrom(o: JSONObject?): String? {
+        o ?: return null
+        val arr = o.optJSONArray("pics") ?: o.optJSONArray("picInfos")
+        if (arr != null && arr.length() > 0) {
+            val url = arr.optJSONObject(0)?.optString("url").orEmpty().ifEmpty { arr.optString(0) }
+            if (url.startsWith("http")) return url
+        }
+        // 兜底：首页信息流用的封面字段名是 cover（列表接口若换字段名也能接住）
+        return o.optString("cover").takeIf { it.startsWith("http") }
     }
 
     private fun authorFrom(o: JSONObject?): HupuAuthor? {
@@ -470,7 +496,8 @@ object HupuParser {
                 recommendNum = o.optInt("recommend_num", 0),
                 createdAtText = o.optString("lastpost_time_text").ifEmpty { o.optString("create_time") },
                 summary = o.optString("summary"),
-                cover = o.optJSONArray("pics")?.optString(0)?.takeIf { it.isNotEmpty() },
+                // 1.190: pics 为对象数组，需取 url（旧写法 optString(0) 拿到的是对象 toString）
+                cover = coverFrom(o),
             )
         }
         val replies = mutableListOf<HupuProfileReply>()
@@ -486,7 +513,8 @@ object HupuParser {
                 formatTime = o.optString("formatTime"),
                 lights = o.optInt("allLightCount", 0),
                 threadTitle = o.optString("title"),
-                cover = o.optJSONArray("picInfos")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotEmpty() },
+                // 1.190: 回帖封面同样在 pics/picInfos 里，且是对象数组
+                cover = coverFrom(o),
             )
         }
         val rep = u.optJSONObject("reputation")
@@ -496,7 +524,10 @@ object HupuParser {
             puid = puid,
             name = name,
             avatar = u.optString("header"),
-            locationStr = u.optString("location_str"),
+            // 1.190: 移动版 SSR 的 userInfoData 里 location_str 常为空串，真正的 IP 属地在
+            // location（实测 m.hupu.com/user/119424238：location="山西" / location_str=""）
+            // → 回退读取，否则用户主页会缺「IP 属地」（网页有、App 没有）。
+            locationStr = u.optString("location_str").ifEmpty { u.optString("location") },
             regTimeStr = u.optString("reg_time_str"),
             level = u.optString("bbsUserLevel"),
             levelDesc = u.optString("bbsUserLevelDesc"),

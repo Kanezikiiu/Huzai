@@ -98,6 +98,8 @@ object HupuAccount {
         profile = prof
         // 1.111: 登录态变化后，此前匿名缓存的 HTML 可能缺登录态字段（点亮、可见性等），清掉重取
         HupuCache.clear()
+        // 1.190: 资料卡缓存里有 isSelf 等与会话相关的字段，换账号后必须失效
+        hupuUserInfoCache.clear()
         store.edit().putString(
             "profile",
             JSONObject().apply {
@@ -116,6 +118,8 @@ object HupuAccount {
         sessionVersion++
         // 1.111: 清掉含登录态的内容（私密帖详情等），避免退出后仍能从磁盘缓存读到
         HupuCache.clear()
+        // 1.190: 资料卡缓存同样含会话相关字段（isSelf / 私信入口），退出即失效
+        hupuUserInfoCache.clear()
         // 清除 WebView 全局 CookieManager 中的虎扑凭据（bbs 会话 + passport SSO）。
         // 不清的话：下次进登录页会被轮询秒命中旧 cookie，且官方页
         // 靠 SSO 自动登回已退出的账号。removeAllCookies 会带上第三方

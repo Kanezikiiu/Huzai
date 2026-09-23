@@ -89,6 +89,31 @@ internal fun normalizeCover(url: String?): String? {
 }
 
 /**
+ * 1.190: 小尺寸展示位改用 CDN 缩略图，避免整张原图下载。
+ *
+ * 实测（i11.hoopchina.com.cn，原图 1256px 宽 / 155KB）：
+ * 加 `?x-oss-process=image/resize,w_240` → 14KB；`w_168` → 8.5KB（约 1/11 ~ 1/18）。
+ * 列表里几十张原图会把带宽打满、抢走同屏其它请求的时间（资料卡 / 下一页），
+ * 这正是「用户发帖多且带图 → 主页骨架屏久、滑动发涩」的主因之一。
+ *
+ * · 已带 `x-oss-process` 的 URL（如头像的 m_fill 裁切）原样返回，不覆盖已有处理参数
+ * · GIF 不缩放（缩放会丢动图）
+ * · 非虎扑 CDN 域名原样返回
+ *
+ * @param widthPx 展示位宽度对应的像素值（dp × density，取略大值即可）
+ */
+internal fun thumbnailUrl(url: String?, widthPx: Int): String? {
+    val u = normalizeCover(url) ?: return null
+    if (widthPx <= 0) return u
+    val lower = u.lowercase()
+    if (lower.contains("x-oss-process=")) return u
+    if (lower.contains(".gif")) return u
+    if (!lower.contains("hoopchina.com.cn") && !lower.contains("hupucdn.com")) return u
+    val sep = if (u.contains("?")) "&" else "?"
+    return "$u${sep}x-oss-process=image/resize,w_$widthPx"
+}
+
+/**
  * 带英雄角标的头像（MOBA 赛事：选手所选英雄/角色小图叠在头像右下角，官方形态）。
  * heroIcon 为空时退化为普通圆形头像——教练/中立角色/非 MOBA 赛事不显示角标。
  * 角标走网络 URL + Coil（不走 painterResource，避免自适应图标强转 BitmapDrawable 崩溃）。
@@ -176,7 +201,8 @@ internal fun FeedItem(thread: HupuThread, showImage: Boolean, onOpen: (HupuThrea
         }
         if (showImage) {
             AsyncImage(
-                model = normalizeCover(thread.cover),
+                // 1.190: 100×76dp 小图位走 CDN 缩略图（原图 155KB → 约 15KB），避免列表里几十张原图打满带宽
+                model = thumbnailUrl(thread.cover, 320),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

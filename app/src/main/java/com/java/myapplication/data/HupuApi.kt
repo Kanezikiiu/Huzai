@@ -77,10 +77,11 @@ object HupuApi {
      * 需要登录 cookie（bbs 域 SSO），未登录时端点返回 code=0 / data=null。
      * 实测：getUserInfo/getThreadList/getReplyList/getRecommendList/getFavoritesList/getUserFollowList。
      */
-    suspend fun fetchSpaceApi(path: String): String? {
+    suspend fun fetchSpaceApi(path: String, fast: Boolean = false): String? {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                throttle.acquire()
+                // 1.190: fast=true 走导航快车道（200ms），用于「用户主页资料卡」这类用户主动触发的请求
+                if (fast) HupuHttp.navThrottle.acquire() else throttle.acquire()
                 val request = okhttp3.Request.Builder()
                     .url("https://bbs.hupu.com/pcmapi/pc/space/v1/$path")
                     .header("User-Agent", DESKTOP_UA)

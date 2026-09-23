@@ -84,6 +84,7 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.normalizeCover
+import com.java.myapplication.ui.components.thumbnailUrl
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.launch
 
@@ -542,7 +543,8 @@ private fun SearchItemRow(it: HupuSearchItem, onOpen: (HupuSearchItem) -> Unit) 
         }
         normalizeCover(it.picture)?.let { pic ->
             AsyncImage(
-                model = pic,
+                // 1.190: 100×76dp 小图位走 CDN 缩略图，避免下原图
+                model = thumbnailUrl(pic, 320),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

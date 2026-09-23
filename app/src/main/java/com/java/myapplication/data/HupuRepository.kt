@@ -96,9 +96,16 @@ class HupuRepository {
 
     /** getUserInfo：全量资料卡（声望/IP/真实计数/是否本人） */
     suspend fun spaceUserInfo(euid: String): HupuUserProfile? {
-        val body = HupuApi.fetchSpaceApi("getUserInfo?euid=$euid") ?: return null
-        return HupuParser.parseSpaceUserInfo(body)
+        // 1.190: 导航快车道（200ms 间隔，不等全局 1s 时间片）+ 结果写进程级缓存
+        val body = HupuApi.fetchSpaceApi("getUserInfo?euid=$euid", fast = true) ?: return null
+        return HupuParser.parseSpaceUserInfo(body)?.also { hupuUserInfoCache.put(euid, it) }
     }
+
+    /**
+     * 1.190: 读取资料卡缓存。命中即先渲染内容（零骨架），随后照常请求刷新覆盖。
+     * 覆盖「用户主页 → 返回 → 再进同一人」「详情点作者 → 返回 → 再点」等高频往返路径。
+     */
+    fun cachedUserInfo(euid: String): HupuUserProfile? = hupuUserInfoCache.get(euid)
 
     /** 发帖列表（page 分页，数组直出） */
     suspend fun spaceThreads(euid: String, page: Int): List<HupuProfileThread> {
@@ -121,7 +128,8 @@ class HupuRepository {
                         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date(it * 1000))
                     } ?: "",
                     summary = t.optString("summary"),
-                    cover = t.optJSONArray("pics")?.optString(0)?.takeIf { it.isNotEmpty() },
+                    // 1.190: pics 是对象数组（[{"url":…}]），旧写法 optString(0) 拿到的是对象 toString
+                    cover = HupuParser.coverFrom(t),
                 )
             }
             out
@@ -148,7 +156,8 @@ class HupuRepository {
                     formatTime = t.optString("formatTime"),
                     lights = t.optInt("lightCount", 0),
                     threadTitle = t.optString("title").ifEmpty { t.optString("topicName") },
-                    cover = t.optJSONArray("picInfos")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotEmpty() },
+                    // 1.190: 回帖封面同样走统一解析（pics/picInfos 皆为对象数组）
+                    cover = HupuParser.coverFrom(t),
                 )
             }
             Pair(out, d.optLong("maxTime", maxTime))
@@ -179,7 +188,8 @@ class HupuRepository {
                         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date(it * 1000))
                     } ?: "",
                     summary = t.optString("summary"),
-                    cover = t.optJSONArray("pics")?.optString(0)?.takeIf { it.isNotEmpty() },
+                    // 1.190: pics 是对象数组（[{"url":…}]），旧写法 optString(0) 拿到的是对象 toString
+                    cover = HupuParser.coverFrom(t),
                 )
             }
             out
@@ -210,7 +220,8 @@ class HupuRepository {
                         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date(it * 1000))
                     } ?: "",
                     summary = t.optString("summary"),
-                    cover = t.optJSONArray("pics")?.optString(0)?.takeIf { it.isNotEmpty() },
+                    // 1.190: pics 是对象数组（[{"url":…}]），旧写法 optString(0) 拿到的是对象 toString
+                    cover = HupuParser.coverFrom(t),
                 )
             }
             out

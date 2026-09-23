@@ -70,6 +70,7 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.FeedItem
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
+import com.java.myapplication.ui.components.thumbnailUrl
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -258,6 +259,9 @@ fun UserProfilePage(
 
     // \u6570\u636e\u62c9\u53d6\uff08\u6253\u5f00\u77ac\u95f4\u7f6e loading\uff0c\u5931\u8d25\u6001\u53ea\u5728\u771f\u5b9e\u5931\u8d25\u540e\u51fa\u73b0\uff09
     LaunchedEffect(euid) {
+        // 1.190: 命中内存缓存 → 第一帧就用真实资料渲染（零骨架），随后仍请求刷新覆盖
+        val cached = repo.cachedUserInfo(euid)
+        if (cached != null && profile == null) profile = cached
         loading = profile == null
         failed = false
         // \u767b\u5f55\u6001\u4f18\u5148 PC \u4e2a\u4eba\u4e2d\u5fc3 getUserInfo\uff08\u58f0\u671b/IP/\u771f\u5b9e\u8ba1\u6570/isSelf\uff09\uff1b\u5931\u8d25\u56de\u9000\u79fb\u52a8 SSR
@@ -852,20 +856,24 @@ private fun ProfileCard(
                     )
                 }
             }
+        // 1.190: 「加入虎扑 N 天」与「声望」同行——声望在天数右侧（与网页资料卡一致）
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (p.regTimeStr.isNotBlank()) {
+                Text(
+                    p.regTimeStr,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (p.reputation > 0) {
+                if (p.regTimeStr.isNotBlank()) Spacer(Modifier.width(12.dp))
+                Text(
+                    "\u58f0\u671b ${formatCount(p.reputation)}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        if (p.reputation > 0) {
-            Text(
-                "\u58f0\u671b ${formatCount(p.reputation)}",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (p.regTimeStr.isNotBlank()) {
-            Text(
-                p.regTimeStr,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -1004,14 +1012,20 @@ private fun ProfileThreadRow(t: HupuProfileThread, onClick: () -> Unit) {
             }
         }
         if (t.cover != null) {
-            AsyncImage(
-                model = t.cover,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(width = 84.dp, height = 60.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-            )
+            // 1.190: 封面加载失败时整块撤掉——否则右侧会留一块 84×60 空洞，把标题压窄换行
+            var coverOk by remember(t.cover) { mutableStateOf(true) }
+            if (coverOk) {
+                AsyncImage(
+                    // 1.190: 84×60dp 小图位走 CDN 缩略图（原图 155KB → 约 14KB）
+                    model = thumbnailUrl(t.cover, 240),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    onError = { coverOk = false },
+                    modifier = Modifier
+                        .size(width = 84.dp, height = 60.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+            }
         }
     }
 }

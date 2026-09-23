@@ -1,8 +1,8 @@
 {
-  "versionCode": 199,
-  "versionName": "1.189",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.189/huzai-1.189-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.189",
-  "changelog": "· 帖子详情新增底部操作条（写评论 / 评论数 / 推荐 / 收藏 / 转发），点击评论数按钮即可跳转至评论区顶部，毛玻璃悬浮栏形式\n· 主楼底行改显示「发布时间 · 发布地址 · 浏览数」，推荐与收藏移至操作条，顶栏转发按钮移至操作条\n· 推荐与收藏的选中态跟随色彩主题\n· 新增「滚动时自动隐藏底栏」开关（默认开启），原「主题」设置更名为「界面设置」",
+  "versionCode": 200,
+  "versionName": "1.190",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.190/huzai-1.190-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.190",
+  "changelog": "· 用户主页新增「声望」，与「加入虎扑天数」同行显示\n· 修复部分用户主页不显示 IP 属地的问题\n· 修复用户主页、首页信息流、搜索结果列表不显示封面的问题\n· 列表封面改用压缩图（流量约为原来的 1/11），页面打开更快、滑动更顺",
   "forceUpdate": false
 }

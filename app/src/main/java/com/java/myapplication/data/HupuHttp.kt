@@ -28,6 +28,16 @@ internal object HupuHttp {
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * 1.190: 导航类请求的快车道节流（间隔 200ms，而非常规的 1000ms）。
+     *
+     * 场景：用户从帖子/消息点进「用户主页」，资料卡请求 getSpaceApi(getUserInfo) 要走全局节流，
+     * 若上一个请求刚占掉时间片，页面就得干等最多 1s 才发请求——表现为「骨架屏显示较久」。
+     * 这类请求由用户主动触发、频率天然很低，给一条独立的短间隔通道既不影响防频控，
+     * 又能把等待从「最多 1s」压到「最多 200ms」。
+     */
+    val navThrottle = RequestThrottle(200L)
 }
 
 /**
