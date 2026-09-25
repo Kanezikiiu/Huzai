@@ -51,6 +51,7 @@ import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.ui.components.HUPU_EMOJI
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.StickerAddCell
+import com.java.myapplication.ui.components.stickerImageModel
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -149,6 +150,8 @@ internal fun ScorePanelOverlay(
             Modifier
                 .align(Alignment.Center)
                 .padding(horizontal = 40.dp)
+                // 1.191: 平板/横屏下限制卡片宽度（手机上可用宽度本就 < 400dp，无影响）
+                .widthIn(max = 400.dp)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(MaterialTheme.colorScheme.surface)
@@ -350,7 +353,8 @@ internal fun ScoreStickerPane(
         item(key = "__add_sticker__") { StickerAddCell() }
         gridItems(stickers, key = { it.url }) { s ->
             AsyncImage(
-                model = s.url,
+                // 1.191: 走带 Referer 的加载模型（收藏的 adoutu 表情有防盗链）
+                model = stickerImageModel(s.url),
                 contentDescription = null,
                 modifier = Modifier
                     .size(44.dp)

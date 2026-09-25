@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -205,12 +206,13 @@ private fun KeywordGroup(
         }
         var input by remember { mutableStateOf("") }
         OutlinedTextField(
+            colors = huzaiFieldColors(),
             value = input,
             onValueChange = { input = it },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("输入关键词，回车添加", fontSize = 13.sp) },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             trailingIcon = {
                 if (input.isNotEmpty()) {
                     IconButton(onClick = { input = "" }) {

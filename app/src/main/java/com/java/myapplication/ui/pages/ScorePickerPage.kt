@@ -33,12 +33,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.AlertDialog
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -126,6 +127,14 @@ fun ScorePickerPage(onClose: () -> Unit) {
         HupuPrefs.saveScoreGames(newIds)
     }
     var resetAsk by remember { mutableStateOf(false) }
+    // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
+    // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
+    // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     fun resetDefault() {
         HupuPrefs.clearScoreGames()
         selected = emptyList()
@@ -138,7 +147,7 @@ fun ScorePickerPage(onClose: () -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             // 顶栏：返回 + 标题 + 计数 + 恢复默认（与主页频道自定义同款）
             Row(
                 Modifier
@@ -174,21 +183,6 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 IconButton(onClick = { resetAsk = true }) {
                     Icon(Icons.Rounded.Refresh, contentDescription = "恢复默认", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-            if (resetAsk) {
-                AlertDialog(
-                    onDismissRequest = { resetAsk = false },
-                    title = { Text("清空评分频道") },
-                    text = { Text("将清除全部已选评分频道，评分页恢复显示全部项目。此操作不可恢复。") },
-                    confirmButton = {
-                        TextButton(onClick = { resetDefault(); resetAsk = false }) {
-                            Text("清空", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { resetAsk = false }) { Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    },
-                )
             }
             // 已选条（长按拖动排序 / 点按移除）
             if (selected.isEmpty()) {
@@ -251,6 +245,19 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 // 底部留白（等价于旧网格 contentPadding 的 bottom = 140.dp）
                 Spacer(Modifier.height(140.dp))
             }
+        }
+        // 1.191: 清空评分频道确认弹窗（Liquid Glass 同款外观 + Q 弹出入场）
+        // 放在根 Box 内、内容层之后（兄弟顺序在记录层之后）——毛玻璃才能采到页面像素
+        if (resetAsk) {
+            LiquidGlassDialog(
+                backdrop = backdrop,
+                title = "清空评分频道",
+                message = "将清除全部已选评分频道，评分页恢复显示全部项目。此操作不可恢复。",
+                confirmText = "清空",
+                dismissText = "取消",
+                onConfirm = { resetDefault() },
+                onDismiss = { resetAsk = false },
+            )
         }
     }
 }

@@ -166,26 +166,6 @@ fun PocketLedgerApp() {
             else -> Unit
         }
     }
-    // 发现新版本弹窗（复用关于页 iOS 风格对话框）
-    autoUpdateInfo?.let { info ->
-        UpdateDialog(
-            info = info,
-            onDismiss = {
-                // 1.181: 「忽略此版本」→ 记住版本号，自动弹窗不再打扰
-                HupuPrefs.ignoreUpdateVersion(info.versionCode)
-                autoUpdateInfo = null
-            },
-            onDownload = {
-                runCatching {
-                    autoUpdateCtx.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(info.apkUrl.ifEmpty { info.releaseUrl }))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-                autoUpdateInfo = null
-            },
-        )
-    }
     // 1.132: 切入评分页信号——页面常驻组合，评分页冷启动首屏加载失败后不会自己重试；
     // 切入时通知评分页做一次补偿重试，避免看到残留的「加载失败」
     LaunchedEffect(selectedTab) {
@@ -331,6 +311,28 @@ fun PocketLedgerApp() {
                     }
                 }
             }
+        }
+        // 发现新版本弹窗（与关于页共用；1.191 起为 Liquid Glass 毛玻璃 + Q 弹出入场）。
+        // 必须画在内容层 Surface 之后（根 backdrop 记录的就是 Surface 像素）。
+        autoUpdateInfo?.let { info ->
+            UpdateDialog(
+                backdrop = backdrop,
+                info = info,
+                onDismiss = {
+                    // 1.181: 「忽略此版本」→ 记住版本号，自动弹窗不再打扰
+                    HupuPrefs.ignoreUpdateVersion(info.versionCode)
+                    autoUpdateInfo = null
+                },
+                onDownload = {
+                    runCatching {
+                        autoUpdateCtx.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(info.apkUrl.ifEmpty { info.releaseUrl }))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    autoUpdateInfo = null
+                },
+            )
         }
     }
 }

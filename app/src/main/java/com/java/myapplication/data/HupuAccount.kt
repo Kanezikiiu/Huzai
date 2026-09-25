@@ -664,10 +664,16 @@ object HupuAccount {
     /** 1.75: 上传结果——url 成功；error 失败原因(步骤+HTTP码)，直接进 toast */
     data class UploadResult(val url: String?, val error: String? = null)
     /** 1.94: 下载网络图片字节（收藏表情包 -> 作为图片随回复上传） */
-    suspend fun downloadImageBytes(url: String): ByteArray? =
+    /**
+     * 1.191: 下载图片字节。[referer] 用于有防盗链的第三方图源（如 adoutu 无 Referer 直接 403）；
+     * 默认 null → 请求与历史行为完全一致。
+     */
+    suspend fun downloadImageBytes(url: String, referer: String? = null): ByteArray? =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                val rb = Request.Builder().url(url)
+                if (referer != null) rb.header("Referer", referer)
+                client.newCall(rb.build()).execute().use { r ->
                     if (r.isSuccessful) r.body?.bytes() else null
                 }
             }.getOrNull()

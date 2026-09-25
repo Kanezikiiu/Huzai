@@ -32,6 +32,12 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.text.style.TextOverflow
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassButton
+import com.java.myapplication.ui.glass.LiquidGlassCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +63,6 @@ import androidx.core.graphics.drawable.toBitmap
 import com.java.myapplication.BuildConfig
 import com.java.myapplication.R
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.window.Dialog
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
@@ -170,6 +175,14 @@ fun AboutPage(onClose: () -> Unit) {
         }.onFailure { toast = "无法打开链接" }
     }
 
+    // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
+    // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
+    // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -178,7 +191,12 @@ fun AboutPage(onClose: () -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .layerBackdrop(backdrop),
+        ) {
             // 顶栏
             Row(
                 Modifier
@@ -358,6 +376,7 @@ fun AboutPage(onClose: () -> Unit) {
         // 1.177: 发现新版本对话框
         updateInfo?.let { info ->
             UpdateDialog(
+                backdrop = backdrop,
                 info = info,
                 onDismiss = {
                     // 1.181: 手动检查里点「忽略此版本」同样记住，自动弹窗不再打扰
@@ -374,76 +393,68 @@ fun AboutPage(onClose: () -> Unit) {
 }
 
 /**
- * 1.177/1.179: 检查更新弹窗（关于页手动检查 + 打开软件自动检查共用）（iOS 风格：大圆角卡片、标题/正文居左、取消浅灰 + 确认蓝色大圆角按钮）。
+ * 1.177/1.179: 检查更新弹窗（关于页手动检查 + 打开软件自动检查共用）。
+ * 1.191: 换成 Liquid Glass 毛玻璃卡片（与底部 Tab 栏同源）+ Q 弹出入场。
+ * 两个按钮都先播退场动画、动画播完才回调宿主（"去下载" 走 onDownload）。
  */
 @Composable
 fun UpdateDialog(
+    backdrop: Backdrop,
     info: HupuUpdateInfo,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(20.dp),
-        ) {
-            Text(
-                "发现新版本 v" + info.versionName,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "当前版本 v" + BuildConfig.VERSION_NAME,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (info.changelog.isNotBlank()) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    info.changelog,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DialogAction("忽略此版本", primary = false, modifier = Modifier.weight(1f), onClick = onDismiss)
-                DialogAction("去下载", primary = true, modifier = Modifier.weight(1f), onClick = onDownload)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DialogAction(
-    text: String,
-    primary: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                if (primary) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    var download by remember { mutableStateOf(false) }
+    LiquidGlassCard(
+        backdrop = backdrop,
+        onDismiss = { if (download) onDownload() else onDismiss() },
+    ) { close ->
+        val contentColor = MaterialTheme.colorScheme.onSurface
         Text(
-            text,
-            fontSize = 15.sp,
-            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            "发现新版本 v" + info.versionName,
+            Modifier.padding(24.dp, 24.dp, 24.dp, 6.dp),
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Medium,
+            color = contentColor,
         )
+        Text(
+            "当前版本 v" + BuildConfig.VERSION_NAME,
+            Modifier.padding(24.dp, 0.dp, 24.dp, 0.dp),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (info.changelog.isNotBlank()) {
+            Text(
+                info.changelog,
+                Modifier.padding(24.dp, 14.dp, 24.dp, 0.dp),
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = contentColor,
+                maxLines = 8,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(
+            Modifier
+                .padding(24.dp, 20.dp, 24.dp, 24.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LiquidGlassButton(
+                text = "忽略此版本",
+                accent = false,
+                modifier = Modifier.weight(1f),
+                contentColor = contentColor,
+                onClick = { download = false; close() },
+            )
+            LiquidGlassButton(
+                text = "去下载",
+                accent = true,
+                modifier = Modifier.weight(1f),
+                onClick = { download = true; close() },
+            )
+        }
     }
 }
 

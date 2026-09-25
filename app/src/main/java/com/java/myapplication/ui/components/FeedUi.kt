@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -354,11 +356,13 @@ internal fun SortBar(
     }
 }
 
-/** 胶囊 chip（横滑条条目：文字 + 可选圆形 logo） */
+/** 胶囊 chip（横滑条条目：文字 + 可选圆形 logo 或矢量图标） */
 @Composable
 internal fun Chip(
     text: String,
     logoUrl: String? = null,
+    /** 1.191: 可选矢量图标（如「收藏专区」的星标）；有 logoUrl 时以 logo 优先 */
+    leadingIcon: ImageVector? = null,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -379,6 +383,17 @@ internal fun Chip(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(20.dp).clip(CircleShape),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        // 1.191: 无 logo 时可显示矢量图标（与文字同色系）
+        if (logoUrl == null && leadingIcon != null) {
+            Icon(
+                leadingIcon,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(6.dp))
         }

@@ -49,7 +49,7 @@ object HupuIcons {
     val ImageIcon: ImageVector = materialIcon(name = "HupuIcons.ImageIcon") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M21,19V5c0,-1.1 -0.9,-2 -2,-2H5c-1.1,0 -2,0.9 -2,2v14c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2zM8.5,13.5l2.5,3.01L14.5,12l4.5,6H5l3.5,-4.5z"))
     }
-    /** 转发箭头：弧线向右拐（Material reply 水平镜像，无方框，官方 24px path 变换） */
+    /** 分享箭头：弧线向右拐（Material reply 水平镜像，无方框，官方 24px path 变换） */
     val IosShare: ImageVector = materialIcon(name = "HupuIcons.IosShare") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M14,9L14,5l7,7l-7,7v-4.1c-5,0,-8.5,1.6,-11,5.1C4,15,7,10,14,9z"))
     }
@@ -57,9 +57,16 @@ object HupuIcons {
     val At: ImageVector = materialIcon(name = "HupuIcons.At") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,2C6.48,2 2,6.48 2,12c0,5.52 4.48,10 10,10h5v-2h-5c-4.34,0 -8,-3.66 -8,-8s3.66,-8 8,-8 8,3.66 8,8v1.43c0,0.79 -0.71,1.57 -1.5,1.57S17,14.22 17,13.43V12c0,-2.76 -2.24,-5 -5,-5s-5,2.24 -5,5 2.24,5 5,5c1.38,0 2.64,-0.56 3.54,-1.47 0.65,0.89 1.77,1.47 2.96,1.47 1.97,0 3.5,-1.6 3.5,-3.57V12c0,-5.52 -4.48,-10 -10,-10zM12,15c-1.66,0 -3,-1.34 -3,-3s1.34,-3 3,-3 3,1.34 3,3 -1.34,3 -3,3z"))
     }
-    /** 评论气泡（Material chat_bubble 24px） */
+    /**
+     * 1.191 评论气泡（自绘，取代 Material chat_bubble）。
+     * 原 chat_bubble 的气泡体在 24 画布中只占 y2..18（重心 y10），左下角挂着一条 y18..22 的小尾巴，
+     * 内容盒被撑到 y2..22；在定高图标槽里居中后，气泡视觉重心比其它图标高约 1.6dp，
+     * 真机上表现为「评论图标被顶高、和点亮/收藏/分享不齐」。
+     * 新路径把气泡体下移到 y4..20（重心正好落在画布中心 y12），尾巴并入左下角、不再额外撑高，
+     * 因此与其余三个图标天然对齐（内容盒仍 20x20，尺寸档位 iconSize 不变）。
+     */
     val Comment: ImageVector = materialIcon(name = "HupuIcons.Comment") {
-        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M20,2L4,2c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2L22,4c0,-1.1 -0.9,-2 -2,-2z"))
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M6,4H18A4,4 0 0 1 22,8V16A4,4 0 0 1 18,20H6L2,24V8A4,4 0 0 1 6,4Z"))
     }
     /** 点亮（Material thumb_up 24px） */
     val Light: ImageVector = materialIcon(name = "HupuIcons.Light") {

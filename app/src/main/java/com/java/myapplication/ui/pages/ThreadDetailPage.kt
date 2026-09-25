@@ -50,14 +50,17 @@ import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.autoHideScroll
 import com.java.myapplication.ui.components.rememberAutoHideBarState
 import com.java.myapplication.ui.components.StickerAddCell
+import com.java.myapplication.ui.components.StickerSearchSheet
+import com.java.myapplication.ui.components.StickerSearchEntry
+import com.java.myapplication.ui.components.rememberStickerSearchController
+import com.java.myapplication.data.stickerReferer
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -370,9 +373,16 @@ fun ThreadDetailOverlay(
     var replyImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     // 1.95: 收藏表情包——面板 tab 0=虎扑表情 / 1=我的表情；表情包走图片附件途径
     var emojiTab by remember { mutableStateOf(0) }
+    // 1.191: 表情搜索半屏面板——open 控制挂载、closing 驱动退场动画（与楼中楼 sheet 同构）
+    var stickerSearchOpen by remember { mutableStateOf(false) }
+    var stickerSearchClosing by remember { mutableStateOf(false) }
+    // 1.191: 表情搜索面板里「清空最近使用 / 最近在搜」的确认弹窗（null = 不显示）
+    var stickerClearTarget by remember { mutableStateOf<String?>(null) }
     var stickerToDelete by remember { mutableStateOf<HupuSticker?>(null) }
     /** 表情包下载落盘中(防连点) */
     var stickerAdding by remember { mutableStateOf(false) }
+    // 1.191: 表情包搜索（面板第三个 tab）——状态挂在页面，切 tab 不丢结果
+    val stickerSearch = rememberStickerSearchController()
     var imageUploading by remember { mutableStateOf(false) }
     val replyCtx = androidx.compose.ui.platform.LocalContext.current
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -538,7 +548,8 @@ fun ThreadDetailOverlay(
             val bytes = if (isLocalStickerUrl(s.url)) {
                 runCatching { java.io.File(s.url.removePrefix("file://")).readBytes() }.getOrNull()
             } else {
-                HupuAccount.downloadImageBytes(s.url)
+                // 1.191: adoutu 图片有防盗链，下载必须带 Referer（虎扑图床返回 null → 原样请求）
+                HupuAccount.downloadImageBytes(s.url, stickerReferer(s.url))
             }
             if (bytes == null || bytes.isEmpty()) {
                 stickerAdding = false
@@ -754,6 +765,18 @@ fun ThreadDetailOverlay(
             // 全屏视频打开：返回手势仅退出全屏（不收 sheet、不退页面）
             events.collect { }
             videoFullscreen = false
+            return@PredictiveBackHandler
+        }
+        if (stickerClearTarget != null) {
+            // 1.191: 清空确认弹窗盖在搜索面板之上 → 返回手势先收弹窗（不动面板）
+            events.collect { }
+            stickerClearTarget = null
+            return@PredictiveBackHandler
+        }
+        if (stickerSearchOpen) {
+            // 1.191: 表情搜索面板在最上层 → 返回手势先收它（不退页面、不收回复框）
+            events.collect { }
+            if (!stickerSearchClosing) stickerSearchClosing = true
             return@PredictiveBackHandler
         }
         if (replyBoxOpen) {
@@ -1169,7 +1192,7 @@ fun ThreadDetailOverlay(
             )
         }
 
-        // 1.189: 常驻操作条——把「写评论 / 评论数 / 推荐 / 收藏 / 转发」从「滚走即不可达」的
+        // 1.189: 常驻操作条——把「写评论 / 评论数 / 推荐 / 收藏 / 分享」从「滚走即不可达」的
         // 主楼卡片与顶栏里提出来，收成一条贴底悬浮条。回复框（键盘/表情面板）打开时整条
         // 以 spring 收缩移出屏幕（与悬浮 Tab 栏同款出入场语言）。
         val barD = detail
@@ -1277,6 +1300,15 @@ fun ThreadDetailOverlay(
                                 .padding(start = 12.dp, end = 12.dp, top = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            // 1.191: 表情搜索入口（图标按钮，非 tab）——放在 tab 行最左侧；
+                            // 点击弹出半屏搜索面板，同时收起表情面板避免两层面板叠加
+                            StickerSearchEntry {
+                                emojiOpen = false
+                                panelToKeyboardPending = false
+                                stickerSearchClosing = false
+                                stickerSearchOpen = true
+                            }
+                            Spacer(Modifier.width(2.dp))
                             EmojiTabChip("虎扑表情", selected = emojiTab == 0) { emojiTab = 0 }
                             Spacer(Modifier.width(8.dp))
                             EmojiTabChip("我的表情", selected = emojiTab == 1) { emojiTab = 1 }
@@ -1385,6 +1417,30 @@ fun ThreadDetailOverlay(
                     onCollapse = { replyBoxOpen = false },
                 )
             }
+            // 1.191: 表情搜索半屏面板——盖过回复框(1000)/楼中楼 sheet 一切层级；
+            // 不避让键盘（键盘作为系统窗口盖在面板下半部分，用户自行收键盘看全）
+            if (stickerSearchOpen) {
+                StickerSearchSheet(
+                    controller = stickerSearch,
+                    closing = stickerSearchClosing,
+                    onPick = {
+                        insertSticker(it)
+                        // 1.191: 选中即清空并收起面板（微信式：选完就回到原页面）
+                        stickerSearch.clear()
+                        if (!stickerSearchClosing) stickerSearchClosing = true
+                    },
+                    onRequestClose = { if (!stickerSearchClosing) stickerSearchClosing = true },
+                    onClosed = {
+                        stickerSearchOpen = false
+                        stickerSearchClosing = false
+                        stickerClearTarget = null
+                    },
+                    bottomPad = with(density) { navPx.toDp() } + 8.dp,
+                    clearTarget = stickerClearTarget,
+                    onClearRequest = { stickerClearTarget = it },
+                    onClearDismiss = { stickerClearTarget = null },
+                )
+            }
         }
         // 1.152: 长按图片的收藏气泡——带底部小箭头尾巴、与图片水平居中、贴在图片上方。
         // 结构改动（修「点收藏不执行收藏」）：遮罩与气泡改为**同层兄弟**。
@@ -1483,48 +1539,44 @@ fun ThreadDetailOverlay(
                 )
             }
         }
-        // 1.119: 删除帖子确认弹窗
+        // 1.119: 删除帖子确认弹窗（1.191: 换成 Liquid Glass 同款外观）
         if (showDeleteConfirm) {
-            AlertDialog(
-                onDismissRequest = { showDeleteConfirm = false },
-                title = { Text("删除帖子") },
-                text = { Text("删除后无法恢复，确定要删除这篇帖子吗？") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showDeleteConfirm = false
-                        scope.launch {
-                            val err = HupuPostApi.deleteThread(tid)
-                            if (err == null) {
-                                replyToast = "已删除"
-                                delay(500)
-                                onBack()
-                            } else {
-                                replyToast = err
-                            }
+            LiquidGlassDialog(
+                backdrop = actionBackdrop,
+                title = "删除帖子",
+                message = "删除后无法恢复，确定要删除这篇帖子吗？",
+                confirmText = "删除",
+                dismissText = "取消",
+                onConfirm = {
+                    scope.launch {
+                        val err = HupuPostApi.deleteThread(tid)
+                        if (err == null) {
+                            replyToast = "已删除"
+                            delay(500)
+                            onBack()
+                        } else {
+                            replyToast = err
                         }
-                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                    }
                 },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
-                },
+                onDismiss = { showDeleteConfirm = false },
+                zIndex = 1100f,
             )
         }
-        // 1.94: 删除收藏表情确认弹窗
+        // 1.94: 删除收藏表情确认弹窗（1.191: 换成 Liquid Glass 同款外观）
         stickerToDelete?.let { st ->
-            AlertDialog(
-                onDismissRequest = { stickerToDelete = null },
-                title = { Text("删除表情") },
-                text = { Text("确定从「我的表情」中移除这个表情吗？") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        HupuPrefs.removeSticker(st.url)
-                        HupuPrefs.stickerToast = "已删除"
-                        stickerToDelete = null
-                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            LiquidGlassDialog(
+                backdrop = actionBackdrop,
+                title = "删除表情",
+                message = "确定从「我的表情」中移除这个表情吗？",
+                confirmText = "删除",
+                dismissText = "取消",
+                onConfirm = {
+                    HupuPrefs.removeSticker(st.url)
+                    HupuPrefs.stickerToast = "已删除"
                 },
-                dismissButton = {
-                    TextButton(onClick = { stickerToDelete = null }) { Text("取消") }
-                },
+                onDismiss = { stickerToDelete = null },
+                zIndex = 1100f,
             )
         }
         // 用户主页（盖入式三级页：详情 → 用户主页；返回手势已在上方分流）

@@ -26,6 +26,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 
 import androidx.compose.material3.MaterialTheme
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassButton
+import com.java.myapplication.ui.glass.LiquidGlassCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,7 +47,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import androidx.compose.runtime.LaunchedEffect
 import com.java.myapplication.data.HupuAccount
@@ -109,8 +113,16 @@ fun ProfilePage(modifier: Modifier = Modifier) {
             HupuMsgBadge.refresh()
         }
     }
+    // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
+    // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
+    // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     Box(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             PageHeader(title = "我的", trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 1.107: 发帖（未登录时提示，不打开编辑页）
@@ -307,6 +319,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
         // 1.182 默认启动页选择弹窗
         if (startTabAsk) {
             StartTabDialog(
+                backdrop = backdrop,
                 current = startTabIdx,
                 onPick = { i ->
                     startTabIdx = i
@@ -447,69 +460,63 @@ private val START_TAB_LABELS = listOf("首页", "专区", "评分", "我的")
 
 /**
  * 1.182: 默认启动页选择弹窗
- * iOS 风格：大圆角卡片、标题居左、选项行右侧打勾、取消浅灰大圆角，与项目其它弹窗一致。
+ * 1.191: 换成 Liquid Glass 毛玻璃卡片（与底部 Tab 栏同源）+ Q 弹出入场。
  */
 @Composable
-private fun StartTabDialog(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(20.dp),
-        ) {
-            Text(
-                "默认启动页",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(10.dp))
-            START_TAB_LABELS.forEachIndexed { i, name ->
-                val on = i == current
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onPick(i) }
-                        .padding(horizontal = 12.dp, vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        name,
-                        fontSize = 15.sp,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (on) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            Box(
+private fun StartTabDialog(
+    backdrop: Backdrop,
+    current: Int,
+    onPick: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    LiquidGlassCard(backdrop = backdrop, onDismiss = onDismiss) { close ->
+        val contentColor = MaterialTheme.colorScheme.onSurface
+        Text(
+            "默认启动页",
+            Modifier.padding(24.dp, 24.dp, 24.dp, 8.dp),
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Medium,
+            color = contentColor,
+        )
+        START_TAB_LABELS.forEachIndexed { i, name ->
+            val on = i == current
+            Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                    .clickable(onClick = onDismiss),
-                contentAlignment = Alignment.Center,
+                    .clickable { onPick(i); close() }
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "取消",
+                    name,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                    color = if (on) MaterialTheme.colorScheme.primary else contentColor,
+                    modifier = Modifier.weight(1f),
                 )
+                if (on) {
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
+        }
+        Row(
+            Modifier
+                .padding(24.dp, 16.dp, 24.dp, 24.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LiquidGlassButton(
+                text = "取消",
+                accent = false,
+                modifier = Modifier.weight(1f),
+                contentColor = contentColor,
+                onClick = close,
+            )
         }
     }
 }

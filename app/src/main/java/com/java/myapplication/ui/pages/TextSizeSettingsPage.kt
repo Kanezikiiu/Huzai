@@ -147,7 +147,7 @@ fun TextSizeSettingsPage(onClose: () -> Unit) {
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                "\u864e",
+                                "\u732a",
                                 fontSize = (13 * scale).sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -155,7 +155,7 @@ fun TextSizeSettingsPage(onClose: () -> Unit) {
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "\u864e\u98de",
+                            "\u732a\u732a\u4fa0 GGBond",
                             fontSize = (13 * scale).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.primary,

@@ -23,6 +23,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -89,6 +92,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 @Composable
 fun ScorePage(modifier: Modifier = Modifier) {
     val repo = remember { HupuRepository() }
+    // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
+    // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
+    // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     // 评分频道（即时生效）：订阅 scoreGamesVersion——ScorePickerPage 每次保存后
     // version+1，此处 remember 重算，横滑条立即增删/重排，无需重启或重进页面
     val effectiveGames = remember(HupuPrefs.scoreGamesVersion) {
@@ -220,7 +231,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
             val bytes = if (isLocalStickerUrl(s.url)) {
                 runCatching { java.io.File(s.url.removePrefix("file://")).readBytes() }.getOrNull()
             } else {
-                HupuAccount.downloadImageBytes(s.url)
+                // 1.191: adoutu 图片有防盗链，下载必须带 Referer（虎扑图床返回 null → 原样请求）
+                HupuAccount.downloadImageBytes(s.url, com.java.myapplication.data.stickerReferer(s.url))
             }
             if (bytes == null || bytes.isEmpty()) {
                 scoreStickerAdding = false
@@ -573,7 +585,9 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 .tabSwipeSwitch(
                     onPrevious = { swipeScoreTab(-1) },
                     onNext = { swipeScoreTab(1) },
-                ),
+                )
+                // 1.191: 内容层挂记录层——弹窗画在根 Box 里本层之后的兄弟位置
+                .layerBackdrop(backdrop),
         ) {
             PageHeader(title = "评分")
         // 项目横滑条（与首页/专区同款裁剪）——首项为通用评分（虎扑评分，非赛事体系）
@@ -1040,6 +1054,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 replyImageUploading = scoreReplyImageUploading,
                 replyEmojiOpen = scoreReplyEmojiOpen,
                 onReplyEmojiToggle = { scoreReplyEmojiOpen = !scoreReplyEmojiOpen },
+                // 1.191: 表情搜索入口弹出半屏面板前，显式收起表情面板（不用 toggle，避免误反转）
+                onReplyEmojiClose = { scoreReplyEmojiOpen = false },
                 replyEmojiTab = scoreReplyEmojiTab,
                 onReplyEmojiTabChange = { scoreReplyEmojiTab = it },
                 stickerAdding = scoreStickerAdding,
@@ -1286,23 +1302,19 @@ fun ScorePage(modifier: Modifier = Modifier) {
             }
         }
         // 1.146: 删除收藏表情确认弹窗（评分回复框「我的表情」长按触发）
+        // 1.191: 换成 Liquid Glass 同款外观（Q 弹出入场）
         scoreStickerToDelete?.let { st ->
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { scoreStickerToDelete = null },
-                title = { androidx.compose.material3.Text("删除表情") },
-                text = { androidx.compose.material3.Text("确定从「我的表情」中移除这个表情吗？") },
-                confirmButton = {
-                    androidx.compose.material3.TextButton(onClick = {
-                        HupuPrefs.removeSticker(st.url)
-                        HupuPrefs.stickerToast = "已删除"
-                        scoreStickerToDelete = null
-                    }) { androidx.compose.material3.Text("删除", color = MaterialTheme.colorScheme.error) }
+            LiquidGlassDialog(
+                backdrop = backdrop,
+                title = "删除表情",
+                message = "确定从「我的表情」中移除这个表情吗？",
+                confirmText = "删除",
+                dismissText = "取消",
+                onConfirm = {
+                    HupuPrefs.removeSticker(st.url)
+                    HupuPrefs.stickerToast = "已删除"
                 },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { scoreStickerToDelete = null }) {
-                        androidx.compose.material3.Text("取消")
-                    }
-                },
+                onDismiss = { scoreStickerToDelete = null },
             )
         }
     }

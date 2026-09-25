@@ -51,6 +51,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -291,6 +292,7 @@ internal fun VoteCreateSheet(
             }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
+                colors = huzaiFieldColors(),
                 value = voteTitle,
                 onValueChange = { if (it.length <= 50) voteTitle = it },
                 modifier = Modifier.fillMaxWidth(),
@@ -302,6 +304,7 @@ internal fun VoteCreateSheet(
             choices.forEachIndexed { i, c ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
+                        colors = huzaiFieldColors(),
                         value = c,
                         onValueChange = { choices[i] = it },
                         modifier = Modifier.weight(1f),

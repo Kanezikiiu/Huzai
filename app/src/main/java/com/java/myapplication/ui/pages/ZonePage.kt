@@ -74,6 +74,7 @@ import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.FeedList
+import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.PageHeader
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SortBar
@@ -95,8 +96,14 @@ fun ZonePage(modifier: Modifier = Modifier) {
     var categories by remember { mutableStateOf<List<HupuCategory>?>(null) }
     var loading by remember { mutableStateOf(true) }
     var cateRefreshTick by remember { mutableIntStateOf(0) }
-    // 当前选中大类（默认第 1 个）
+    // 1.191: 收藏专区操作的轻提示（顶部胶囊，点击立即消失）
+    var zoneToast by remember { mutableStateOf<String?>(null) }
+    // 当前选中大类（默认第 1 个；1.191 起有收藏专区时默认选中「收藏专区」）
     var selectedCateId by remember { mutableStateOf("") }
+    // 1.191: 收藏专区——有收藏时在横滑条最前面插入「收藏专区」tab（默认选中）。
+    // 必须声明在下方那个决定「默认选中项」的 LaunchedEffect 之前（Kotlin 局部变量先声明后使用）。
+    val favTopics = remember(HupuPrefs.favoriteTopicsVersion) { HupuPrefs.loadFavoriteTopics() }
+    val hasFav = favTopics.isNotEmpty()
 
     // ---------- 二级页状态（外置，关闭再进不重载） ----------
     var openedTopic by remember { mutableStateOf<HupuTopicInfo?>(null) }
@@ -120,8 +127,11 @@ fun ZonePage(modifier: Modifier = Modifier) {
         }
         if (list.isNotEmpty()) {
             categories = list
-            if (selectedCateId.isEmpty() || list.none { it.cateId == selectedCateId }) {
-                selectedCateId = list.first().cateId
+            // 1.191: 有收藏专区 → 默认选中「收藏专区」；否则保持/回落到第一个大类
+            val stillValid = (selectedCateId == FAV_CATE_ID && hasFav) ||
+                list.any { it.cateId == selectedCateId }
+            if (!stillValid) {
+                selectedCateId = if (hasFav) FAV_CATE_ID else list.first().cateId
             }
         }
         loading = false
@@ -242,13 +252,25 @@ fun ZonePage(modifier: Modifier = Modifier) {
     val opened = openedTopic
 
     // 1.186: 顶部大类 Tab 左右滑动切换（仅本大页面内）
-    val cateIds = remember(categories) { categories?.map { it.cateId } ?: emptyList() }
+    val cateIds = remember(categories, hasFav) {
+        buildList {
+            if (hasFav) add(FAV_CATE_ID)
+            categories?.forEach { add(it.cateId) }
+        }
+    }
     fun swipeCate(delta: Int) {
         val cur = cateIds.indexOf(selectedCateId)
         if (cur < 0) return
         val ni = cur + delta
         if (ni !in cateIds.indices) return
         selectedCateId = cateIds[ni]
+    }
+
+    // 1.191: 收藏被全部移除时，若正停留在「收藏专区」→ 回落到第一个大类（该 tab 已消失）
+    LaunchedEffect(hasFav, categories) {
+        if (!hasFav && selectedCateId == FAV_CATE_ID) {
+            categories?.firstOrNull()?.let { selectedCateId = it.cateId }
+        }
     }
 
     Box(modifier.fillMaxSize()) {
@@ -267,12 +289,20 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 categories == null -> ErrorRetry { cateRefreshTick++ }
                 categories!!.isEmpty() -> ErrorRetry { cateRefreshTick++ }
                 else -> {
-                    CateBar(categories!!, selectedCateId) { selectedCateId = it }
-                    val topics = current?.topics.orEmpty()
+                    CateBar(
+                        categories = categories!!,
+                        selected = selectedCateId,
+                        onSelect = { selectedCateId = it },
+                        showFavorites = hasFav,
+                        onSelectFavorites = { selectedCateId = FAV_CATE_ID },
+                    )
+                    // 1.191: 选中「收藏专区」时网格数据来自收藏列表，其余走大类版块
+                    val favTab = selectedCateId == FAV_CATE_ID
+                    val topics = if (favTab) favTopics else current?.topics.orEmpty()
                     if (topics.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                "该分类暂无版块",
+                                if (favTab) "还没有收藏专区" else "该分类暂无版块",
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -294,10 +324,36 @@ fun ZonePage(modifier: Modifier = Modifier) {
             }
         }
 
+        // 1.191: 收藏专区操作反馈（顶部胶囊，点击立即消失）
+        zoneToast?.let { msg ->
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(9f)
+                    .statusBarsPadding()
+                    .padding(top = 64.dp),
+            ) {
+                Text(
+                    msg,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
+                        .clickable { zoneToast = null }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
         // ---------- 二级页：版块话题流（盖入式转场） ----------
         if (opened != null) {
             TopicFeedOverlay(
                 topic = opened,
+                isFavorite = favTopics.any { it.url == opened.url },
+                onToggleFavorite = {
+                    val nowFav = HupuPrefs.toggleFavoriteTopic(opened)
+                    zoneToast = if (nowFav) "已收藏「${opened.name}」" else "已取消收藏"
+                },
                 closing = overlayClosing,
                 feedStates = feedStates,
                 topicSorts = topicSorts,
@@ -446,6 +502,9 @@ fun ZonePage(modifier: Modifier = Modifier) {
 @Composable
 private fun TopicFeedOverlay(
     topic: HupuTopicInfo,
+    /** 1.191: 该专区是否已收藏（右上角收藏按钮的选中态） */
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     closing: Boolean,
     feedStates: Map<String, TopicFeedState>,
     topicSorts: Map<String, List<SortTab>>,
@@ -552,18 +611,19 @@ private fun TopicFeedOverlay(
                         )
                     }
                 }
-                // 刷新按钮（已在内容时手动刷新）
+                // 1.191: 收藏该专区（原「刷新」按钮——刷新已由下拉刷新覆盖）
                 Box(
                     Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .clickable { onRefresh() },
+                        .clickable { onToggleFavorite() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Rounded.Refresh,
-                        contentDescription = "刷新",
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        HupuIcons.StarRate,
+                        contentDescription = if (isFavorite) "取消收藏" else "收藏专区",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -610,16 +670,24 @@ private fun TopicFeedOverlay(
     }
 }
 
+/** 1.191: 「收藏专区」虚拟 tab 的 id（不是真实大类，仅本页内使用） */
+private const val FAV_CATE_ID = "__fav_topics__"
+
 /** 大类横滑条：单选，16dp 限宽裁剪（与首页一致） */
 @Composable
 private fun CateBar(
     categories: List<HupuCategory>,
     selected: String,
     onSelect: (String) -> Unit,
+    /** 1.191: 有收藏专区时，最前面插一个「收藏专区」tab（图标 + 默认选中） */
+    showFavorites: Boolean = false,
+    onSelectFavorites: () -> Unit = {},
 ) {
     val barState = rememberLazyListState()
-    val selIdx = categories.indexOfFirst { it.cateId == selected }
-    LaunchedEffect(selected) { if (selIdx >= 0) barState.animateChipCenterTo(selIdx) }
+    val allIds = if (showFavorites) listOf(FAV_CATE_ID) + categories.map { it.cateId }
+                 else categories.map { it.cateId }
+    val selIdx = allIds.indexOf(selected)
+    LaunchedEffect(selected, showFavorites) { if (selIdx >= 0) barState.animateChipCenterTo(selIdx) }
     LazyRow(
         state = barState,
         modifier = Modifier
@@ -629,6 +697,17 @@ private fun CateBar(
             .padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // 1.191: 「收藏专区」永远排在最前面（图标用与帖子「收藏」同源的星标）
+        if (showFavorites) {
+            item(key = FAV_CATE_ID) {
+                Chip(
+                    text = "收藏专区",
+                    leadingIcon = HupuIcons.StarRate,
+                    selected = selected == FAV_CATE_ID,
+                    onClick = onSelectFavorites,
+                )
+            }
+        }
         items(categories, key = { it.cateId }) { c ->
             Chip(
                 text = c.name,

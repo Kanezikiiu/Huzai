@@ -28,13 +28,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AlertDialog
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +77,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun HistoryPage(onClose: () -> Unit) {
     val repo = remember { HupuRepository() }
+    // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
+    // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
+    // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     var query by remember { mutableStateOf("") }
     var showClearDialog by remember { mutableStateOf(false) }
     // 弹窗打开时刻的条数快照（避免每帧重组读 SharedPreferences）
@@ -223,7 +233,7 @@ fun HistoryPage(onClose: () -> Unit) {
     ) {
         // 记录列表快照：键直接挂在对象版本号上——任何写入（打开置顶/清空）即刻刷新（含顶栏计数）
         val all = remember(HupuPrefs.historyVersion) { HupuPrefs.loadHistory() }
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             // 顶栏：与主页频道自定义页同款——返回 + 标题 + 计数 + 右侧动作按钮
             Row(
                 Modifier
@@ -264,6 +274,7 @@ fun HistoryPage(onClose: () -> Unit) {
             }
 
             OutlinedTextField(
+                colors = huzaiFieldColors(),
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier
@@ -387,24 +398,19 @@ fun HistoryPage(onClose: () -> Unit) {
                 onFloorLoadMore = { pid, fr -> loadFloorMore(ot.tid, pid, fr) },
             )
         }
-    }
-
-    // 清空确认弹窗（iOS 风格：标题/正文居左、取消浅灰、确认蓝色）
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("清空浏览记录") },
-            text = { Text("将删除全部 $clearDialogCount 条浏览记录，此操作不可恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    HupuPrefs.clearHistory()
-                    showClearDialog = false
-                }) { Text("清空", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) { Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            },
-        )
+        // 1.191: 清空浏览记录确认弹窗（Liquid Glass 同款外观 + Q 弹出入场）
+        // 放在根 Box 内、内容层之后（兄弟顺序在记录层之后）——毛玻璃才能采到页面像素
+        if (showClearDialog) {
+            LiquidGlassDialog(
+                backdrop = backdrop,
+                title = "清空浏览记录",
+                message = "将删除全部 ${clearDialogCount} 条浏览记录，此操作不可恢复。",
+                confirmText = "清空",
+                dismissText = "取消",
+                onConfirm = { HupuPrefs.clearHistory() },
+                onDismiss = { showClearDialog = false },
+            )
+        }
     }
 }
 

@@ -258,11 +258,14 @@ internal fun FullscreenVideo(player: ExoPlayer, onExit: () -> Unit) {
             val c = WindowInsetsControllerCompat(w, view)
             c.hide(WindowInsetsCompat.Type.systemBars())
             c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            // 1.191: 全屏播放期间保持屏幕常亮，避免看视频时自动熄屏
+            w.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             if (w != null) {
                 WindowInsetsControllerCompat(w, view).show(WindowInsetsCompat.Type.systemBars())
+                w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
     }

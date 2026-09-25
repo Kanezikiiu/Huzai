@@ -37,7 +37,9 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AlertDialog
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,8 +47,8 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
@@ -102,6 +104,14 @@ fun SearchPage(
 ) {
     val repo = remember { HupuRepository() }
     val scope = rememberCoroutineScope()
+    // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
+    // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
+    // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
 
     var query by remember { mutableStateOf("") }
     var activeQuery by remember { mutableStateOf<String?>(null) } // 已提交的查询（null=未搜索）
@@ -129,6 +139,10 @@ fun SearchPage(
     var loadingMore by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var searched by remember { mutableStateOf(false) }     // 是否至少搜过一次（区分初始态）
+    // 1.191: 「清空搜索历史」确认弹窗状态（从 HistoryPanel 上提到页面级——
+    // 弹窗必须画在页面根 Box 里内容层之后的兄弟位置，毛玻璃才采得到页面像素）
+    var clearHistoryAsk by remember { mutableStateOf(false) }
+    var clearHistoryCount by remember { mutableIntStateOf(0) }
 
     // 盖入动画（TopicPickerPage 同款）
     val progress = remember { Animatable(0f) }
@@ -234,7 +248,7 @@ fun SearchPage(
             // 穿透守卫：排序条空隙/空白点击不落穿到下层页面
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             SearchHeader(query, query.isNotBlank(), { query = it }, { submit(query) }, { closing = true })
 
             // 筛选条：专区按钮 + 排序条（已搜索才显示）
@@ -300,6 +314,10 @@ fun SearchPage(
             when (state) {
                 "history" -> HistoryPanel(
                     onPick = { submit(it) },
+                    onClearAsk = {
+                        clearHistoryCount = HupuPrefs.loadSearchHistory().size
+                        clearHistoryAsk = true
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 "loading" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -320,6 +338,18 @@ fun SearchPage(
                 selectedTopicId = topicId,
                 onSelect = { changeForum(it); forumPickerOpen = false },
                 onDismiss = { forumPickerOpen = false },
+            )
+        }
+        // 1.191: 清空搜索历史确认弹窗（Liquid Glass 同款外观 + Q 弹出入场）
+        if (clearHistoryAsk) {
+            LiquidGlassDialog(
+                backdrop = backdrop,
+                title = "清空搜索历史",
+                message = "将删除全部 ${clearHistoryCount} 条搜索历史，此操作不可恢复。",
+                confirmText = "清空",
+                dismissText = "取消",
+                onConfirm = { HupuPrefs.clearSearchHistory() },
+                onDismiss = { clearHistoryAsk = false },
             )
         }
     }
@@ -351,6 +381,7 @@ private fun SearchHeader(
         }
         Spacer(Modifier.width(4.dp))
         OutlinedTextField(
+            colors = huzaiFieldColors(),
             value = query,
             onValueChange = onChange,
             modifier = Modifier
@@ -389,9 +420,12 @@ private fun SearchHeader(
  * 硬推下一个状态栏高度——1.54 修间距时未察觉此层，故「修过但没修好」）
  */
 @Composable
-private fun HistoryPanel(onPick: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun HistoryPanel(
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onClearAsk: () -> Unit,
+) {
     var historyTick by remember { mutableIntStateOf(0) }
-    var clearAsk by remember { mutableStateOf(false) }
     val history = remember(historyTick, HupuPrefs.searchHistoryVersion) { HupuPrefs.loadSearchHistory() }
     Column(modifier.padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(4.dp))
@@ -407,24 +441,9 @@ private fun HistoryPanel(onPick: (String) -> Unit, modifier: Modifier = Modifier
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("搜索历史", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { clearAsk = true }) {
+                IconButton(onClick = onClearAsk) {
                     Icon(Icons.Rounded.Delete, contentDescription = "清空历史", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
-            }
-            if (clearAsk) {
-                AlertDialog(
-                    onDismissRequest = { clearAsk = false },
-                    title = { Text("清空搜索历史") },
-                    text = { Text("将删除全部 ${history.size} 条搜索历史，此操作不可恢复。") },
-                    confirmButton = {
-                        TextButton(onClick = { HupuPrefs.clearSearchHistory(); clearAsk = false }) {
-                            Text("清空", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { clearAsk = false }) { Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    },
-                )
             }
             Spacer(Modifier.height(4.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -624,6 +643,7 @@ private fun ForumPickerSheet(
             }
             // 搜索框
             OutlinedTextField(
+                colors = huzaiFieldColors(),
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier

@@ -6,9 +6,14 @@ import com.java.myapplication.data.decodeHistoryJson
 import com.java.myapplication.data.encodeHistoryJson
 import com.java.myapplication.data.HupuHistoryEntry
 import com.java.myapplication.data.HupuTopicInfo
+import com.java.myapplication.data.decodeFavoriteTopicsJson
+import com.java.myapplication.data.encodeFavoriteTopicsJson
+import com.java.myapplication.data.toggleFavoriteList
 import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.encodeStickersJson
 import com.java.myapplication.data.decodeStickersJson
+import com.java.myapplication.data.encodeKeywordsJson
+import com.java.myapplication.data.decodeKeywordsJson
 import com.java.myapplication.data.isLocalStickerUrl
 import com.java.myapplication.data.localStickerFile
 import com.java.myapplication.data.stickerContentKey
@@ -119,6 +124,21 @@ class HupuPrefsTest {
     }
 
     @Test
+    fun stickerKeywords_encodeDecode_roundTrip_keepsOrder() {
+        // 1.191: 「最近在搜」按最近优先排序，编解码必须保序（首项 = 最新）
+        val list = listOf("猫", "熊猫头", "你好")
+        assertEquals(list, decodeKeywordsJson(encodeKeywordsJson(list)))
+    }
+
+    @Test
+    fun stickerKeywords_decode_badJson_and_emptyEntries() {
+        assertTrue(decodeKeywordsJson("not-json").isEmpty())
+        assertTrue(decodeKeywordsJson("[]").isEmpty())
+        // 空串条目会被剔除（避免历史里出现「点了没反应」的空 chip）
+        assertEquals(listOf("a"), decodeKeywordsJson("[\"a\",\"\"]"))
+    }
+
+    @Test
     fun stickers_localFileUrl_roundTrip_andDetection() {
         // 1.165: 本地导入的表情用 file:// 标识，须与远程 URL 一同持久化往返
         val local = "file:///data/user/0/com.huzai.app/files/stickers_local/sticker_1_2.png"
@@ -146,5 +166,49 @@ class HupuPrefsTest {
         val url1 = "file:///x/stickers_local/sticker_" + stickerContentKey(a) + ".png"
         val url2 = "file:///x/stickers_local/sticker_" + stickerContentKey(same) + ".png"
         assertEquals(url1, url2)
+    }
+
+    @Test
+    fun favoriteTopicsJson_roundTrip_keepsHotTextAndLogo() {
+        val list = listOf(
+            HupuTopicInfo(
+                topicId = "1",
+                name = "步行街",
+                url = "https://bbs.hupu.com/bxj",
+                hotText = "1.2万",
+                logo = "https://i1.hupu.com/a.png",
+            ),
+            HupuTopicInfo(topicId = "2", name = "CBA", url = "https://bbs.hupu.com/cba"),
+        )
+        val back = decodeFavoriteTopicsJson(encodeFavoriteTopicsJson(list))
+        assertEquals(2, back.size)
+        assertEquals("步行街", back[0].name)
+        assertEquals("1.2万", back[0].hotText)
+        assertEquals("https://i1.hupu.com/a.png", back[0].logo)
+        // 没有热度 / logo 的条目解码后为空（不是字符串 "null"）
+        assertEquals("", back[1].hotText)
+        assertEquals(null, back[1].logo)
+    }
+
+    @Test
+    fun favoriteTopicsJson_badInput_returnsEmpty() {
+        assertEquals(0, decodeFavoriteTopicsJson("").size)
+        assertEquals(0, decodeFavoriteTopicsJson("not json").size)
+        assertEquals(0, decodeFavoriteTopicsJson("{\"a\":1}").size)
+        // url 为空的条目丢弃（没有 url 无法再次打开该专区）
+        assertEquals(0, decodeFavoriteTopicsJson("[{\"name\":\"x\"}]").size)
+    }
+
+    @Test
+    fun toggleFavoriteList_addTop_remove_capAtMax() {
+        val a = HupuTopicInfo(topicId = "1", name = "A", url = "u1")
+        val b = HupuTopicInfo(topicId = "2", name = "B", url = "u2")
+        val c = HupuTopicInfo(topicId = "3", name = "C", url = "u3")
+        // 新收藏置顶
+        assertEquals(listOf("u2", "u1"), toggleFavoriteList(listOf(a), b, 50).map { it.url })
+        // 再点一次 = 取消
+        assertEquals(listOf("u1"), toggleFavoriteList(listOf(b, a), b, 50).map { it.url })
+        // 上限：新收藏置顶，尾部被挤出
+        assertEquals(listOf("u3", "u1"), toggleFavoriteList(listOf(a, b), c, 2).map { it.url })
     }
 }

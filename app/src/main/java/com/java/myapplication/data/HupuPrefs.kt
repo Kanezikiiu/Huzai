@@ -23,6 +23,7 @@ object HupuPrefs {
     private const val KEY_HISTORY = "browsing_history_v1"
     private const val KEY_SCORE_GAMES = "score_games_v1"
     private const val KEY_FILTER_KEYWORDS = "filter_keywords_v1"
+    private const val KEY_FAVORITE_TOPICS = "favorite_topics_v1"
     private const val KEY_REFRESH_MODE = "refresh_mode_v1"
 
     /** 主页频道数量上限：横滑条是高频快捷入口，超过会滑不过来 */
@@ -37,6 +38,8 @@ object HupuPrefs {
     const val MAX_SCORE_GAMES = 20
     /** 过滤关键词每组上限：足够重度用户沉淀屏蔽词表 */
     const val MAX_FILTER_KEYWORDS = 100
+    /** 1.191: 收藏专区上限——横滑条首位，过多会滑不过来 */
+    const val MAX_FAVORITE_TOPICS = 50
 
     private lateinit var prefs: SharedPreferences
 
@@ -79,6 +82,28 @@ object HupuPrefs {
     fun clearHomeTopics() {
         prefs.edit().remove(KEY_HOME_TOPICS).apply()
         homeTopicsVersion++
+    }
+
+    /** 1.191: 收藏专区版本号——专区页观察它重算「收藏专区」tab 与网格 */
+    var favoriteTopicsVersion by mutableIntStateOf(0)
+        private set
+
+    fun loadFavoriteTopics(): List<HupuTopicInfo> {
+        val json = prefs.getString(KEY_FAVORITE_TOPICS, null) ?: return emptyList()
+        return decodeFavoriteTopicsJson(json)
+    }
+
+    fun saveFavoriteTopics(list: List<HupuTopicInfo>) {
+        prefs.edit().putString(KEY_FAVORITE_TOPICS, encodeFavoriteTopicsJson(list)).apply()
+        favoriteTopicsVersion++
+    }
+
+    /** 切换某个专区的收藏状态；返回「切换后是否已收藏」（供提示与图标状态使用） */
+    fun toggleFavoriteTopic(t: HupuTopicInfo): Boolean {
+        val cur = loadFavoriteTopics()
+        val exists = cur.any { it.url == t.url }
+        saveFavoriteTopics(toggleFavoriteList(cur, t, MAX_FAVORITE_TOPICS))
+        return !exists
     }
 
     /** 搜索历史：最多 12 条，新搜索置顶去重 */
@@ -421,6 +446,62 @@ object HupuPrefs {
             LocalStickerImport.FAILED
         }
     }
+
+    // ---------- 1.191 表情搜索：最近使用 / 最近在搜 ----------
+    private const val KEY_STICKER_RECENT = "sticker_recent_v1"
+    private const val KEY_STICKER_SEARCH_LOG = "sticker_search_log_v1"
+
+    /** 「最近使用」上限（微信式：一行内容量，多余的滚出） */
+    const val MAX_STICKER_RECENT = 16
+
+    /** 「最近在搜」上限 */
+    const val MAX_STICKER_SEARCH_LOG = 10
+
+    /** 最近使用 / 最近在搜变更版本：搜索面板观察到即刷新 */
+    var stickerRecentVersion by mutableIntStateOf(0)
+        private set
+
+    private fun bumpStickerRecent() {
+        if (Looper.myLooper() == Looper.getMainLooper()) stickerRecentVersion++
+        else Handler(Looper.getMainLooper()).post { stickerRecentVersion++ }
+    }
+
+    /** 最近使用过的搜索表情（新的排最前），空表示还没用过 */
+    fun loadStickerRecent(): List<HupuSticker> =
+        prefs.getString(KEY_STICKER_RECENT, null)?.let { decodeStickersJson(it) } ?: emptyList()
+
+    /** 记一次「用过的表情」：去重后置顶（与收藏的排重口径一致，均以 URL 为准） */
+    fun pushStickerRecent(url: String) {
+        if (url.isEmpty()) return
+        val next = (listOf(HupuSticker(url)) + loadStickerRecent().filterNot { it.url == url })
+            .take(MAX_STICKER_RECENT)
+        prefs.edit().putString(KEY_STICKER_RECENT, encodeStickersJson(next)).apply()
+        bumpStickerRecent()
+    }
+
+    fun clearStickerRecent() {
+        prefs.edit().remove(KEY_STICKER_RECENT).apply()
+        bumpStickerRecent()
+    }
+
+    /** 表情搜索历史关键词（新的排最前） */
+    fun loadStickerSearchLog(): List<String> =
+        prefs.getString(KEY_STICKER_SEARCH_LOG, null)?.let { decodeKeywordsJson(it) } ?: emptyList()
+
+    /** 记一次搜索关键词：去重后置顶 */
+    fun pushStickerSearchLog(keyword: String) {
+        val k = keyword.trim()
+        if (k.isEmpty()) return
+        val next = (listOf(k) + loadStickerSearchLog().filterNot { it == k })
+            .take(MAX_STICKER_SEARCH_LOG)
+        prefs.edit().putString(KEY_STICKER_SEARCH_LOG, encodeKeywordsJson(next)).apply()
+        bumpStickerRecent()
+    }
+
+    fun clearStickerSearchLog() {
+        prefs.edit().remove(KEY_STICKER_SEARCH_LOG).apply()
+        bumpStickerRecent()
+    }
 }
 
 /** 1.168: 本地表情导入结果（用于向上层如实反馈，区分「重复」与「失败」） */
@@ -535,6 +616,21 @@ internal fun decodeStickersJson(json: String): List<HupuSticker> {
     }.getOrDefault(emptyList())
 }
 
+/** 1.191: 表情搜索历史关键词 ⇄ JSON（纯函数，可单测） */
+internal fun encodeKeywordsJson(list: List<String>): String {
+    val arr = JSONArray()
+    list.forEach { arr.put(it) }
+    return arr.toString()
+}
+
+internal fun decodeKeywordsJson(json: String): List<String> =
+    runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optString(i).takeIf { it.isNotEmpty() }
+        }
+    }.getOrDefault(emptyList())
+
 internal fun decodeHomeTopicsJson(json: String): List<HupuTopicInfo> {
     return runCatching {
         val arr = JSONArray(json)
@@ -549,3 +645,49 @@ internal fun decodeHomeTopicsJson(json: String): List<HupuTopicInfo> {
         }
     }.getOrDefault(emptyList())
 }
+
+/**
+ * 1.191: 收藏专区纯 JSON 编解码（便于单测，不依赖 Android）。
+ * 比主页频道多存一个 hotText——收藏网格与专区格子同形（logo + 名称 + 热度）。
+ */
+internal fun encodeFavoriteTopicsJson(list: List<HupuTopicInfo>): String {
+    val arr = JSONArray()
+    list.forEach { t ->
+        val o = JSONObject()
+        o.put("topicId", t.topicId)
+        o.put("name", t.name)
+        o.put("url", t.url)
+        if (t.hotText.isNotEmpty()) o.put("hotText", t.hotText)
+        t.logo?.let { o.put("logo", it) }
+        arr.put(o)
+    }
+    return arr.toString()
+}
+
+/** 纯 JSON 解码：坏数据/空串返回空列表；url 为空的条目丢弃 */
+internal fun decodeFavoriteTopicsJson(json: String): List<HupuTopicInfo> {
+    return runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val url = o.optString("url")
+            if (url.isEmpty()) return@mapNotNull null
+            HupuTopicInfo(
+                topicId = o.optString("topicId"),
+                name = o.optString("name"),
+                url = url,
+                hotText = o.optString("hotText"),
+                logo = o.optString("logo").ifEmpty { null },
+            )
+        }
+    }.getOrDefault(emptyList())
+}
+
+/** 1.191: 收藏切换的纯函数（便于单测）：已存在则移除，否则置顶插入并按上限截断 */
+internal fun toggleFavoriteList(
+    cur: List<HupuTopicInfo>,
+    t: HupuTopicInfo,
+    max: Int,
+): List<HupuTopicInfo> =
+    if (cur.any { it.url == t.url }) cur.filterNot { it.url == t.url }
+    else (listOf(t) + cur).take(max)

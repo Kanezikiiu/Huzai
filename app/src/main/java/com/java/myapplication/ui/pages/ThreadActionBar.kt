@@ -39,10 +39,10 @@ import com.kyant.backdrop.effects.vibrancy
  * 此前「推荐 / 收藏 / 分享」分别藏在主楼卡片底部与顶栏里，而**两者都是 LazyColumn 的 item**
  * ——往下滚到评论区后就全部不可达。本组件把它们收成一条贴底悬浮条，随时可用：
  *
- *   ✏️ 写评论            💬 67     👍 24     ☆     ⤴️ 转发
+ *   ✏️ 写评论            💬 67     👍 24     ☆     ⤴️ 分享
  *
  * - 左侧「写评论」占满剩余宽度，点击聚焦底部回复框（未登录由调用方拦截并提示）；
- * - 右侧四个图标项等宽：评论数（点击跳转评论区）/ 推荐数 / 收藏 / 转发；
+ * - 右侧四个图标项等宽：评论数（点击跳转评论区）/ 推荐数 / 收藏 / 分享；
  * - **收藏不显示计数**——虎扑不返回收藏数（`HupuThread` 只有 lights/replies/read），
  *   改为星形下方显示「收藏 / 已收藏」文字（1.190），按钮固定 46dp 宽，两态不跳动；
  * - 选中态（推荐 / 收藏）统一用**主题色**，跟随「色彩主题」设置（1.190）；
@@ -116,7 +116,7 @@ internal fun ThreadActionBar(
         // 1.190: 图标尺寸按「视觉面积」归一化，而不是统一 dp——
         // 各图标在 24dp 画布里的实际内容盒差别很大（实测内容盒 / 占比 / 等面积所需尺寸）：
         //   评论气泡 20x20 (0.69) → 19dp ｜拇指 22x20 (0.76) → 18dp
-        //   星形     13.8x16.1 (0.39) → 25dp ｜转发箭头 17x14 (0.41) → 25dp
+        //   星形     13.8x16.1 (0.39) → 25dp ｜分享箭头 17x14 (0.41) → 25dp
         // 实心块铺满画布、线性图标留白多，同一 dp 下线性图标会明显显小（真机两轮反馈确认）。
         ActionItem(HupuIcons.Comment, formatCount(replyCount), false, Color.Unspecified, onJumpComments, iconSize = 19.dp)
         ActionItem(HupuIcons.Light, formatCount(recommendCount), isRecommended, activeColor, onRecommend, iconSize = 18.dp)
@@ -130,11 +130,11 @@ internal fun ThreadActionBar(
             onCollect,
             iconSize = 25.dp,
         )
-        ActionItem(HupuIcons.IosShare, "转发", false, Color.Unspecified, onShare, iconSize = 25.dp)
+        ActionItem(HupuIcons.IosShare, "分享", false, Color.Unspecified, onShare, iconSize = 25.dp)
     }
 }
 
-/** 单个图标项：图标 + 可选小字（计数或「收藏 / 转发」），四等宽 */
+/** 单个图标项：图标 + 可选小字（计数或「收藏 / 分享」），四等宽 */
 @Composable
 private fun ActionItem(
     icon: ImageVector,

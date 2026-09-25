@@ -1,8 +1,8 @@
 {
-  "versionCode": 200,
-  "versionName": "1.190",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.190/huzai-1.190-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.190",
-  "changelog": "· 用户主页新增「声望」，与「加入虎扑天数」同行显示\n· 修复部分用户主页不显示 IP 属地的问题\n· 修复用户主页、首页信息流、搜索结果列表不显示封面的问题\n· 列表封面改用压缩图（流量约为原来的 1/11），页面打开更快、滑动更顺",
+  "versionCode": 201,
+  "versionName": "1.191",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.191/huzai-1.191-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.191",
+  "changelog": "· 中秋节快乐，吃月饼了吗\n· 表情包搜索：表情面板新增「搜索表情」入口，输入关键词即可在线搜索表情包\n· 专区页新增「收藏专区」：具体专区右上角可收藏/取消，收藏后专区首页顶部出现「收藏专区」并默认选中\n· 全站弹窗升级为毛玻璃风格：实时背景模糊 + Q 弹入场动画\n· 修复全屏看视频时会自动熄屏的问题\n· 详情页底部「转发」改为「分享」，并重绘评论区跳转图标，与其它图标对齐\n· 输入框去掉黑色描边、改用柔和底色，搜索/信息流设置等文本框更协调",
   "forceUpdate": false
 }

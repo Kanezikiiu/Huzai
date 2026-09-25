@@ -51,6 +51,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -222,6 +223,7 @@ internal fun TagPickerSheet(
                 )
             }
             OutlinedTextField(
+                colors = huzaiFieldColors(),
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier
@@ -416,6 +418,7 @@ internal fun PostTopicSheet(
             } else {
                 // 搜索框
                 OutlinedTextField(
+                    colors = huzaiFieldColors(),
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier

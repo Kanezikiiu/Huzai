@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Check
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.StickerAddCell
+import com.java.myapplication.ui.components.stickerImageModel
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -616,7 +617,8 @@ internal fun StickerPane(
         item(key = "__add_sticker__") { StickerAddCell() }
         gridItems(stickers, key = { it.url }) { s ->
             AsyncImage(
-                model = s.url,
+                // 1.191: 走带 Referer 的加载模型（收藏的 adoutu 表情有防盗链）
+                model = stickerImageModel(s.url),
                 contentDescription = null,
                 modifier = Modifier
                     .size(44.dp)

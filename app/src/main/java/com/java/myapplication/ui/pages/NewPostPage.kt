@@ -51,6 +51,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -727,6 +728,7 @@ fun NewPostPage(
 
                 // 标题
                 OutlinedTextField(
+                    colors = huzaiFieldColors(),
                     value = title,
                     onValueChange = { if (it.length <= 60) title = it },
                     modifier = Modifier.fillMaxWidth(),
@@ -846,6 +848,7 @@ fun NewPostPage(
 
                 // 1.117: 单文本框正文（图片/投票以占位符内嵌，样式由 OutputTransformation 渲染）
                 OutlinedTextField(
+                    colors = huzaiFieldColors(),
                     state = bodyState,
                     modifier = Modifier
                         .fillMaxWidth()

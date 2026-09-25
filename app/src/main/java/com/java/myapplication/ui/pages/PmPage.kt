@@ -34,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -605,6 +606,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedTextField(
+                    colors = huzaiFieldColors(),
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),

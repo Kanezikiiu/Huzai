@@ -51,6 +51,9 @@ import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.ui.components.HUPU_EMOJI
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.StickerAddCell
+import com.java.myapplication.ui.components.StickerSearchSheet
+import com.java.myapplication.ui.components.StickerSearchEntry
+import com.java.myapplication.ui.components.rememberStickerSearchController
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -182,6 +185,8 @@ fun PlayerDetailOverlay(
     /** 表情面板开（覆盖式：面板贴屏底，键盘盖其上） */
     replyEmojiOpen: Boolean = false,
     onReplyEmojiToggle: () -> Unit = {},
+    /** 1.191: 显式收起表情面板（搜索入口弹出半屏面板时用，避免用 toggle 误反转） */
+    onReplyEmojiClose: () -> Unit = {},
     /** 表情面板 tab：0=虎扑表情 1=我的表情 */
     replyEmojiTab: Int = 0,
     onReplyEmojiTabChange: (Int) -> Unit = {},
@@ -203,6 +208,12 @@ fun PlayerDetailOverlay(
     // 图片全屏查看器（盖过页面/楼中楼一切层级；单击/返回键/关闭按钮退出；1.186: 同一条消息内可左右切换）
     var viewer by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val openImage: (List<String>, Int) -> Unit = { urls, i -> viewer = urls to i }
+    // 1.191: 表情包搜索（半屏面板）——状态挂在页面，开关面板来回不丢结果
+    val stickerSearch = rememberStickerSearchController()
+    var stickerSearchOpen by remember { mutableStateOf(false) }
+    var stickerSearchClosing by remember { mutableStateOf(false) }
+    // 1.191: 表情搜索面板里「清空最近使用 / 最近在搜」的确认弹窗（null = 不显示）
+    var stickerClearTarget by remember { mutableStateOf<String?>(null) }
     // 1.163: 评分评论作者 → 用户主页（盖入式叠层；未登录给提示，与帖子详情同款交互）
     val userPageStack = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var userToast by remember { mutableStateOf<String?>(null) }
@@ -242,6 +253,18 @@ fun PlayerDetailOverlay(
     // - 退场动画播放中：吞掉手势（防止漏到系统直接退出应用）
     // - 其余：页面跟随手指实时滑出（progress: 0→1 跟手），松手未过阈值弹回、过阈值退出
     PredictiveBackHandler { events ->
+        if (stickerClearTarget != null) {
+            // 1.191: 清空确认弹窗盖在搜索面板之上 → 返回手势先收弹窗（不动面板）
+            events.collect { }
+            stickerClearTarget = null
+            return@PredictiveBackHandler
+        }
+        if (stickerSearchOpen) {
+            // 1.191: 表情搜索半屏面板在最上层 → 返回手势先收它（不退页面、不收回复框）
+            events.collect { }
+            if (!stickerSearchClosing) stickerSearchClosing = true
+            return@PredictiveBackHandler
+        }
         if (replyTarget != null) {
             events.collect { } // 吞掉：先收回复框
             onReplyCancel()
@@ -455,6 +478,34 @@ fun PlayerDetailOverlay(
         // 1.145/1.146 评分评论回复框：盖在楼中楼 sheet 之上。层级设计对齐帖子回复框：
         // 表情面板 7f → 空白收起层 5.9f（面板之下不遮表情点击，其余区域点下即收）→ 输入行 6f。
         // 面板→键盘翻转（PanelToKeyboardWatcher 同款语义）由宿主 ScorePage 驱动。
+        // 1.191: 表情搜索半屏面板——挂在页面层级（若放进表情面板 Box 内，会被面板高度裁掉）。
+        // zIndex 20f：盖过回复框(6f)/表情面板(7f)/楼中楼 sheet(3f)，低于图片查看器(30f)。
+        // 明确不避让键盘：键盘作为系统窗口盖在面板下半部分，用户自己收键盘即可看全。
+        if (stickerSearchOpen) {
+            StickerSearchSheet(
+                controller = stickerSearch,
+                closing = stickerSearchClosing,
+                onPick = {
+                    onInsertSticker(it)
+                    // 1.191: 选中即清空并收起面板（与帖子详情页一致）
+                    stickerSearch.clear()
+                    if (!stickerSearchClosing) stickerSearchClosing = true
+                },
+                onRequestClose = { if (!stickerSearchClosing) stickerSearchClosing = true },
+                onClosed = {
+                    stickerSearchOpen = false
+                    stickerSearchClosing = false
+                    stickerClearTarget = null
+                },
+                bottomPad = with(LocalDensity.current) {
+                    WindowInsets.navigationBars.getBottom(this).toDp()
+                } + 8.dp,
+                zIndex = 20f,
+                clearTarget = stickerClearTarget,
+                onClearRequest = { stickerClearTarget = it },
+                onClearDismiss = { stickerClearTarget = null },
+            )
+        }
         replyTarget?.let { t ->
             // 覆盖式表情面板：贴屏底、高度 = 键盘峰值（微信式），键盘作为系统窗口盖其上方
             if (replyEmojiOpen) {
@@ -478,6 +529,14 @@ fun PlayerDetailOverlay(
                                 .padding(start = 12.dp, end = 12.dp, top = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            // 1.191: 表情搜索入口（图标按钮，非 tab）——放在 tab 行最左侧（与帖子详情页一致）；
+                            // 点击弹出半屏搜索面板，同时收起表情面板，避免两层面板同时存在
+                            StickerSearchEntry {
+                                if (replyEmojiOpen) onReplyEmojiClose()
+                                stickerSearchClosing = false
+                                stickerSearchOpen = true
+                            }
+                            Spacer(Modifier.width(2.dp))
                             ScoreEmojiTabChip("虎扑表情", selected = replyEmojiTab == 0) { onReplyEmojiTabChange(0) }
                             Spacer(Modifier.width(8.dp))
                             ScoreEmojiTabChip("我的表情", selected = replyEmojiTab == 1) { onReplyEmojiTabChange(1) }
