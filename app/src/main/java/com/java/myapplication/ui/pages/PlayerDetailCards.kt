@@ -5,6 +5,7 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.Crossfade
 import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -78,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
@@ -283,6 +285,11 @@ internal fun DistributionCard(d: HupuSelfDetail) {
             )
         } else {
             val maxCount = d.distribution.maxOf { it.second }.coerceAtLeast(1L)
+            // 1.192: 生长动画只在「进入本页的第一次」播放——LazyColumn 回收该 item 后再滚回来不重播。
+            // played 用 rememberSaveable：item 的 saved state 由 LazyList 按 key 保存/恢复，回收也记得住。
+            val played = rememberSaveable { mutableStateOf(false) }
+            val animateOnce = remember { !played.value }
+            LaunchedEffect(Unit) { played.value = true }
             d.distribution.forEach { (level, count) ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -297,16 +304,35 @@ internal fun DistributionCard(d: HupuSelfDetail) {
                     Box(
                         Modifier
                             .weight(1f)
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
+                            .height(10.dp)
+                            .clip(RoundedCornerShape(5.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                     ) {
+                        // 1.192: 渐变条身 + 生长动画 + 最小可见宽度，让分布条更有质感
+                        val barColor = scoreColor("$level.0")
+                        val target = if (count <= 0L) 0f
+                            else (count.toFloat() / maxCount).coerceAtLeast(0.05f)
+                        // animateFloatAsState 首帧不会从 0 生长（初值即目标值）→ 看不到动画；
+                        // 这里用 Animatable 显式从 0 播到目标，进场才能看到「条撑开」
+                        val frac = remember { Animatable(0f) }
+                        LaunchedEffect(target, animateOnce) {
+                            if (animateOnce) {
+                                frac.animateTo(target, tween(550, easing = FastOutSlowInEasing))
+                            } else {
+                                // 非首次进入（含数据刷新）：直接到位，不重播动画
+                                frac.snapTo(target)
+                            }
+                        }
                         Box(
                             Modifier
-                                .fillMaxWidth(count.toFloat() / maxCount)
+                                .fillMaxWidth(frac.value)
                                 .fillMaxHeight()
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(scoreColor("$level.0")),
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(barColor.copy(alpha = 0.7f), barColor),
+                                    ),
+                                ),
                         )
                     }
                     Spacer(Modifier.width(8.dp))

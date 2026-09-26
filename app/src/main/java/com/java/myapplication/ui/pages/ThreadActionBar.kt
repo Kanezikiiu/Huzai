@@ -17,6 +17,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.formatCount
+import com.java.myapplication.ui.glass.InteractiveHighlight
+import com.java.myapplication.ui.glass.LiquidButton
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
@@ -70,8 +74,10 @@ internal fun ThreadActionBar(
     // 面层颜色：透明度刻意压很低（截图同款观感），模糊由 backdrop 引擎负责
     val glassColor =
         if (isLight) Color(0xFFFAFAFA).copy(alpha = 0.38f) else Color(0xFF121212).copy(alpha = 0.38f)
+    // 1.192i: 与同栏透明度对齐（功能栏 = 0.38）——此前浅色 0.78 / 深色实体色都太实，
+    // 贴在这条毛玻璃上像一块实心板
     val writePillColor =
-        if (isLight) Color.White.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.10f)
+        if (isLight) Color.White.copy(alpha = 0.62f) else Color.White.copy(alpha = 0.38f)
     val onSurface = MaterialTheme.colorScheme.onSurface
     // 1.190: 选中态统一用主题色（推荐 / 收藏）——跟随「色彩主题」设置，不再固定红/金
     val activeColor = MaterialTheme.colorScheme.primary
@@ -93,15 +99,15 @@ internal fun ThreadActionBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 写评论：占满剩余宽度
-        Row(
-            Modifier
-                .weight(1f)
-                .height(40.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(writePillColor)
-                .clickable { onWrite() }
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        // 1.192e: 「写评论」→ 液态玻璃按钮（内容保持左对齐）
+        LiquidButton(
+            onClick = onWrite,
+            fill = writePillColor,
+            modifier = Modifier.weight(1f),
+            height = 40.dp,
+            contentPadding = 14.dp,
+            // 1.192f: 内容本身已带 8dp Spacer，这里再用 spacedBy 会多出 8dp → 文字偏右
+            arrangement = Arrangement.Start,
         ) {
             Icon(
                 HupuIcons.Edit,
@@ -147,12 +153,22 @@ private fun ActionItem(
 ) {
     val normal = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
     val tint = if (active) activeColor else normal
+    // 1.192e: 按压反馈改用 kyant 的流体高光（与 LiquidButton / 底部 Tab 栏同一套
+    // InteractiveHighlight）——静止时零视觉负担，按下时高光跟随手指
+    val scope = rememberCoroutineScope()
+    val highlight = remember(scope) { InteractiveHighlight(animationScope = scope) }
     Column(
         Modifier
             .width(46.dp)
             .height(46.dp)
             .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
+            .then(highlight.modifier)
+            .clickable(
+                interactionSource = null,
+                indication = null,
+                onClick = onClick,
+            )
+            .then(highlight.gestureModifier),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

@@ -114,6 +114,8 @@ import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 /**
  * 选手详情页（评分第 4 层，盖入式三级页）。
@@ -308,6 +310,13 @@ fun PlayerDetailOverlay(
         if (shouldLoadMore && hasMore && !loadingMore && !loading) onLoadMore()
     }
 
+    // 1.192: 打分面板改用 Liquid Glass——需要给「面板背后的内容」挂记录层（毛玻璃采样源）。
+    // 先铺一层不透明页面底色再画内容：记录层若透明，卡片会显得非常透。
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -318,7 +327,13 @@ fun PlayerDetailOverlay(
             .tapGuard(),
     ) {
         val state = if (self != null) "ok" else if (loading) "loading" else "error"
-        Crossfade(targetState = state, animationSpec = tween(180), label = "playerDetailSwitch") { s ->
+        Crossfade(
+            targetState = state,
+            // 1.192: 内容层挂记录层——打分面板（毛玻璃）画在本节点之后的兄弟位置
+            modifier = Modifier.layerBackdrop(backdrop),
+            animationSpec = tween(180),
+            label = "playerDetailSwitch",
+        ) { s ->
             when (s) {
                 "loading" -> SkeletonHome()
                 "error" -> ErrorRetry { onRefresh() }
@@ -468,6 +483,7 @@ fun PlayerDetailOverlay(
         // 1.64 打分面板：盖在详情页/楼中楼之上（zIndex 5；iOS 风格居中卡）
         if (scorePanelOpen) {
             ScorePanelOverlay(
+                backdrop = backdrop,
                 myScore = myScore,
                 submitting = scorePanelSubmitting,
                 onSubmit = onScoreSubmit,

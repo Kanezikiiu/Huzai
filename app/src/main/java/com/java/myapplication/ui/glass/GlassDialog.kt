@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
@@ -66,6 +67,8 @@ fun LiquidGlassCard(
     modifier: Modifier = Modifier,
     zIndex: Float = 1100f,
     onDismiss: () -> Unit,
+    /** 1.192: false 时点遮罩 / 返回都不关闭（如「提交中」不允许关闭） */
+    dismissible: Boolean = true,
     content: @Composable ColumnScope.(close: () -> Unit) -> Unit,
 ) {
     val isLight = !isAppDarkTheme()
@@ -97,7 +100,7 @@ fun LiquidGlassCard(
         scrim.animateTo(0f, tween(150))
         onDismiss()
     }
-    val close: () -> Unit = { if (!closing) closing = true }
+    val close: () -> Unit = { if (!closing && dismissible) closing = true }
 
     Box(modifier.fillMaxSize().zIndex(zIndex)) {
         // 遮罩：点空白 = 关闭
@@ -139,7 +142,9 @@ fun LiquidGlassCard(
                     highlight = { Highlight.Plain },
                     onDrawSurface = { drawRect(containerColor) },
                 )
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                // 1.192: 卡片本体吞掉点击——否则点弹窗内空白处会穿透到下层遮罩、把弹窗关掉
+                .tapGuard(),
         ) {
             content(close)
         }

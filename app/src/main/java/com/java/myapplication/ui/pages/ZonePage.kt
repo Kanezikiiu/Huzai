@@ -107,6 +107,8 @@ fun ZonePage(modifier: Modifier = Modifier) {
 
     // ---------- 二级页状态（外置，关闭再进不重载） ----------
     var openedTopic by remember { mutableStateOf<HupuTopicInfo?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var topicEntered by remember { mutableStateOf(false) }
     var overlayClosing by remember { mutableStateOf(false) }
     val feedStates = remember { mutableStateMapOf<String, TopicFeedState>() }
     val topicSorts = remember { mutableStateMapOf<String, List<SortTab>>() }
@@ -140,7 +142,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
     fun openTopic(t: HupuTopicInfo) {
         selectedSort = null
         overlayClosing = false
-        SecondaryPage.enter()
+        if (!topicEntered) { topicEntered = true; SecondaryPage.enter() }
         openedTopic = t
     }
 
@@ -151,6 +153,8 @@ fun ZonePage(modifier: Modifier = Modifier) {
 
     // ---------- 帖子详情三级页（盖入式；从话题流内点帖进入） ----------
     var openedThread by remember { mutableStateOf<HupuThread?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var threadEntered by remember { mutableStateOf(false) }
     var threadClosing by remember { mutableStateOf(false) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadLoadingMore by remember { mutableStateOf(false) }
@@ -175,7 +179,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
             )
         )
         threadClosing = false
-        SecondaryPage.enter()
+        if (!threadEntered) { threadEntered = true; SecondaryPage.enter() }
         openedThread = t
         // 同步置位（频道页同款）：无缓存→骨架屏第一帧
         threadLoading = !threadDetails.containsKey(t.tid)
@@ -347,6 +351,10 @@ fun ZonePage(modifier: Modifier = Modifier) {
         }
         // ---------- 二级页：版块话题流（盖入式转场） ----------
         if (opened != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (topicEntered) { topicEntered = false; SecondaryPage.exit() } }
+            }
             TopicFeedOverlay(
                 topic = opened,
                 isFavorite = favTopics.any { it.url == opened.url },
@@ -362,7 +370,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 selectedSort = selectedSort,
                 onSelectSort = { selectedSort = it },
                 onBack = { closeTopic() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (topicEntered) { topicEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     overlayClosing = false
                     selectedSort = null
@@ -435,6 +443,10 @@ fun ZonePage(modifier: Modifier = Modifier) {
         // ---------- 帖子详情三级页：盖入式转场（盖过话题流二级页） ----------
         val ot = openedThread
         if (ot != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (threadEntered) { threadEntered = false; SecondaryPage.exit() } }
+            }
             val d = threadDetails[ot.tid]
             ThreadDetailOverlay(
                 tid = ot.tid,
@@ -444,7 +456,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 loadingMore = threadLoadingMore,
                 closing = threadClosing,
                 onBack = { closeThread() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (threadEntered) { threadEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     threadClosing = false
                     openedThread = null

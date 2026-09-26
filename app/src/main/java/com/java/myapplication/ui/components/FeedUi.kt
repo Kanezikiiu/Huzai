@@ -27,20 +27,42 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import com.java.myapplication.ui.theme.isAppDarkTheme
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -156,6 +178,45 @@ internal fun HeroBadgeAvatar(
  * 事件不再落穿到 z 轴下方兄弟（修复：失败态空白点击穿透下层卡片、
  * 排序条空隙穿透导致 SecondaryPage 计数被后台页污染、Tab 栏永久隐藏）。
  */
+/**
+ * 1.192: 固定频道开关行（首页「热帖」/ 评分页「虎扑评分」）——不参与排序，只有显示/隐藏两态。
+ * [enabled] = false 时置灰，并把 [subtitle] 当作说明（用于「至少保留一个频道」的约束）。
+ */
+@Composable
+internal fun FixedChannelRow(
+    name: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            // 1.192: 圆角与「自定义首页频道」页的搜索框保持一致（22dp）
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            // 1.192: 整行可点（与「滚动时自动隐藏底栏」等开关行同款手感），
+            // 不再只有右侧那个小 Switch 可点——之前点卡片主体没有任何反应
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                fontSize = 11.sp,
+                color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.error,
+            )
+        }
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
+    }
+}
+
 internal fun Modifier.tapGuard(): Modifier =
     pointerInput(Unit) { detectTapGestures { } }
 
@@ -315,48 +376,156 @@ internal fun FeedList(
     }
 }
 
-/** 排序子 Tab（最新回复/最新发布/24小时榜） */
+/**
+ * 排序子 Tab（最新回复 / 最新发布 / 24小时榜）
+ *
+ * 1.192：由「文字 + 下划线」改为 iOS 分段控件——
+ * 玻璃容器（半透明底 + 细描边）+ 等宽分段 + 滑动选中胶囊（spring Q 弹）。
+ * 与顶部的话题/赛事玻璃胶囊同源质感，但形态更「轻」，构成二级层级。
+ */
 @Composable
 internal fun SortBar(
     sorts: List<SortTab>,
     selected: String,
     onSelect: (String) -> Unit,
 ) {
-    Row(
+    if (sorts.isEmpty()) return
+    val dark = isAppDarkTheme()
+    val count = sorts.size
+    val idx = sorts.indexOfFirst { it.url == selected }.coerceAtLeast(0)
+    val density = LocalDensity.current
+    // 1.192b（真机反馈）：圆角增大到「半高 = 胶囊」，不再显方
+    val shape = RoundedCornerShape(17.dp)
+    val segShape = RoundedCornerShape(14.dp)
+    val slide = remember { Animatable(idx.toFloat()) }
+    LaunchedEffect(idx) {
+        slide.animateTo(
+            idx.toFloat(),
+            spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+        )
+    }
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        sorts.forEach { sort ->
-            val active = sort.url == selected
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { onSelect(sort.url) },
+        val segW = maxWidth / count
+        val segWpx = with(density) { segW.toPx() }
+        val inset = 3.dp
+        val insetPx = with(density) { inset.toPx() }
+        val barH = 34.dp
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(barH)
+                .clip(shape)
+                .background(if (dark) Color.White.copy(0.07f) else Color.Black.copy(0.05f))
+                .border(
+                    0.6.dp,
+                    if (dark) Color.White.copy(0.08f) else Color.White.copy(0.55f),
+                    shape,
+                ),
+        ) {
+            // 滑动选中胶囊
+            Box(
+                Modifier
+                    .offset {
+                        IntOffset(
+                            (slide.value * segWpx + insetPx).roundToInt(),
+                            insetPx.roundToInt(),
+                        )
+                    }
+                    .width(segW - inset * 2)
+                    .height(barH - inset * 2)
+                    .clip(segShape)
+                    .background(if (dark) Color(0xFF2E2E30).copy(0.96f) else Color.White.copy(0.95f)),
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(barH),
             ) {
-                Text(
-                    sort.title,
-                    fontSize = 14.sp,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                    color = if (active) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(3.dp))
-                Box(
-                    Modifier
-                        .width(if (active) 20.dp else 0.dp)
-                        .height(2.dp)
-                        .background(
-                            if (active) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            RoundedCornerShape(2.dp),
-                        ),
-                )
+                sorts.forEach { s ->
+                    val active = s.url == selected
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            // 1.192b（真机反馈）：去掉默认 ripple 方形遮罩
+                            .clickable(
+                                interactionSource = null,
+                                indication = null,
+                            ) { onSelect(s.url) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            s.title,
+                            fontSize = 13.sp,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (active) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-/** 胶囊 chip（横滑条条目：文字 + 可选圆形 logo 或矢量图标） */
+/**
+ * 胶囊 chip（横滑条条目：文字 + 可选圆形 logo 或矢量图标）
+ *
+ * 1.192：iOS 玻璃质感重绘——
+ * · 选中 = 平面化的近实心玻璃胶囊（浅色 = 白 / 深色 = #2E2E30），无投影、无渐变
+ * · 未选 = 极淡半透明胶囊，文字取 onSurfaceVariant
+ * · 按压 spring 缩放反馈（0.90 / StiffnessHigh），无 ripple 压暗
+ * 尺寸与旧版完全一致（12dp / 7dp 内边距），不改变各页横滑条布局高度。
+ * 配色与按压统一走 glassFill / glassBorder / Modifier.glassPress。
+ */
+/** 1.192f: 玻璃胶囊统一配色 —— 全站唯一定义，新增玻璃元素一律复用 */
+internal fun glassFill(dark: Boolean, selected: Boolean = false): Color =
+    if (selected) (if (dark) Color(0xFF2E2E30).copy(0.94f) else Color.White.copy(0.92f))
+    else (if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f))
+
+internal fun glassBorder(dark: Boolean, selected: Boolean = false): Color =
+    if (selected) (if (dark) Color.White.copy(0.10f) else Color.Black.copy(0.05f))
+    else (if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f))
+
+/**
+ * 1.192f: 玻璃胶囊的通用「按住缩放」反馈 —— 与主页横滑条 Chip 完全同一套
+ * （spring + StiffnessHigh，无 ripple）。任何玻璃条/玻璃小按钮都该用它，
+ * 避免同一种控件在不同页面出现「压暗」与「缩放」两种手感。
+ */
+@Composable
+internal fun Modifier.glassPress(
+    shape: Shape,
+    fill: Color,
+    border: Color,
+    onClick: () -> Unit,
+): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessHigh,
+        ),
+        label = "glassPress",
+    )
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clip(shape)
+        .background(fill)
+        .border(0.6.dp, border, shape)
+        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+}
+
 @Composable
 internal fun Chip(
     text: String,
@@ -366,14 +535,39 @@ internal fun Chip(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val dark = isAppDarkTheme()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // 1.192d（真机反馈）：按压只用 spring 缩放，不做变暗。
+    // 相比最初那版：StiffnessHigh 让按下那一帧就起步（不再是慢起势），
+    // 深度加大到 0.90，快速轻点也看得见；松手仍靠 spring 弹性回弹。
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessHigh,
+        ),
+        label = "chipPress",
+    )
+    val shape = RoundedCornerShape(50)
+    // 1.192b（真机反馈）：去掉立体感——不再用投影/上下渐变/白色高光描边，
+    // 改成「平铺半透明玻璃块 + 一层极淡描边」，接近 iOS 原生 chip 的扁平观感。
+    // 1.192f: 配色收敛到全站唯一的 glassFill / glassBorder
+    val bg = glassFill(dark, selected)
+    val edge = glassBorder(dark, selected)
+    val contentColor =
+        if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
-            .clip(RoundedCornerShape(50))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant
-            )
-            .clickable(onClick = onClick)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .background(bg)
+            .border(0.6.dp, edge, shape)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -391,8 +585,7 @@ internal fun Chip(
             Icon(
                 leadingIcon,
                 contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.onPrimary
-                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = contentColor,
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(6.dp))
@@ -401,8 +594,7 @@ internal fun Chip(
             text,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = contentColor,
             maxLines = 1,
         )
     }

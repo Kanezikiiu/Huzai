@@ -67,10 +67,13 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
     }
+    // 1.192: 计数兜底——页面被任何路径销毁（如被重挂载）都会 onDispose 回收，防 Tab 栏计数泄漏
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { SecondaryPage.exit() }
+    }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
             progress.animateTo(0f, tween(280))
             onClose()
         }

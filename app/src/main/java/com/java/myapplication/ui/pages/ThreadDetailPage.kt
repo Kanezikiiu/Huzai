@@ -137,6 +137,11 @@ import androidx.compose.foundation.text.appendInlineContent
 import com.java.myapplication.ui.components.EmojiSegment
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.normalizeCover
+// 1.192g: 「只看楼主 / 排序状态」= 按钮 → LiquidButton（不再走 tab 条的 glassPress）
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 
 import com.java.myapplication.ui.components.rememberEmojiInline
 import com.java.myapplication.ui.components.splitEmoji
@@ -991,32 +996,45 @@ fun ThreadDetailOverlay(
                                     )
                                 }
                                 item(key = "r-tools") {
+                                    val dark = isAppDarkTheme()
                                     Row(
                                         Modifier.fillMaxWidth().padding(top = 2.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(
-                                            "\u53ea\u770b\u697c\u4e3b",
-                                            fontSize = 12.sp,
-                                            fontWeight = if (onlyOp) FontWeight.SemiBold else FontWeight.Medium,
-                                            color = if (onlyOp) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .background(
-                                                    if (onlyOp) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                                    else MaterialTheme.colorScheme.surface
-                                                )
-                                                .clickable { onlyOp = !onlyOp }
-                                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        )
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .background(MaterialTheme.colorScheme.surface)
-                                                .clickable { sortMode = (sortMode + 1) % 3 }
-                                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        // 1.192g: 「只看楼主 / 排序状态」是**按钮**而不是 tab 条 ——
+                                        // tab 条 = 一组互斥选项 + 选中项位置概念；这两个是「独立开关」与「循环切换」，
+                                        // 所以用 LiquidButton（流体高光 + 按压形变），与 tab 的 spring 缩放区分。
+                                        // 1.192h: 不再采样 backdrop——drawBackdrop 默认带的 Highlight/Shadow
+                                        // 就是那圈「亮边」。
+                                        // 1.192j: 选中态改**实心主题色**（原来 primary@0.16 太淡），字色用
+                                        // onPrimary——各调色板自带的对色（浅色=白 / 深色=极深色），不会与底同色；
+                                        // 未选态白底 + 描边。
+                                        LiquidButton(
+                                            onClick = { onlyOp = !onlyOp },
+                                            fill = if (onlyOp) MaterialTheme.colorScheme.primary else buttonFill(dark),
+                                            border = if (onlyOp) Color.Transparent else buttonBorder(dark),
+                                            // 1.192i/j: 30 → 34 → 38dp，内边距 12 → 14 → 16，字 12 → 13sp
+                                            //（再胖一点，不再细长）
+                                            height = 38.dp,
+                                            contentPadding = 16.dp,
+                                            arrangement = Arrangement.Center,
+                                        ) {
+                                            Text(
+                                                "\u53ea\u770b\u697c\u4e3b",
+                                                fontSize = 13.sp,
+                                                fontWeight = if (onlyOp) FontWeight.SemiBold else FontWeight.Medium,
+                                                color = if (onlyOp) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        LiquidButton(
+                                            onClick = { sortMode = (sortMode + 1) % 3 },
+                                            fill = buttonFill(dark),
+                                            border = buttonBorder(dark),
+                                            // 1.192i/j: 30 → 34 → 38dp，内边距 12 → 14 → 16，字 12 → 13sp
+                                            height = 38.dp,
+                                            contentPadding = 16.dp,
+                                            arrangement = Arrangement.Center,
                                         ) {
                                             if (sortSwitching) {
                                                 CircularProgressIndicator(
@@ -1028,7 +1046,7 @@ fun ThreadDetailOverlay(
                                             }
                                             Text(
                                                 when (sortMode) { 0 -> "\u9ed8\u8ba4\u987a\u5e8f"; 1 -> "\u6700\u65b0"; else -> "\u6700\u70ed" },
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )

@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.java.myapplication.ui.components.animateChipCenterTo
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -74,6 +77,7 @@ import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuRepository
 import com.java.myapplication.data.HupuTopicInfo
 import com.java.myapplication.ui.components.Chip
+import com.java.myapplication.ui.components.FixedChannelRow
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.normalizeCover
@@ -97,17 +101,29 @@ fun TopicPickerPage(onClose: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var selectedCate by remember { mutableStateOf<String?>(null) } // null=全部
     var limitHintTick by remember { mutableIntStateOf(0) }
+    // 1.192: 「热帖」固定频道的隐藏开关——恒保证「热帖 + 已选话题」≥ 1 个 tab
+    var hotHidden by remember { mutableStateOf(HupuPrefs.isHomeHotHidden()) }
+    // 1.192: 开关是否可操作——「关掉它就会变成 0 个 tab」时不可操作（置灰 + 红字说明）。
+    // 注意方向：开关已关（热帖隐藏）→ 永远可以再打开；开关开着 → 只有还有别的话题才能关。
+    val canHideHot = hotHidden || selected.isNotEmpty()
+    val onlyOneLeft = hotHidden && selected.size == 1
 
     // 盖入动画：进入 0→1；返回动画结束后由父级移除本组件
     val progress = remember { Animatable(0f) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, tween(280))
             onClose()
         }
@@ -146,11 +162,19 @@ fun TopicPickerPage(onClose: () -> Unit) {
             hotTopics = b?.hotTopics ?: emptyList()
             categories = c
             selected = if (HupuPrefs.hasCustomHomeTopics()) HupuPrefs.loadHomeTopics() else hotTopics
+            // 1.192: 自愈——「热帖隐藏 + 一个话题都没有」是非法态（首页会兜底显示热帖，
+            // 于是开关显示关闭、页面却仍有热帖）。这里恢复成「显示热帖」，保证两者一致。
+            if (HupuPrefs.isHomeHotHidden() && selected.isEmpty()) {
+                hotHidden = false
+                HupuPrefs.setHomeHotHidden(false)
+            }
         }
         loading = false
     }
 
     fun toggle(t: HupuTopicInfo) {
+        // 1.192: 热帖已隐藏时，不允许取消最后一个频道（否则首页会出现 0 个 tab）
+        if (hotHidden && selected.size == 1 && selected.any { it.url == t.url }) return
         val cur = selected
         if (cur.any { it.url == t.url }) {
             val next = cur.filterNot { it.url == t.url }
@@ -166,6 +190,8 @@ fun TopicPickerPage(onClose: () -> Unit) {
     }
 
     fun remove(t: HupuTopicInfo) {
+        // 1.192: 同上——热帖已隐藏时，最后一个频道不可移除
+        if (hotHidden && selected.size == 1) return
         val next = selected.filterNot { it.url == t.url }
         selected = next
         HupuPrefs.saveHomeTopics(next)
@@ -186,8 +212,15 @@ fun TopicPickerPage(onClose: () -> Unit) {
         drawContent()
     }
     fun resetDefault() {
-        HupuPrefs.clearHomeTopics()
+        // 1.192: 「重置」= 清空所有已添加的频道，只保留「热帖」。
+        // 必须写「空的自定义列表」而不是删掉这个 key：删 key 会被当成「未配置」，
+        // 反而回退到官方热门全量话题；写空列表才是「一个话题都不显示」。
+        HupuPrefs.saveHomeTopics(emptyList())
         selected = emptyList()
+        if (hotHidden) {
+            hotHidden = false
+            HupuPrefs.setHomeHotHidden(false)
+        }
     }
 
     // 版块全集 + 过滤（搜索优先于大类过滤）
@@ -252,7 +285,7 @@ fun TopicPickerPage(onClose: () -> Unit) {
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = { resetAsk = true }) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "恢复默认", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Rounded.Refresh, contentDescription = "重置频道", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             when {
@@ -261,6 +294,17 @@ fun TopicPickerPage(onClose: () -> Unit) {
                 }
                 failed -> ErrorRetry { loadTick++ }
                 else -> {
+                    // 1.192: 「热帖」固定频道开关（不参与排序）
+                    FixedChannelRow(
+                        name = "热帖",
+                        subtitle = if (canHideHot) "首页默认内容流 · 不参与排序" else "至少保留一个频道",
+                        checked = !hotHidden,
+                        enabled = canHideHot,
+                    ) { on ->
+                        // on = 开关的新状态（true=显示热帖）；存的是「是否隐藏」，需取反
+                        hotHidden = !on
+                        HupuPrefs.setHomeHotHidden(!on)
+                    }
                     // 已选条（长按拖动排序 / 点按移除）
                     if (selected.isEmpty()) {
                         Text(
@@ -270,7 +314,7 @@ fun TopicPickerPage(onClose: () -> Unit) {
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                         )
                     } else {
-                        SelectedBar(selected = selected, onReorder = ::reorder, onRemove = ::remove)
+                        SelectedBar(selected = selected, onReorder = ::reorder, onRemove = ::remove, removable = !onlyOneLeft)
                     }
                     Text(
                         "长按拖动排序 · 点按移除",
@@ -301,8 +345,16 @@ fun TopicPickerPage(onClose: () -> Unit) {
                         textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
                     )
 
-                    // 大类过滤
+                    // 大类过滤（1.192c: 补「选中项居中」便捷特性，与主页话题条一致）
+                    val cateBarState = rememberLazyListState()
+                    val cateSelIdx =
+                        if (selectedCate == null) 0
+                        else 1 + categories.indexOfFirst { it.cateId == selectedCate }
+                    LaunchedEffect(selectedCate) {
+                        if (cateSelIdx >= 0) cateBarState.animateChipCenterTo(cateSelIdx)
+                    }
                     LazyRow(
+                        state = cateBarState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
@@ -334,11 +386,19 @@ fun TopicPickerPage(onClose: () -> Unit) {
                     // 版块勾选列表
                     LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
+                        // 1.192: 条目之间留出间距——否则两个相邻选中项的圆角高亮块会贴在一起、
+                        // 视觉上连成一片
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         items(filtered, key = { it.url }) { t ->
                             val isSelected = selected.any { it.url == t.url }
-                            TopicPickRow(topic = t, isSelected = isSelected, onToggle = { toggle(t) })
+                            TopicPickRow(
+                                topic = t,
+                                isSelected = isSelected,
+                                locked = onlyOneLeft && isSelected,
+                                onToggle = { toggle(t) },
+                            )
                         }
                     }
                 }
@@ -349,9 +409,9 @@ fun TopicPickerPage(onClose: () -> Unit) {
         if (resetAsk) {
             LiquidGlassDialog(
                 backdrop = backdrop,
-                title = "清空首页频道",
-                message = "将清除全部已选首页频道，主页恢复显示默认频道。此操作不可恢复。",
-                confirmText = "清空",
+                title = "重置首页频道",
+                message = "将清空所有已添加的频道，只保留「热帖」。此操作不可恢复。",
+                confirmText = "重置",
                 dismissText = "取消",
                 onConfirm = { resetDefault() },
                 onDismiss = { resetAsk = false },
@@ -366,6 +426,8 @@ private fun TopicPickRow(
     topic: HupuTopicInfo,
     isSelected: Boolean,
     onToggle: () -> Unit,
+    /** 1.192: 锁定（不可取消）——热帖已隐藏且它是最后一个频道时 */
+    locked: Boolean = false,
 ) {
     Row(
         Modifier
@@ -375,7 +437,7 @@ private fun TopicPickRow(
                 if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                 else Color.Transparent
             )
-            .clickable { onToggle() }
+            .clickable(enabled = !locked) { onToggle() }
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -406,7 +468,11 @@ private fun TopicPickRow(
         Icon(
             if (isSelected) Icons.Rounded.Check else Icons.Rounded.Add,
             contentDescription = null,
-            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = when {
+                locked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                isSelected -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
         )
     }
 }
@@ -417,12 +483,15 @@ private fun SelectedBar(
     selected: List<HupuTopicInfo>,
     onReorder: (List<HupuTopicInfo>) -> Unit,
     onRemove: (HupuTopicInfo) -> Unit,
+    /** 1.192: 仅剩它一个 tab 时置灰移除（避免 0 个 tab） */
+    removable: Boolean = true,
 ) {
     val listState = rememberLazyListState()
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val currentList by rememberUpdatedState(selected)
     val currentOnReorder by rememberUpdatedState(onReorder)
+    val dark = isAppDarkTheme()
 
     LazyRow(
         state = listState,
@@ -473,11 +542,17 @@ private fun SelectedBar(
                     .graphicsLayer { translationX = if (dragging) dragOffset else 0f }
                     .animateItem()
                     .clip(RoundedCornerShape(999.dp))
+                    // 1.192c: 与顶部玻璃胶囊同源材质（拖动中仍保持 primaryContainer 反馈）
                     .background(
                         if (dragging) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant
+                        else if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f)
                     )
-                    .clickable { onRemove(t) }
+                    .border(
+                        0.6.dp,
+                        if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f),
+                        RoundedCornerShape(999.dp),
+                    )
+                    .clickable(enabled = removable) { onRemove(t) }
                     .padding(start = 10.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -499,7 +574,8 @@ private fun SelectedBar(
                     Icons.Rounded.Close,
                     contentDescription = "移除",
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (removable) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                 )
             }
         }

@@ -621,7 +621,10 @@ internal fun StickerPane(
                 model = stickerImageModel(s.url),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(44.dp)
+                    // 1.192: 网格里 .size(44.dp) 会被单元格宽度约束撑成「单元格宽 x 44」的矩形，
+                    // 图片 Fit 居中后只有 44dp 见方，带字表情几乎看不清 → 改为填满格子并保持正方形
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
                     .clip(RoundedCornerShape(8.dp))
                     .combinedClickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },

@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,20 +44,28 @@ import androidx.compose.ui.unit.sp
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.glass.LiquidSlider
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import kotlin.coroutines.cancellation.CancellationException
 
 /** \u9605\u8bfb\u5b57\u53f7\u8bbe\u7f6e\u9875\uff08\u76d6\u5165\u5f0f\u4e8c\u7ea7\u9875\uff09\uff1a\u793a\u4f8b\u5b9e\u65f6\u9884\u89c8 + \u6ed1\u6761\u8c03\u8282\uff0c\u4ec5\u5e94\u7528\u4e8e\u5e16\u5b50\u8be6\u60c5\u6b63\u6587\u533a\u3002 */
 @Composable
 fun TextSizeSettingsPage(onClose: () -> Unit) {
     val progress = remember { Animatable(0f) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, tween(280))
             onClose()
         }
@@ -78,6 +85,10 @@ fun TextSizeSettingsPage(onClose: () -> Unit) {
         }
     }
     var scale by remember { mutableFloatStateOf(HupuPrefs.loadFontScale()) }
+    // 1.192d: 滑条拇指的玻璃采样源。滑条位于 surface 卡片上，用卡片底色做「画布背景层」即可
+    // （与上游 catalog 内联滑条的用法一致）；用页面级 LayerBackdrop 会采样到滑条自身。
+    val sliderSurface = MaterialTheme.colorScheme.surface
+    val sliderBackdrop = rememberCanvasBackdrop { drawRect(sliderSurface) }
     Box(
         Modifier
             .fillMaxSize()
@@ -211,11 +222,14 @@ fun TextSizeSettingsPage(onClose: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Slider(
-                        value = scale,
+                    // 1.192d: 材质升级——液态玻璃滑条（LiquidSlider，Kyant0/AndroidLiquidGlass 同源组件）
+                    LiquidSlider(
+                        value = { scale },
                         onValueChange = { scale = it },
-                        onValueChangeFinished = { HupuPrefs.saveFontScale(scale) },
                         valueRange = HupuPrefs.FONT_SCALE_MIN..HupuPrefs.FONT_SCALE_MAX,
+                        backdrop = sliderBackdrop,
+                        onValueChangeFinished = { HupuPrefs.saveFontScale(scale) },
+                        modifier = Modifier.padding(vertical = 10.dp),
                     )
                     Row {
                         Spacer(Modifier.weight(1f))

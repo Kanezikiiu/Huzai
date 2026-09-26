@@ -69,13 +69,9 @@ private const val LOGIN_URL = "https://passport.hupu.com/v2/login?pcPhone=1&jump
 fun LoginPage(onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
-    // 1.179(B): 系统 WebView 主版本——过低是老设备「验证码加载失败」的常见根因
-    val webViewMajor = remember {
-        runCatching {
-            val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
-            Regex("Chrome/(\\d+)").find(ua)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-        }.getOrDefault(0)
-    }
+    // 1.192: 版本探测改为「随 WebView 一起延迟计算」——getDefaultUserAgent 首次调用
+    // 会触发 WebView 内核初始化，放在首帧会阻塞入场动画。
+    var webViewMajor by remember { mutableIntStateOf(0) }
     // 1.179(C): 加载失败可诊断状态（null = 无错误）
     var loadError by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
@@ -85,13 +81,27 @@ fun LoginPage(onClose: () -> Unit) {
     var toastTick by remember { mutableStateOf(0) }
     var closing by remember { mutableStateOf(false) }
     val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    // 1.192: 先播「页面打开」动画，再挂载 WebView。WebView 构造 + 首次加载很重，
+    // 若与首帧同帧创建会阻塞入场动画，表现为「先加载再打开」的明显延迟/卡顿。
+    var webMounted by remember { mutableStateOf(false) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, androidx.compose.animation.core.tween(280))
+        webViewMajor = runCatching {
+            val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
+            Regex("Chrome/(\\d+)").find(ua)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        }.getOrDefault(0)
+        webMounted = true
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, androidx.compose.animation.core.tween(280))
             onClose()
         }
@@ -179,11 +189,18 @@ fun LoginPage(onClose: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            HupuLoginWebView(
-                onLoginSuccess = { finishLogin() },
-                reloadTick = reloadTick,
-                onLoadError = { loadError = it },
-            )
+            if (webMounted) {
+                HupuLoginWebView(
+                    onLoginSuccess = { finishLogin() },
+                    reloadTick = reloadTick,
+                    onLoadError = { loadError = it },
+                )
+            } else {
+                // WebView 挂载前的占位：居中转圈，明确「已打开、正在加载」
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
         }
 
         // 登录中遮罩

@@ -27,12 +27,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.text.style.TextOverflow
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -104,14 +104,20 @@ private fun readCrashLog(context: Context): String {
 fun AboutPage(onClose: () -> Unit) {
     val context = LocalContext.current
     val progress = remember { Animatable(0f) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, tween(280))
             onClose()
         }
@@ -424,15 +430,20 @@ fun UpdateDialog(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (info.changelog.isNotBlank()) {
-            Text(
-                info.changelog,
-                Modifier.padding(24.dp, 14.dp, 24.dp, 0.dp),
-                fontSize = 13.sp,
-                lineHeight = 20.sp,
-                color = contentColor,
-                maxLines = 8,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 1.192: 更新说明过长时不再截断成省略号——改为「限高 + 可滚动」，完整内容都能看到
+            Box(
+                Modifier
+                    .padding(start = 24.dp, end = 24.dp, top = 14.dp)
+                    .heightIn(max = 280.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    info.changelog,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = contentColor,
+                )
+            }
         }
         Row(
             Modifier
@@ -529,10 +540,13 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
     }
+    // 1.192: 计数兜底——页面被任何路径销毁（如被重挂载）都会 onDispose 回收，防 Tab 栏计数泄漏
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { SecondaryPage.exit() }
+    }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
             progress.animateTo(0f, tween(280))
             onClose()
         }

@@ -136,6 +136,8 @@ private fun FeedContent(
 
     // ---------- 帖子详情二级页（盖入式；状态外置：返回再进不重载） ----------
     var openedThread by remember { mutableStateOf<HupuThread?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var threadEntered by remember { mutableStateOf(false) }
     var threadClosing by remember { mutableStateOf(false) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadLoadingMore by remember { mutableStateOf(false) }
@@ -195,7 +197,7 @@ private fun FeedContent(
             )
         )
         threadClosing = false
-        SecondaryPage.enter()
+        if (!threadEntered) { threadEntered = true; SecondaryPage.enter() }
         openedThread = t
         // 加载态在交互瞬间同步置位（频道页同款）：无缓存→骨架屏第一帧出现
         threadLoading = !threadDetails.containsKey(t.tid)
@@ -246,10 +248,15 @@ private fun FeedContent(
     val effectiveTopics = remember(data.hotTopics, HupuPrefs.homeTopicsVersion) {
         HupuPrefs.effectiveHomeTopics(data.hotTopics)
     }
-    // 正在浏览的频道被移除时，退回热帖（否则该流选择器失效）
-    LaunchedEffect(effectiveTopics) {
-        if (selected != "hot" && effectiveTopics.none { it.url == selected }) {
-            selected = "hot"
+    // 1.192: 「热帖」隐藏开关——隐藏后横滑条不再显示它
+    // （设置页已保证「热帖 + 已选话题」≥1；这里再兜底：话题为空时仍显示热帖，页面不会 0 tab）
+    val hotHidden = remember(HupuPrefs.homeTopicsVersion) { HupuPrefs.isHomeHotHidden() }
+    val showHot = !hotHidden || effectiveTopics.isEmpty()
+    // 正在浏览的频道失效（被移除 / 热帖被隐藏且正停在它上面）时，回退到合法频道
+    LaunchedEffect(effectiveTopics, showHot) {
+        val valid = (selected == "hot" && showHot) || effectiveTopics.any { it.url == selected }
+        if (!valid) {
+            selected = if (showHot) "hot" else effectiveTopics.firstOrNull()?.url ?: "hot"
         }
     }
 
@@ -311,7 +318,10 @@ private fun FeedContent(
     }
 
     // 1.186: 顶部 Tab 左右滑动切换（仅本大页面内；顺序与横滑条一致：「热帖」+ 各话题）
-    val tabUrls = remember(effectiveTopics) { listOf("hot") + effectiveTopics.map { it.url } }
+    // 1.192: 热帖被隐藏时，左右滑动顺序里也不含它（与横滑条一致）
+    val tabUrls = remember(effectiveTopics, showHot) {
+        (if (showHot) listOf("hot") else emptyList()) + effectiveTopics.map { it.url }
+    }
     fun swipeTab(delta: Int) {
         val cur = tabUrls.indexOf(selected).let { if (it >= 0) it else 0 }
         val ni = cur + delta
@@ -351,9 +361,11 @@ private fun FeedContent(
             }
         }
         // 话题横滑条：固定在标题栏下方，单选切换内容流（再点已选返回热帖）
-        TopicBar(effectiveTopics, selected) {
-            if (selected == it) selected = "hot"
-            else {
+        TopicBar(effectiveTopics, selected, showHot) {
+            if (selected == it) {
+                // 1.192: 再点已选 = 回到「热帖」；但热帖被隐藏时该动作无意义 → 保持不动
+                if (showHot) selected = "hot"
+            } else {
                 selected = it
                 selectedSort = null
             }
@@ -440,6 +452,10 @@ private fun FeedContent(
     // ---------- 帖子详情二级页：盖入式转场（组合顺序在搜索页之后 → 盖在搜索页之上） ----------
     val ot = openedThread
     if (ot != null) {
+        // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            onDispose { if (threadEntered) { threadEntered = false; SecondaryPage.exit() } }
+        }
         val d = threadDetails[ot.tid]
         ThreadDetailOverlay(
             tid = ot.tid,
@@ -449,7 +465,7 @@ private fun FeedContent(
             loadingMore = threadLoadingMore,
             closing = threadClosing,
             onBack = { closeThread() },
-            onExitStart = { SecondaryPage.exit() },
+            onExitStart = { if (threadEntered) { threadEntered = false; SecondaryPage.exit() } },
             onClosed = {
                 threadClosing = false
                 openedThread = null
@@ -505,10 +521,13 @@ private fun FeedContent(
 private fun TopicBar(
     topics: List<HupuTopicInfo>,
     selected: String,
+    showHot: Boolean = true,
     onSelect: (String) -> Unit,
 ) {
     val barState = rememberLazyListState()
-    val selIdx = if (selected == "hot") 0 else 1 + topics.indexOfFirst { it.url == selected }
+    // 1.192: 热帖被隐藏时，话题 chip 的下标整体前移 1
+    val selIdx = if (selected == "hot") 0
+    else (if (showHot) 1 else 0) + topics.indexOfFirst { it.url == selected }
     LaunchedEffect(selected) { if (selIdx >= 0) barState.animateChipCenterTo(selIdx) }
     LazyRow(
         state = barState,
@@ -520,9 +539,11 @@ private fun TopicBar(
             .padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // 「热帖」chip：默认流（/all-gambia 全站热帖榜）
-        item(key = "hot-chip") {
-            Chip(text = "热帖", selected = selected == "hot") { onSelect("hot") }
+        // 「热帖」chip：默认流（/all-gambia 全站热帖榜）——1.192 起可被设置页隐藏
+        if (showHot) {
+            item(key = "hot-chip") {
+                Chip(text = "热帖", selected = selected == "hot") { onSelect("hot") }
+            }
         }
         items(topics, key = { it.topicId + it.url }) { t ->
             Chip(

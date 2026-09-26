@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
@@ -112,11 +113,15 @@ import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.glass.LiquidGlassCard
+import com.java.myapplication.ui.theme.isAppDarkTheme
+import com.kyant.backdrop.Backdrop
 
 // 1.64 打分面板：半透明遮罩 + 居中卡片（iOS 风格：圆角 24dp、标题正文居左、取消灰/确认蓝）
 // 五星制（每星 2 分）；已打分时可修改或取消评分（取消需确认，官方语义：user/record/comment/delete）
 @Composable
 internal fun ScorePanelOverlay(
+    backdrop: Backdrop,
     myScore: Int,
     submitting: Boolean,
     /** 1.153: 打分随带评论（官方打分弹窗即一体流）——comment 为空表示只打分 */
@@ -124,42 +129,30 @@ internal fun ScorePanelOverlay(
     onDelete: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val isLight = !isAppDarkTheme()
     var picked by remember { mutableStateOf(if (myScore > 0) (myScore / 2).coerceIn(1, 5) else 0) }  // 星数 1..5（每星 2 分）；历史奇数分向下取整，重选即修正
     // 1.153: 随评分一起提交的评论（选填）
     var comment by remember { mutableStateOf("") }
     // 面板内取消评分二次确认（删除类操作不可逆）
     var confirmDelete by remember { mutableStateOf(false) }
-    Box(
-        Modifier
-            .fillMaxSize()
-            // 1.153: 面板内新增评论输入后需要键盘避让，否则键盘会盖住确认按钮
-            .imePadding()
-            .zIndex(5f)
-            .background(Color.Black.copy(alpha = 0.25f))
-            .clickable(
-                indication = null,
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-            ) { if (!submitting) onClose() },
-    ) {
+    // 1.192: 旧版「半透明遮罩 + 纯色居中卡」改为新弹窗（Liquid Glass 毛玻璃 + Q 弹出入场）。
+    // 毛玻璃面板不能包在 Dialog() 里，且必须是「内容记录层」之后的兄弟节点
+    // （宿主 PlayerDetailPage 已给内容层挂 .layerBackdrop(backdrop)）。
+    LiquidGlassCard(
+        backdrop = backdrop,
+        // 1.153: 面板内有评论输入 → 需要键盘避让，否则键盘会盖住确认按钮
+        modifier = Modifier.imePadding(),
+        // 提交中不允许关闭（点遮罩 / 系统返回都无效）
+        dismissible = !submitting,
+        onDismiss = { onClose() },
+    ) { close ->
         // 系统返回：关闭面板（盖过宿主与楼中楼的返回手势）
         androidx.activity.compose.PredictiveBackHandler { events ->
             events.collect { }
-            if (!submitting) onClose()
+            close()
         }
         Column(
-            Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 40.dp)
-                // 1.191: 平板/横屏下限制卡片宽度（手机上可用宽度本就 < 400dp，无影响）
-                .widthIn(max = 400.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                ) { } // 阻断遮罩点击
-                .padding(20.dp),
+            Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -196,7 +189,8 @@ internal fun ScorePanelOverlay(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    // 1.192: 毛玻璃上用 onSurface 淡底，避免「看起来什么都没有」
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
                 BasicTextField(
@@ -235,18 +229,20 @@ internal fun ScorePanelOverlay(
                 Box(
                     Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .clickable(enabled = !submitting) { onClose() }
+                        // 1.192: 按钮形态对齐新弹窗（胶囊 + onSurface 淡底）
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (isLight) 0.12f else 0.16f))
+                        .clickable(enabled = !submitting) { close() }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("取消", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("取消", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                 }
                 Box(
                     Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
+                        // 1.192: 与取消同款胶囊
+                        .clip(RoundedCornerShape(999.dp))
                         .background(MaterialTheme.colorScheme.primary)
                         .clickable(enabled = !submitting && picked > 0) { onSubmit(picked * 2, comment.trim()) }
                         .padding(vertical = 12.dp),
@@ -264,10 +260,11 @@ internal fun ScorePanelOverlay(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        // 1.192: 与新弹窗按钮同款胶囊 + 淡底（确认态保持红色警示）
+                        .clip(RoundedCornerShape(999.dp))
                         .background(
                             if (confirmDelete) Color(0xFFE53935).copy(alpha = 0.9f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
                         )
                         .clickable(enabled = !submitting) {
                             if (confirmDelete) onDelete() else confirmDelete = true
@@ -278,7 +275,7 @@ internal fun ScorePanelOverlay(
                     Text(
                         if (confirmDelete) "确认取消评分" else "取消评分",
                         fontSize = 14.sp,
-                        color = if (confirmDelete) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (confirmDelete) Color.White else MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
@@ -357,7 +354,9 @@ internal fun ScoreStickerPane(
                 model = stickerImageModel(s.url),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(44.dp)
+                    // 1.192: 同上——填满格子并保持正方形，表情更大更清晰
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
                     .clip(RoundedCornerShape(8.dp))
                     .combinedClickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },

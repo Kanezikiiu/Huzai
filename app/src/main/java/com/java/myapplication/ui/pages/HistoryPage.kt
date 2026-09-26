@@ -130,6 +130,8 @@ fun HistoryPage(onClose: () -> Unit) {
 
     // ---------- 帖子详情宿主（与其他页同款：状态外置缓存） ----------
     var openedThread by remember { mutableStateOf<HupuThread?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var histThreadEntered by remember { mutableStateOf(false) }
     var threadClosing by remember { mutableStateOf(false) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadLoadingMore by remember { mutableStateOf(false) }
@@ -153,7 +155,7 @@ fun HistoryPage(onClose: () -> Unit) {
             )
         )
         threadClosing = false
-        SecondaryPage.enter()
+        if (!histThreadEntered) { histThreadEntered = true; SecondaryPage.enter() }
         openedThread = t
         threadLoading = !threadDetails.containsKey(t.tid)
     }
@@ -341,6 +343,10 @@ fun HistoryPage(onClose: () -> Unit) {
         // 帖子详情页（盖入式；组合顺序在列表之后 → 盖在其上）
         val ot = openedThread
         if (ot != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (histThreadEntered) { histThreadEntered = false; SecondaryPage.exit() } }
+            }
             val d = threadDetails[ot.tid]
             ThreadDetailOverlay(
                 tid = ot.tid,
@@ -350,7 +356,7 @@ fun HistoryPage(onClose: () -> Unit) {
                 loadingMore = threadLoadingMore,
                 closing = threadClosing,
                 onBack = { closeDetail() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (histThreadEntered) { histThreadEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     threadClosing = false
                     openedThread = null

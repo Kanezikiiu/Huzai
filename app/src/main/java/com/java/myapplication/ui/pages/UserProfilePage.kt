@@ -5,6 +5,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,7 +72,14 @@ import com.java.myapplication.ui.components.FeedItem
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.thumbnailUrl
+import com.java.myapplication.ui.components.glassBorder
+import com.java.myapplication.ui.components.glassFill
+import com.java.myapplication.ui.components.glassPress
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -146,6 +154,8 @@ fun UserProfilePage(
 
     // ---------- \u5e16\u5b50\u8be6\u60c5\u5bbf\u4e3b\uff08\u4e0e HistoryPage \u540c\u6b3e\uff1a\u72b6\u6001\u5916\u7f6e\u7f13\u5b58\uff09 ----------
     var openedThread by remember { mutableStateOf<HupuThread?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var upThreadEntered by remember { mutableStateOf(false) }
     var threadClosing by remember { mutableStateOf(false) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadLoadingMore by remember { mutableStateOf(false) }
@@ -191,7 +201,7 @@ fun UserProfilePage(
 
     fun openDetail(t: HupuThread) {
         threadClosing = false
-        SecondaryPage.enter()
+        if (!upThreadEntered) { upThreadEntered = true; SecondaryPage.enter() }
         openedThread = t
         threadLoading = !threadDetails.containsKey(t.tid)
     }
@@ -627,6 +637,10 @@ fun UserProfilePage(
         // \u5e16\u5b50\u8be6\u60c5\u9875\uff08\u76d6\u5165\u5f0f\uff1b\u7ec4\u5408\u987a\u5e8f\u5728\u5217\u8868\u4e4b\u540e \u2192 \u76d6\u5728\u5176\u4e0a\uff09
         val ot = openedThread
         if (ot != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (upThreadEntered) { upThreadEntered = false; SecondaryPage.exit() } }
+            }
             val d = threadDetails[ot.tid]
             ThreadDetailOverlay(
                 tid = ot.tid,
@@ -636,7 +650,7 @@ fun UserProfilePage(
                 loadingMore = threadLoadingMore,
                 closing = threadClosing,
                 onBack = { closeDetail() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (upThreadEntered) { upThreadEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     threadClosing = false
                     openedThread = null
@@ -796,14 +810,15 @@ private fun ProfileCard(
             }
             // 1.130: 私信小图标按钮（置于关注按钮左侧；非本人主页才显示）
             if (onPm != null) {
+                val dark = isAppDarkTheme()
                 Spacer(Modifier.width(8.dp))
-                Box(
-                    Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
-                        .clickable { onPm() },
-                    contentAlignment = Alignment.Center,
+                // 1.192e: 私信按钮 → 液态玻璃按钮（项目变体，不采样 backdrop）
+                LiquidButton(
+                    onClick = onPm,
+                    fill = buttonFill(dark),
+                    border = buttonBorder(dark),
+                    height = 38.dp,
+                    contentPadding = 15.dp,
                 ) {
                     Icon(
                         HupuIcons.Mail,
@@ -881,16 +896,19 @@ private fun ProfileCard(
 /** 1.126 关注按钮：未关注 = 主题色实心 + 加号；已关注 = 浅灰底。即时反馈，失败由调用方回滚 */
 @Composable
 private fun FollowButton(followed: Boolean, busy: Boolean, onClick: () -> Unit) {
-    val bg = if (followed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
-    else MaterialTheme.colorScheme.primary
+    val dark = isAppDarkTheme()
+    val bg = buttonFill(dark)
     val fg = if (followed) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(bg)
-            .clickable(enabled = !busy, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    // 1.192e: 关注按钮 → 液态玻璃按钮（未关注 = 主题色调玻璃；已关注 = 浅灰玻璃）
+    LiquidButton(
+        onClick = { if (!busy) onClick() },
+        isInteractive = !busy,
+        // 未关注 = 实心主题色；已关注 = 按钮中性底（深色为实体深灰）
+        fill = if (followed) bg else MaterialTheme.colorScheme.primary,
+        border = if (followed) buttonBorder(dark) else Color.Transparent,
+        height = 38.dp,
+        contentPadding = 16.dp,
+        arrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
     ) {
         if (!followed) {
             Icon(
@@ -953,18 +971,22 @@ private fun StatCell(label: String, value: Int, onClick: (() -> Unit)? = null) {
 
 @Composable
 private fun TabChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    // 1.192e: 材质升级为与顶部玻璃胶囊同源（选中 = 近实心磨砂 + 主题色文字；未选 = 极淡半透明）
+    val dark = isAppDarkTheme()
     Text(
         text,
         fontSize = 12.sp,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                else MaterialTheme.colorScheme.surface
+            // 1.192f: 改走 glassPress —— 与主页横滑条 Chip 完全一致的 spring 缩放
+            //（此前用 clickable 的默认 ripple，表现成「压暗」，与主页手感不一致）
+            .glassPress(
+                shape = RoundedCornerShape(999.dp),
+                fill = glassFill(dark, selected),
+                border = glassBorder(dark, selected),
+                onClick = onClick,
             )
-            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }

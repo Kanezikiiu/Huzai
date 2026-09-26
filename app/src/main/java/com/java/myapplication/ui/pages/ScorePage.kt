@@ -105,6 +105,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
     val effectiveGames = remember(HupuPrefs.scoreGamesVersion) {
         HupuPrefs.effectiveScoreGames(HupuMatchApi.GAMES)
     }
+    // 1.192: 「虎扑评分」隐藏开关——隐藏后横滑条不再显示它
+    // （设置页已保证「虎扑评分 + 已选赛事」≥1；这里再兜底：赛事为空时仍显示，页面不会 0 tab）
+    val commonHidden = remember(HupuPrefs.scoreGamesVersion) { HupuPrefs.isScoreCommonHidden() }
+    val showCommon = !commonHidden || effectiveGames.isEmpty()
     // 项目横滑条单选（默认英雄联盟）
     var selectedGame by remember { mutableStateOf(HupuMatchApi.GAMES.first().first) }
     // 各项目的赛程缓存（切回不重载）
@@ -117,6 +121,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
     // ---------- 比赛详情二级页（盖入式；状态外置：返回再进不重载） ----------
     val scope = rememberCoroutineScope()
     var openedMatch by remember { mutableStateOf<HupuMatch?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var matchEntered by remember { mutableStateOf(false) }
     var detailClosing by remember { mutableStateOf(false) }
     var detailLoading by remember { mutableStateOf(false) }
     val matchTrees = remember { mutableStateMapOf<String, HupuScoreTree>() }
@@ -127,6 +133,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
 
     // ---------- 选手详情三级页（盖入式；评分分布 + 热评 + 评论流） ----------
     var openedPlayer by remember { mutableStateOf<HupuScoreItem?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var playerEntered by remember { mutableStateOf(false) }
     // 评论排序（官方 queryType：brightest=最亮 / latest=最晚 / earliest=最早）。
     // 默认最亮（对齐官方客户端）；每位选手打开时重置为默认。
     var playerSort by remember { mutableStateOf("brightest") }
@@ -293,12 +301,15 @@ fun ScorePage(modifier: Modifier = Modifier) {
 
     // ---------- 虎扑通用评分（非赛事体系）：独立 chip + 主题卡流 + 主题详情 overlay ----------
     // 默认选中虎扑评分（用户指定）
-    var commonOpen by remember { mutableStateOf(true) }
+    // 1.192: 「虎扑评分」被隐藏时，默认直接落在第一个赛事上
+    var commonOpen by remember { mutableStateOf(!HupuPrefs.isScoreCommonHidden()) }
     var commonSubjects by remember { mutableStateOf<List<HupuCommonSubject>>(emptyList()) }
     var commonLoading by remember { mutableStateOf(false) }
     var commonFailed by remember { mutableStateOf(false) }
     var commonScrollTick by remember { mutableIntStateOf(0) } // 1.179: 虎扑评分刷新完回顶信号
     var openedCommon by remember { mutableStateOf<HupuCommonSubject?>(null) }
+    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
+    var commonEntered by remember { mutableStateOf(false) }
     var commonClosing by remember { mutableStateOf(false) }
     var commonDetailLoading by remember { mutableStateOf(false) }
     var commonLoadingMore by remember { mutableStateOf(false) }
@@ -308,7 +319,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
         if (m.scoreBizNo == null) return
         val key = "${m.scoreBizType}-${m.scoreBizNo}"
         detailClosing = false
-        SecondaryPage.enter()
+        if (!matchEntered) { matchEntered = true; SecondaryPage.enter() }
         openedMatch = m
         // 加载态在交互瞬间同步置位（自定义频道同款策略）：无缓存 → 骨架屏第一帧
         // 就出现；失败态只在网络真正失败后才出现，打开瞬间不再闪「加载失败」
@@ -323,7 +334,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
     fun openPlayer(p: HupuScoreItem) {
         val key = "${p.bizType}-${p.bizId}"
         playerClosing = false
-        SecondaryPage.enter()
+        if (!playerEntered) { playerEntered = true; SecondaryPage.enter() }
         // 每位选手都从默认「最亮」开始（排序选择不跨选手沿用）
         playerSort = "brightest"
         playerDisplaySort = "brightest"
@@ -373,7 +384,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
     fun openCommon(s: HupuCommonSubject) {
         val key = "${s.bizType}-${s.bizNo}"
         commonClosing = false
-        SecondaryPage.enter()
+        if (!commonEntered) { commonEntered = true; SecondaryPage.enter() }
         openedCommon = s
         commonDetailLoading = !commonTrees.containsKey(key)
         if (commonSubjects.isEmpty()) loadCommonSubjects()
@@ -422,6 +433,15 @@ fun ScorePage(modifier: Modifier = Modifier) {
     LaunchedEffect(effectiveGames) {
         if (commonOpen) return@LaunchedEffect
         if (effectiveGames.none { it.first == selectedGame }) commonOpen = true
+    }
+    // 1.192: 「虎扑评分」被隐藏后不允许停在它上面 → 回落到第一个赛事
+    LaunchedEffect(showCommon, effectiveGames) {
+        if (showCommon || effectiveGames.isEmpty()) return@LaunchedEffect
+        if (commonOpen) commonOpen = false
+        if (effectiveGames.none { it.first == selectedGame }) {
+            selectedGame = effectiveGames.first().first
+            if (!schedules.containsKey(selectedGame)) loadingGame = selectedGame
+        }
     }
 
     // 服务端分组：树就绪后加载分组定义+全部成员，全部完成才一次性写入状态（分类条与内容
@@ -558,19 +578,23 @@ fun ScorePage(modifier: Modifier = Modifier) {
 
     // 1.186: 顶部 Tab 左右滑动切换（仅本大页面内；顺序与横滑条一致：虎扑评分 + 各赛事项目）
     fun swipeScoreTab(delta: Int) {
+        // 1.192: 偏移随「虎扑评分」是否显示而变（隐藏时第一个赛事就是下标 0）
+        val offset = if (showCommon) 1 else 0
         val cur = if (commonOpen) 0 else {
             val i = effectiveGames.indexOfFirst { it.first == selectedGame }
-            if (i < 0) 0 else i + 1
+            if (i < 0) 0 else i + offset
         }
         val ni = cur + delta
-        if (ni < 0 || ni > effectiveGames.size) return
-        if (ni == 0) {
+        if (ni < 0 || ni > offset + effectiveGames.size - 1) return
+        if (ni == 0 && showCommon) {
             if (commonOpen) return
             commonOpen = true
             if (commonSubjects.isEmpty() && !commonFailed) commonLoading = true
             if (commonSubjects.isEmpty()) loadCommonSubjects()
         } else {
-            val id = effectiveGames[ni - 1].first
+            val gi = ni - offset
+            if (gi !in effectiveGames.indices) return
+            val id = effectiveGames[gi].first
             if (!commonOpen && selectedGame == id) return
             commonOpen = false
             selectedGame = id
@@ -592,7 +616,9 @@ fun ScorePage(modifier: Modifier = Modifier) {
             PageHeader(title = "评分")
         // 项目横滑条（与首页/专区同款裁剪）——首项为通用评分（虎扑评分，非赛事体系）
         val barState = rememberLazyListState()
-        val selIdx = if (commonOpen) 0 else 1 + effectiveGames.indexOfFirst { it.first == selectedGame }
+        // 1.192: 虎扑评分被隐藏时，赛事 chip 的下标整体前移 1
+        val selIdx = if (commonOpen) 0
+        else (if (showCommon) 1 else 0) + effectiveGames.indexOfFirst { it.first == selectedGame }
         LaunchedEffect(commonOpen, selectedGame) { if (selIdx >= 0) barState.animateChipCenterTo(selIdx) }
         LazyRow(
             state = barState,
@@ -603,6 +629,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 .padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // 1.192: 「虎扑评分」可在设置页隐藏
+            if (showCommon) {
             item(key = "common") {
                 Chip(
                     text = "虎扑评分",
@@ -614,6 +642,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                     if (commonSubjects.isEmpty() && !commonFailed) commonLoading = true
                     if (commonSubjects.isEmpty()) loadCommonSubjects()
                 }
+            }
             }
             items(effectiveGames, key = { it.first }) { (id, name) ->
                 Chip(text = name, selected = !commonOpen && selectedGame == id) {
@@ -682,6 +711,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
         // ---------- 比赛详情二级页：盖入式转场 ----------
         val om = openedMatch
         if (om != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (matchEntered) { matchEntered = false; SecondaryPage.exit() } }
+            }
             val key = "${om.scoreBizType}-${om.scoreBizNo}"
             MatchDetailOverlay(
                 title = om.introduction.ifBlank { om.matchName.ifBlank { om.startTimeText } },
@@ -695,7 +728,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 groups = matchGroups[key] ?: emptyList(),
                 groupMembers = groupMembers,
                 onBack = { closeMatch() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (matchEntered) { matchEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     detailClosing = false
                     openedMatch = null
@@ -716,6 +749,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
         // ---------- 虎扑通用评分主题详情（盖入式，zIndex 2；叶子详情 3 盖其上） ----------
         val oc = openedCommon
         if (oc != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (commonEntered) { commonEntered = false; SecondaryPage.exit() } }
+            }
             val cKey = "${oc.bizType}-${oc.bizNo}"
             CommonDetailOverlay(
                 subject = oc,
@@ -724,7 +761,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 loadingMore = commonLoadingMore,
                 closing = commonClosing,
                 onBack = { closeCommon() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (commonEntered) { commonEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     commonClosing = false
                     openedCommon = null
@@ -745,6 +782,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
         // ---------- 选手详情三级页：盖入式转场 ----------
         val op = openedPlayer
         if (op != null) {
+            // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { if (playerEntered) { playerEntered = false; SecondaryPage.exit() } }
+            }
             val pKey = "${op.bizType}-${op.bizId}"
             // 1.59 数据源索引 displaySort（切排序时留旧数据），高亮仍用 playerSort（即时）
             val cState = playerComments["$pKey-$playerDisplaySort"]
@@ -760,7 +801,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 loading = playerLoading,
                 closing = playerClosing,
                 onBack = { closePlayer() },
-                onExitStart = { SecondaryPage.exit() },
+                onExitStart = { if (playerEntered) { playerEntered = false; SecondaryPage.exit() } },
                 onClosed = {
                     playerClosing = false
                     openedPlayer = null

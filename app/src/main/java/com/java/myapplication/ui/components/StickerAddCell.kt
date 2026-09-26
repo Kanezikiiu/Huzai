@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,13 +40,11 @@ import kotlinx.coroutines.withContext
  * 一个 44dp 圆角小格，点击后从相册选图（可多选），导入到 filesDir/stickers_local
  * 并收藏为「我的表情」。导入过程在 IO 线程执行，格内转圈，完成后给出 toast 反馈。
  *
- * @param size 格子边长（与表情格同尺寸，默认 44dp）
  * @param corner 圆角
  */
 @Composable
 fun StickerAddCell(
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp,
     corner: Dp = 8.dp,
 ) {
     val ctx = LocalContext.current
@@ -92,7 +92,9 @@ fun StickerAddCell(
     ) {
         Box(
             modifier = Modifier
-                .requiredSize(size)
+                // 1.192: 与表情格子同策略——填满单元格宽度并保持正方形（不再是固定 44dp）
+                .fillMaxWidth()
+                .aspectRatio(1f)
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f))
                 .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f), shape)
@@ -101,7 +103,7 @@ fun StickerAddCell(
         ) {
             if (importing) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(size * 0.42f),
+                    modifier = Modifier.fillMaxSize(0.42f),
                     strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -110,7 +112,7 @@ fun StickerAddCell(
                     imageVector = Icons.Rounded.Add,
                     contentDescription = "添加本地图片",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(size * 0.52f),
+                    modifier = Modifier.fillMaxSize(0.52f),
                 )
             }
         }

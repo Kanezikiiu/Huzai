@@ -31,6 +31,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.java.myapplication.ui.glass.LiquidGlassButton
 import com.java.myapplication.ui.glass.LiquidGlassCard
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -98,6 +99,13 @@ fun ProfilePage(modifier: Modifier = Modifier) {
     var msgEpoch by remember { mutableIntStateOf(0) }
     // 1.107: 发帖页（epoch 键控挂载）+ 顶部提示（未登录 / 发布成功）
     var postEpoch by remember { mutableIntStateOf(0) }
+    // 1.192: 二级页互斥——同一时刻只打开一个「我的」二级页（连点多个条目只保留最先的），
+    // 避免多页叠加：顶层关闭后下层还在、Tab 栏却提前冒出
+    fun profilePageOpen(): Boolean =
+        showPicker || loginEpoch > 0 || postEpoch > 0 || msgEpoch > 0 ||
+            historyEpoch > 0 || scorePickerEpoch > 0 || filterEpoch > 0 ||
+            textSizeEpoch > 0 || refreshEpoch > 0 || themeEpoch > 0 ||
+            aboutEpoch > 0 || userPageStack.isNotEmpty()
     var postToast by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(postToast) {
         if (postToast != null) {
@@ -128,11 +136,11 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     // 1.107: 发帖（未登录时提示，不打开编辑页）
                     IconButton(onClick = {
                         if (HupuAccount.profile == null) postToast = "请先在「我的」页登录"
-                        else postEpoch++
+                        else if (!profilePageOpen()) postEpoch++
                     }) {
                         Icon(HupuIcons.Edit, contentDescription = "发帖", tint = MaterialTheme.colorScheme.onSurface)
                     }
-                    IconButton(onClick = { msgEpoch++ }) {
+                    IconButton(onClick = { if (!profilePageOpen()) msgEpoch++ }) {
                         androidx.compose.material3.BadgedBox(
                             badge = {
                                 if (HupuMsgBadge.total > 0) {
@@ -169,6 +177,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         .clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surface)
                         .clickable {
+                            if (profilePageOpen()) return@clickable
                             if (prof == null) {
                                 loginEpoch++
                             } else {
@@ -224,43 +233,43 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         icon = HupuIcons.Tune,
                         title = "首页频道自定义",
                         subtitle = "自定义首页顶部横滑条（最多 20 个）",
-                        onClick = { showPicker = true },
+                        onClick = { if (!profilePageOpen()) showPicker = true },
                     )
                     SettingRow(
                         icon = HupuIcons.StarRate,
                         title = "评分频道自定义",
                         subtitle = "自定义评分页横滑条项目（最多 20 个）",
-                        onClick = { scorePickerEpoch++ },
+                        onClick = { if (!profilePageOpen()) scorePickerEpoch++ },
                     )
                     SettingRow(
                         icon = HupuIcons.History,
                         title = "浏览记录",
                         subtitle = "最近浏览的帖子（最多 300 条）",
-                        onClick = { historyEpoch++ },
+                        onClick = { if (!profilePageOpen()) historyEpoch++ },
                     )
                     SettingRow(
                         icon = HupuIcons.FilterAlt,
                         title = "信息流设置",
                         subtitle = "标题/分区/评论关键词过滤",
-                        onClick = { filterEpoch++ },
+                        onClick = { if (!profilePageOpen()) filterEpoch++ },
                     )
                     SettingRow(
                         icon = HupuIcons.FormatSize,
                         title = "\u9605\u8bfb\u5b57\u53f7",
                         subtitle = "\u5e16\u5b50\u6b63\u6587\u6587\u5b57\u5927\u5c0f\uff08\u5373\u65f6\u9884\u89c8\uff09",
-                        onClick = { textSizeEpoch++ },
+                        onClick = { if (!profilePageOpen()) textSizeEpoch++ },
                     )
                     SettingRow(
                         icon = HupuIcons.Speed,
                         title = "屏幕刷新率",
                         subtitle = "档位来自设备真实支持的显示模式",
-                        onClick = { refreshEpoch++ },
+                        onClick = { if (!profilePageOpen()) refreshEpoch++ },
                     )
                     SettingRow(
                         icon = HupuIcons.DarkMode,
                         title = "界面设置",
                         subtitle = themeModeLabel + " · " + themeAccentLabel,
-                        onClick = { themeEpoch++ },
+                        onClick = { if (!profilePageOpen()) themeEpoch++ },
                     )
                     // 1.182 默认启动页：与相邻行同构的设置行（点击弹选择框，改动下次冷启动生效）
                     SettingRow(
@@ -274,7 +283,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         icon = HupuIcons.Info,
                         title = "关于",
                         subtitle = aboutVersionLabel() + " · 隐私协议 / 开源许可 / 免责声明",
-                        onClick = { aboutEpoch++ },
+                        onClick = { if (!profilePageOpen()) aboutEpoch++ },
                     )
                     if (prof != null) {
                         SettingRow(
@@ -283,34 +292,6 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                             subtitle = "\u6e05\u9664\u767b\u5f55\u51ed\u636e\u5e76\u8fd4\u56de\u672a\u767b\u5f55\u72b6\u6001",
                             onClick = { logoutAsk = true },
                         )
-                        if (logoutAsk) {
-                            Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                                Text(
-                                    "\u786e\u8ba4\u9000\u51fa",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f))
-                                        .clickable {
-                                            HupuAccount.logout()
-                                            com.java.myapplication.data.HupuFollowStore.reset()
-                                            logoutAsk = false
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    "\u53d6\u6d88",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable { logoutAsk = false }
-                                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                                )
-                            }
-                        }
                     }
                 }
         }
@@ -327,6 +308,21 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     startTabAsk = false
                 },
                 onDismiss = { startTabAsk = false },
+            )
+        }
+        // 1.192: 退出登录改为毛玻璃弹窗确认（不再行内展开）
+        if (logoutAsk) {
+            LiquidGlassDialog(
+                backdrop = backdrop,
+                title = "退出登录",
+                message = "退出后将清除本机登录凭据，返回未登录状态。",
+                confirmText = "退出",
+                dismissText = "取消",
+                onConfirm = {
+                    HupuAccount.logout()
+                    com.java.myapplication.data.HupuFollowStore.reset()
+                },
+                onDismiss = { logoutAsk = false },
             )
         }
 

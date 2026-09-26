@@ -19,9 +19,11 @@ import org.json.JSONObject
 object HupuPrefs {
 
     private const val KEY_HOME_TOPICS = "home_topics_v1"
+    private const val KEY_HOME_HOT_HIDDEN = "home_hot_hidden_v1"
     private const val KEY_SEARCH_HISTORY = "search_history_v1"
     private const val KEY_HISTORY = "browsing_history_v1"
     private const val KEY_SCORE_GAMES = "score_games_v1"
+    private const val KEY_SCORE_COMMON_HIDDEN = "score_common_hidden_v1"
     private const val KEY_FILTER_KEYWORDS = "filter_keywords_v1"
     private const val KEY_FAVORITE_TOPICS = "favorite_topics_v1"
     private const val KEY_REFRESH_MODE = "refresh_mode_v1"
@@ -79,6 +81,14 @@ object HupuPrefs {
     }
 
     /** 恢复默认（清除自定义，首页回到官方热门话题） */
+    /** 1.192: 首页「热帖」固定频道是否隐藏（恒保证「热帖 + 已选话题」至少一个可见） */
+    fun isHomeHotHidden(): Boolean = prefs.getBoolean(KEY_HOME_HOT_HIDDEN, false)
+
+    fun setHomeHotHidden(hidden: Boolean) {
+        prefs.edit().putBoolean(KEY_HOME_HOT_HIDDEN, hidden).apply()
+        homeTopicsVersion++
+    }
+
     fun clearHomeTopics() {
         prefs.edit().remove(KEY_HOME_TOPICS).apply()
         homeTopicsVersion++
@@ -201,6 +211,14 @@ object HupuPrefs {
         val arr = JSONArray()
         list.filter { it.isNotBlank() }.forEach { arr.put(it) }
         prefs.edit().putString(KEY_SCORE_GAMES, arr.toString()).apply()
+        scoreGamesVersion++
+    }
+
+    /** 1.192: 评分页「虎扑评分」固定频道是否隐藏（恒保证「虎扑评分 + 已选赛事」至少一个可见） */
+    fun isScoreCommonHidden(): Boolean = prefs.getBoolean(KEY_SCORE_COMMON_HIDDEN, false)
+
+    fun setScoreCommonHidden(hidden: Boolean) {
+        prefs.edit().putBoolean(KEY_SCORE_COMMON_HIDDEN, hidden).apply()
         scoreGamesVersion++
     }
 

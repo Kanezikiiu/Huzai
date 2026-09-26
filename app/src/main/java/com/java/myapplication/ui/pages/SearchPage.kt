@@ -6,8 +6,11 @@ import androidx.compose.animation.core.Animatable
 import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +29,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.java.myapplication.ui.components.animateChipCenterTo
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -39,7 +44,10 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Search
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.glass.LiquidButton
 import com.java.myapplication.ui.glass.LiquidGlassDialog
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,6 +94,9 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.normalizeCover
+import com.java.myapplication.ui.components.glassBorder
+import com.java.myapplication.ui.components.glassFill
+import com.java.myapplication.ui.components.glassPress
 import com.java.myapplication.ui.components.thumbnailUrl
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.launch
@@ -146,14 +157,20 @@ fun SearchPage(
 
     // 盖入动画（TopicPickerPage 同款）
     val progress = remember { Animatable(0f) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, tween(280))
             onClose()
         }
@@ -252,8 +269,21 @@ fun SearchPage(
             SearchHeader(query, query.isNotBlank(), { query = it }, { submit(query) }, { closing = true })
 
             // 筛选条：专区按钮 + 排序条（已搜索才显示）
+            val dark = isAppDarkTheme()
             if (searched) {
+                // 1.192c: 补「选中项居中」便捷特性。
+                // 序号 0 是「专区」按钮，排序项从 1 开始；选第 1 个排序项时回到最左，
+                // 避免把唯一入口「专区」按钮挤出屏幕左侧。
+                val filterBarState = rememberLazyListState()
+                val sortSelIdx = 1 + SEARCH_SORTS.indexOfFirst { it.key == sortby }
+                LaunchedEffect(sortby) {
+                    if (sortSelIdx >= 1) {
+                        if (sortSelIdx <= 1) filterBarState.animateScrollToItem(0)
+                        else filterBarState.animateChipCenterTo(sortSelIdx)
+                    }
+                }
                 LazyRow(
+                    state = filterBarState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
@@ -269,12 +299,29 @@ fun SearchPage(
                     }
                     val selectedForumName = if (topicId == null) "所有专区"
                         else allTopicsFlat.firstOrNull { it.topicId == topicId }?.name ?: "所有专区"
+                    val forumActive = topicId != null
+                    val forumTint =
+                        if (forumActive) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     Row(
                         Modifier
                             .clip(RoundedCornerShape(50))
+                            // 1.192c: 材质升级为与顶部玻璃胶囊同源（扁平半透明 + 极淡描边）
                             .background(
-                                if (topicId != null) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
+                                if (forumActive) {
+                                    if (dark) Color(0xFF2E2E30).copy(0.94f) else Color.White.copy(0.92f)
+                                } else {
+                                    if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f)
+                                }
+                            )
+                            .border(
+                                0.6.dp,
+                                if (forumActive) {
+                                    if (dark) Color.White.copy(0.10f) else Color.Black.copy(0.05f)
+                                } else {
+                                    if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f)
+                                },
+                                RoundedCornerShape(50),
                             )
                             .clickable { forumPickerOpen = true }
                             .padding(horizontal = 12.dp, vertical = 7.dp),
@@ -284,16 +331,14 @@ fun SearchPage(
                             selectedForumName,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (topicId != null) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = forumTint,
                             maxLines = 1,
                         )
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             Icons.Rounded.ArrowDropDown,
                             contentDescription = "选择专区",
-                            tint = if (topicId != null) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = forumTint,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -427,6 +472,7 @@ private fun HistoryPanel(
 ) {
     var historyTick by remember { mutableIntStateOf(0) }
     val history = remember(historyTick, HupuPrefs.searchHistoryVersion) { HupuPrefs.loadSearchHistory() }
+    val dark = isAppDarkTheme()
     Column(modifier.padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(4.dp))
         if (history.isEmpty()) {
@@ -446,17 +492,26 @@ private fun HistoryPanel(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(history) { h ->
-                    Row(
-                        Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { onPick(h) }
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+            // 1.192i: 搜索历史改**多行自适应换行**（这一页除搜索框外就是它，空间足够）；
+            // 单条限宽，避免超长关键词把整行顶出屏幕
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                history.forEach { h ->
+                    // 1.192h: 「搜索历史条目」是按钮语义（点击执行一次搜索）→ LiquidButton
+                    LiquidButton(
+                        onClick = { onPick(h) },
+                        modifier = Modifier.widthIn(max = 260.dp),
+                        shape = RoundedCornerShape(50),
+                        fill = buttonFill(dark),
+                        border = buttonBorder(dark),
+                        // 1.192i: 稍微增大（32 → 36dp，内边距 12 → 14，字 13 → 14sp）
+                        height = 36.dp,
+                        contentPadding = 14.dp,
+                        arrangement = Arrangement.Start,
                     ) {
-                        Text(h, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text(h, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         Spacer(Modifier.width(6.dp))
                         Icon(
                             Icons.Rounded.Close,
@@ -593,6 +648,14 @@ private fun ForumPickerSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf("") }
     var selectedCate by remember { mutableStateOf<String?>(null) }
+    // 1.192k: 大类 chips 条补「选中项居中」便捷特性（与三大页顶部横滑条同一套）。
+    // 序号 0 是「全部」，大类从 1 开始。
+    val cateBarState = rememberLazyListState()
+    val cateSelIdx =
+        if (selectedCate == null) 0 else 1 + categories.indexOfFirst { it.cateId == selectedCate }
+    LaunchedEffect(cateSelIdx) {
+        if (cateSelIdx >= 0) cateBarState.animateChipCenterTo(cateSelIdx)
+    }
 
     // 版块全集（跨大类去重）
     val allTopics = remember(categories) { categories.flatMap { it.topics }.distinctBy { it.topicId } }
@@ -620,11 +683,13 @@ private fun ForumPickerSheet(
             )
             // 「所有专区」行（null 筛选 = 全站）
             val allSelected = selectedTopicId == null
+            // 1.192k: 与下方搜索框对齐 —— 左右边距 12 → 16（此前比搜索框宽 8dp），
+            // 圆角 12 → 22（与搜索框的 shape 保持一致）
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 2.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .background(if (allSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
                     .clickable { onSelect(null) }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -664,6 +729,7 @@ private fun ForumPickerSheet(
             )
             // 大类 chips
             LazyRow(
+                state = cateBarState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
@@ -708,11 +774,14 @@ private fun ForumPickerSheet(
                             fontSize = 15.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f, fill = false),
+                            // 1.192l: 文本直接吃满剩余宽度，对勾才贴右。
+                            // 此前是 weight(1f, fill = false) + 后面一个 weight(1f) 的 Spacer：
+                            // 两个 weight 各分到一半剩余宽度，而 Text 因 fill = false 只占内容宽度，
+                            // 没用掉的配额不会重新分配 → 对勾落在约 70% 处（看着「在中间」）。
+                            modifier = Modifier.weight(1f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.weight(1f))
                         if (isSelected) {
                             Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }

@@ -6,6 +6,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -56,6 +58,10 @@ import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 
 /**
  * 信息流设置页（盖入式二级页）：三组关键词过滤。
@@ -67,14 +73,20 @@ import com.java.myapplication.ui.components.tapGuard
 @Composable
 fun FilterSettingsPage(onClose: () -> Unit) {
     val progress = remember { Animatable(0f) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, tween(280))
             onClose()
         }
@@ -191,6 +203,7 @@ private fun KeywordGroup(
     onAdd: (String, String, () -> Unit) -> Unit,
     onRemove: (String, String) -> Unit,
 ) {
+    val dark = isAppDarkTheme()
     Column(
         Modifier
             .fillMaxWidth()
@@ -234,13 +247,15 @@ private fun KeywordGroup(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 words.forEach { w ->
-                            Row(
-                                Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { onRemove(kind, w) }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                            // 1.192h: 关键词 chip 是按钮语义（点击删除该词）→ LiquidButton
+                            LiquidButton(
+                                onClick = { onRemove(kind, w) },
+                                shape = RoundedCornerShape(16.dp),
+                                fill = buttonFill(dark),
+                                border = buttonBorder(dark),
+                                height = 30.dp,
+                                contentPadding = 12.dp,
+                                arrangement = Arrangement.Start,
                             ) {
                                 Text(w, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                                 Spacer(Modifier.width(6.dp))

@@ -284,35 +284,17 @@ private fun TreeContent(
                     }
                 }
                 // 分类条可横向滚动（和平精英等战队多的赛事 Tab 超宽会挤爆固定 Row）
+                // 1.192: 由「文字 + 下划线」改为玻璃胶囊横滑条（与三大页顶部横滑条同款质感）
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        .padding(horizontal = 16.dp)
+                        .clipToBounds(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     items(tabs, key = { it.first }) { (key, title) ->
-                        val active = key == selected
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable { onGroupChange(key) },
-                        ) {
-                            Text(
-                                title,
-                                fontSize = 14.sp,
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                color = if (active) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            Box(
-                                Modifier
-                                    .width(if (active) 20.dp else 0.dp)
-                                    .height(2.dp)
-                                    .clip(RoundedCornerShape(1.dp))
-                                    .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent),
-                            )
-                        }
+                        Chip(text = title, selected = key == selected) { onGroupChange(key) }
                     }
                 }
                 Spacer(Modifier.height(6.dp))

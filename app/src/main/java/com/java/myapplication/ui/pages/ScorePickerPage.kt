@@ -7,6 +7,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Color
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuMatchApi
 import com.java.myapplication.data.HupuPrefs
+import com.java.myapplication.ui.components.FixedChannelRow
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
 /**
@@ -70,14 +73,20 @@ import com.java.myapplication.ui.components.tapGuard
 @Composable
 fun ScorePickerPage(onClose: () -> Unit) {
     val progress = remember { Animatable(0f) }
+    // 1.192: 计数 flag 门控——多页叠加 / 重挂载时不会多减，离开组合时兜底回收
+    var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        pageEntered = true
         SecondaryPage.enter()
         progress.animateTo(1f, tween(280))
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (pageEntered) { pageEntered = false; SecondaryPage.exit() } }
     }
     var closing by remember { mutableStateOf(false) }
     LaunchedEffect(closing) {
         if (closing) {
-            SecondaryPage.exit()
+            if (pageEntered) { pageEntered = false; SecondaryPage.exit() }
             progress.animateTo(0f, tween(280))
             onClose()
         }
@@ -106,7 +115,22 @@ fun ScorePickerPage(onClose: () -> Unit) {
             else HupuMatchApi.GAMES.map { it.first }
         )
     }
+    // 1.192: 「虎扑评分」固定频道的隐藏开关——恒保证「虎扑评分 + 已选赛事」≥ 1 个 tab
+    var commonHidden by remember { mutableStateOf(HupuPrefs.isScoreCommonHidden()) }
+    // 1.192: 同上——开关已关时永远可开；开着时只有还有别的赛事才能关
+    val canHideCommon = commonHidden || selected.isNotEmpty()
+    val onlyOneLeft = commonHidden && selected.size == 1
+    // 1.192: 自愈——「虎扑评分隐藏 + 一个赛事都没有」是非法态（评分页会兜底显示它，
+    // 于是开关显示关闭、页面却仍有虎扑评分）。这里恢复成「显示虎扑评分」。
+    LaunchedEffect(Unit) {
+        if (commonHidden && selected.isEmpty()) {
+            commonHidden = false
+            HupuPrefs.setScoreCommonHidden(false)
+        }
+    }
     fun toggle(id: String) {
+        // 1.192: 虎扑评分已隐藏时，不允许取消最后一个赛事（否则评分页会出现 0 个 tab）
+        if (commonHidden && selected.size == 1 && id in selected) return
         if (id in selected) {
             val next = selected.filterNot { it == id }
             selected = next
@@ -118,6 +142,8 @@ fun ScorePickerPage(onClose: () -> Unit) {
         }
     }
     fun remove(id: String) {
+        // 1.192: 同上——虎扑评分已隐藏时，最后一个赛事不可移除
+        if (commonHidden && selected.size == 1) return
         val next = selected.filterNot { it == id }
         selected = next
         HupuPrefs.saveScoreGames(next)
@@ -136,8 +162,14 @@ fun ScorePickerPage(onClose: () -> Unit) {
         drawContent()
     }
     fun resetDefault() {
-        HupuPrefs.clearScoreGames()
+        // 1.192: 「重置」= 清空所有已添加的赛事频道，只保留「虎扑评分」。
+        // 同首页：写空列表（而非删 key），避免被当成「未配置」而回退到全量赛事。
+        HupuPrefs.saveScoreGames(emptyList())
         selected = emptyList()
+        if (commonHidden) {
+            commonHidden = false
+            HupuPrefs.setScoreCommonHidden(false)
+        }
     }
     Box(
         Modifier
@@ -181,8 +213,19 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = { resetAsk = true }) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "恢复默认", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Rounded.Refresh, contentDescription = "重置频道", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            // 1.192: 「虎扑评分」固定频道开关（不参与排序）
+            FixedChannelRow(
+                name = "虎扑评分",
+                subtitle = if (canHideCommon) "评分页默认内容流 · 不参与排序" else "至少保留一个频道",
+                checked = !commonHidden,
+                enabled = canHideCommon,
+            ) { on ->
+                // on = 开关的新状态（true=显示虎扑评分）；存的是「是否隐藏」，需取反
+                commonHidden = !on
+                HupuPrefs.setScoreCommonHidden(!on)
             }
             // 已选条（长按拖动排序 / 点按移除）
             if (selected.isEmpty()) {
@@ -193,7 +236,13 @@ fun ScorePickerPage(onClose: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                 )
             } else {
-                ScoreSelectedBar(selected = selected, names = nameById, onReorder = ::reorder, onRemove = ::remove)
+                ScoreSelectedBar(
+                    selected = selected,
+                    names = nameById,
+                    onReorder = ::reorder,
+                    onRemove = ::remove,
+                    removable = !onlyOneLeft,
+                )
             }
             Text(
                 "长按拖动排序 · 点按移除",
@@ -207,6 +256,7 @@ fun ScorePickerPage(onClose: () -> Unit) {
             //   ② 勾选时在胶囊内插入 16dp 对勾 → 文字被挤位移，并引发整行重排。
             // 现在 chip 宽度由文字决定，选中态只用「实心填充 + 白字」表达（不再插入对勾），
             // 因此点击选中 / 取消时 chip 尺寸恒定：不位移、不重排，只有颜色变化。
+            val dark = isAppDarkTheme()
             Column(
                 Modifier
                     .fillMaxSize()
@@ -219,24 +269,42 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 ) {
                     games.forEach { (id, name) ->
                         val checked = id in selected
+                        // 1.192: 仅剩它一个 tab 时锁定（不可取消）
+                        val locked = onlyOneLeft && checked
                         Box(
                             Modifier
                                 .clip(RoundedCornerShape(999.dp))
-                                .background(if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+                                // 1.192c: 材质升级为与顶部玻璃胶囊同源（选中=近实心磨砂 + 主题色文字；
+                                // 未选=极淡半透明；宽度仍由文字决定 → 点击不位移、不重排）
+                                .background(
+                                    when {
+                                        !checked -> if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f)
+                                        locked -> if (dark) Color.White.copy(0.05f) else Color.Black.copy(0.03f)
+                                        else -> if (dark) Color(0xFF2E2E30).copy(0.94f) else Color.White.copy(0.92f)
+                                    }
+                                )
                                 .border(
-                                    width = 1.dp,
-                                    color = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                    width = 0.6.dp,
+                                    color = when {
+                                        locked -> if (dark) Color.White.copy(0.04f) else Color.Black.copy(0.02f)
+                                        checked -> if (dark) Color.White.copy(0.10f) else Color.Black.copy(0.05f)
+                                        else -> if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f)
+                                    },
                                     shape = RoundedCornerShape(999.dp),
                                 )
-                                .clickable { toggle(id) }
+                                .clickable(enabled = !locked) { toggle(id) }
                                 .padding(horizontal = 16.dp, vertical = 9.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 name,
                                 fontSize = 13.sp,
-                                fontWeight = if (checked) FontWeight.Medium else FontWeight.Normal,
-                                color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
+                                color = when {
+                                    locked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    checked -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 maxLines = 1,
                             )
                         }
@@ -251,9 +319,9 @@ fun ScorePickerPage(onClose: () -> Unit) {
         if (resetAsk) {
             LiquidGlassDialog(
                 backdrop = backdrop,
-                title = "清空评分频道",
-                message = "将清除全部已选评分频道，评分页恢复显示全部项目。此操作不可恢复。",
-                confirmText = "清空",
+                title = "重置评分频道",
+                message = "将清空所有已添加的赛事频道，只保留「虎扑评分」。此操作不可恢复。",
+                confirmText = "重置",
                 dismissText = "取消",
                 onConfirm = { resetDefault() },
                 onDismiss = { resetAsk = false },
@@ -268,12 +336,15 @@ private fun ScoreSelectedBar(
     names: Map<String, String>,
     onReorder: (List<String>) -> Unit,
     onRemove: (String) -> Unit,
+    /** 1.192: 仅剩它一个 tab 时置灰移除（避免 0 个 tab） */
+    removable: Boolean = true,
 ) {
     val listState = rememberLazyListState()
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableStateOf(0f) }
     val currentList by rememberUpdatedState(selected)
     val currentOnReorder by rememberUpdatedState(onReorder)
+    val dark = isAppDarkTheme()
     LazyRow(
         state = listState,
         modifier = Modifier
@@ -322,11 +393,17 @@ private fun ScoreSelectedBar(
                     .graphicsLayer { translationX = if (dragging) dragOffset else 0f }
                     .animateItem()
                     .clip(RoundedCornerShape(999.dp))
+                    // 1.192c: 与顶部玻璃胶囊同源材质（拖动中仍保持 primaryContainer 反馈）
                     .background(
                         if (dragging) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant
+                        else if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f)
                     )
-                    .clickable { onRemove(id) }
+                    .border(
+                        0.6.dp,
+                        if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f),
+                        RoundedCornerShape(999.dp),
+                    )
+                    .clickable(enabled = removable) { onRemove(id) }
                     .padding(start = 10.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -341,7 +418,8 @@ private fun ScoreSelectedBar(
                     Icons.Rounded.Close,
                     contentDescription = "移除",
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (removable) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                 )
             }
         }

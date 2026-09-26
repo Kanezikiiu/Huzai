@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextRange
@@ -560,7 +562,9 @@ private fun StickerSearchCell(
 ) {
     Box(
         Modifier
-            .size(44.dp)
+            // 1.192: 填满格子并保持正方形（原 44dp 在网格里偏小，带字表情看不清）
+            .fillMaxWidth()
+            .aspectRatio(1f)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
             .clickable {
@@ -622,6 +626,10 @@ private fun BoxScope.StickerRecentPane(
     onClear: (String) -> Unit,
 ) {
     val version = HupuPrefs.stickerRecentVersion
+    // 1.192: 「最近使用」格子与搜索结果网格同一尺寸
+    // （网格：5 列、水平 padding 共 24dp、列间距共 40dp → 格子 =（屏宽 - 64）/ 5）
+    val screenW = LocalConfiguration.current.screenWidthDp
+    val recentCell = ((screenW - 64) / 5).coerceAtLeast(48).dp
     val recents = remember(version) { HupuPrefs.loadStickerRecent() }
     val logs = remember(version) { HupuPrefs.loadStickerSearchLog() }
     if (recents.isEmpty() && logs.isEmpty()) {
@@ -642,7 +650,7 @@ private fun BoxScope.StickerRecentPane(
                 items(recents, key = { it.url }) { s ->
                     Box(
                         Modifier
-                            .size(44.dp)
+                            .size(recentCell)
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                             .clickable {
