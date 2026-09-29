@@ -25,8 +25,12 @@ docs/
 
 # 本地 proot 构建用二进制（体积大，不入库；正常环境由 AGP 自动获取 aapt2）
 tools/aapt2/
-# 开发过程产生的一次性脚本（本地归档，不入库）
-tools/archive/
+# tools/ 下的开发与发版脚本一律本地使用、不入库（每次迭代的临时脚本不再上传）；
+# 只保留下列通用工具 / 资源作为例外。
+tools/*
+!tools/genicon.py
+!tools/sum_tests.py
+!tools/huzai_mark.otf
 
 # 签名与密钥（绝不入库）
 *.jks
