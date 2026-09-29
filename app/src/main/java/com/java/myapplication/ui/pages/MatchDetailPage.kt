@@ -42,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -59,6 +58,8 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.HeroBadgeAvatar
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.clipHorizontally
 
 /**
  * 比赛详情二级页（评分页 → 赛程卡点击进入）。
@@ -144,23 +145,11 @@ fun MatchDetailOverlay(
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { onBack() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "返回",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
+                LiquidBackButton(onClick = { onBack() })
+                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         title,
@@ -230,8 +219,10 @@ private fun TreeContent(
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clipToBounds()
+                    // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                    .padding(horizontal = 8.dp)
+                    .clipHorizontally()
+                    .padding(horizontal = 8.dp)
                     .padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -288,8 +279,10 @@ private fun TreeContent(
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clipToBounds(),
+                        // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                        .padding(horizontal = 8.dp)
+                        .clipHorizontally()
+                        .padding(horizontal = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

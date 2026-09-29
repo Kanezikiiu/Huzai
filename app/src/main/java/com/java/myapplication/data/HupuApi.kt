@@ -331,6 +331,42 @@ object HupuApi {
         return fetchHtml("/search?sortby=$sortby&page=$page$tid&q=$q", forceNetwork = forceNetwork)
     }
 
+    /**
+     * 1.222: 帖子作者（`/api/v2/threads?tid=` 详情接口）。
+     *
+     * 为什么需要它：首页热帖列表页（`/all-gambia` 的 `pageData.threads`）**不带 author**
+     * （实测整页 0 个 puid），而黑名单要「按人过滤」就必须知道作者。这个接口一次给一条帖子，
+     * 响应里 `data.thread.author` 带 puid + euid + puname + isBlacked。
+     *
+     * 注意：**不走全局 throttle**（全局节流是 1 秒/次，补 70 条要 70 秒）。
+     * 调用方（HomePage）自己按 4 条一批 + 批间小睡做节流；结果按 tid 长期缓存，只补一次。
+     */
+    suspend fun fetchThreadAuthorJson(tid: String): String? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("$BASE/api/v2/threads?tid=$tid")
+                .header("User-Agent", DESKTOP_UA)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Referer", "$BASE/")
+                .apply {
+                    if (HupuAccount.isLoggedIn) {
+                        header("Cookie", HupuAccount.loadCookieHeaderPublic())
+                    }
+                }
+                .build()
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    if (!body.contains("\"author\"")) return@use null
+                    body
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
     /** 供图片加载参考的基础地址 */
     const val HOST = "bbs.hupu.com"
 }

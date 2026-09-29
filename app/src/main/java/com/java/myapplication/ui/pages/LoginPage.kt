@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuAccount
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.LiquidBackButton
 
 /**
  * 登录页（盖入式二级页）：WebView 加载虎扑官方登录页。
@@ -165,23 +166,11 @@ fun LoginPage(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(top = 8.dp, bottom = 10.dp, start = 12.dp, end = 16.dp),
+                    .padding(top = 8.dp, bottom = 10.dp, start = 16.dp, end = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { closing = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "\u8fd4\u56de",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
+                LiquidBackButton(onClick = { closing = true })
+                Spacer(Modifier.width(8.dp))
                 Text(
                     "\u767b\u5f55\u864e\u6251\u8d26\u53f7",
                     fontSize = 16.sp,

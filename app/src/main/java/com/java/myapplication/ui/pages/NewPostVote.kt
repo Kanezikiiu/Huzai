@@ -8,6 +8,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.java.myapplication.ui.components.pressScale
+import com.java.myapplication.ui.components.rememberPressScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -172,18 +175,22 @@ internal fun VoteBlockCard(
 /** 1.119: 投票面板里的单选 / 多选胶囊（选中填充主题色） */
 @Composable
 internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    // 1.223：按压改为 spring 缩放手感（与主页横滑条 Chip 同源），不再用默认 ripple 压暗
+    val interaction = remember { MutableInteractionSource() }
+    val press = rememberPressScale(interaction)
     Text(
         label,
         fontSize = 13.sp,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
+            .pressScale(press)
             .clip(RoundedCornerShape(16.dp))
             .background(
                 if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.surfaceVariant
             )
-            .clickable { onClick() }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     )
 }

@@ -32,13 +32,18 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -63,6 +68,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +77,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.java.myapplication.data.HupuBlacklist
 import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuThread
@@ -334,10 +341,12 @@ internal fun FeedList(
     }
     // 浏览流关键词过滤（我的→浏览流设置）：标题/分区命中 → 条目不显示；
     // 挂 filterVersion 订阅——关键词保存即刻刷新（首页/专区共用本列表）
-    val filteredThreads = remember(threads, HupuPrefs.filterVersion) {
+    // 1.221：本地黑名单——被拉黑者发的帖子整条不显示（挂 blacklistVersion 同款即时生效）
+    val filteredThreads = remember(threads, HupuPrefs.filterVersion, HupuPrefs.blacklistVersion) {
         val kw = HupuPrefs.loadFilterKeywords()
-        if (kw.isEmpty) threads
+        val base = if (kw.isEmpty) threads
         else threads.filterNot { t -> HupuFilter.blockedThread(t.title, t.topic?.name, kw) }
+        HupuBlacklist.pruneThreads(base, HupuPrefs.loadBlacklist())
     }
     if (filteredThreads.isEmpty()) {
         // 空态（1.58）：关键词过滤后全灭或无内容——居中提示替代空列表（空 LazyColumn
@@ -360,7 +369,8 @@ internal fun FeedList(
     }
     LazyColumn(
         state = listState,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 140.dp),
+        // 1.199：上方留白交给横滑条自身的 bottom padding，这里不再叠加（否则空隙过大）
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(filteredThreads, key = { it.tid }) { thread ->
@@ -387,6 +397,13 @@ internal fun FeedList(
 internal fun SortBar(
     sorts: List<SortTab>,
     selected: String,
+    /**
+     * 1.201：每段固定宽度（紧凑模式）。必须放在 onSelect 之前 ——
+     * 现有调用方用尾随 lambda 传 onSelect，插在其后会把 lambda 当成这个参数。
+     * - null = 等分填满整行（列表排序条：首页 / 专区 / 搜索）
+     * - 给定 = 宽度由「段数 × segWidth」决定（帖子详情页「回复数」右侧）
+     */
+    segWidth: Dp? = null,
     onSelect: (String) -> Unit,
 ) {
     if (sorts.isEmpty()) return
@@ -395,8 +412,9 @@ internal fun SortBar(
     val idx = sorts.indexOfFirst { it.url == selected }.coerceAtLeast(0)
     val density = LocalDensity.current
     // 1.192b（真机反馈）：圆角增大到「半高 = 胶囊」，不再显方
-    val shape = RoundedCornerShape(17.dp)
-    val segShape = RoundedCornerShape(14.dp)
+    // 1.197（真机反馈）：条高 34 → 38dp（「有点细长」），圆角同步跟随半高
+    val shape = RoundedCornerShape(20.dp)
+    val segShape = RoundedCornerShape(17.dp)
     val slide = remember { Animatable(idx.toFloat()) }
     LaunchedEffect(idx) {
         slide.animateTo(
@@ -405,18 +423,28 @@ internal fun SortBar(
         )
     }
     BoxWithConstraints(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-    ) {
-        val segW = maxWidth / count
-        val segWpx = with(density) { segW.toPx() }
-        val inset = 3.dp
-        val insetPx = with(density) { inset.toPx() }
-        val barH = 34.dp
-        Box(
+        // 1.201：紧凑模式（segWidth 给定）宽度由内容决定，不加左右留白与底部呼吸
+        if (segWidth == null) {
             Modifier
                 .fillMaxWidth()
+                // 1.197（真机反馈）：下方留一点呼吸空间
+                .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+        } else {
+            Modifier
+        },
+    ) {
+        val segW = segWidth ?: (maxWidth / count)
+        val segWpx = with(density) { segW.toPx() }
+        // 1.201：紧凑模式下容器与内容等宽（段数 × 段宽）
+        val barWidthMod =
+            if (segWidth == null) Modifier.fillMaxWidth() else Modifier.width(segW * count)
+        val inset = 3.dp
+        val insetPx = with(density) { inset.toPx() }
+        // 1.197（真机反馈）：34 → 38dp，避免二级 tab 显得细长
+        val barH = 40.dp
+        Box(
+            Modifier
+                .then(barWidthMod)
                 .height(barH)
                 .clip(shape)
                 .background(if (dark) Color.White.copy(0.07f) else Color.Black.copy(0.05f))
@@ -442,31 +470,37 @@ internal fun SortBar(
             )
             Row(
                 Modifier
-                    .fillMaxWidth()
+                    .then(barWidthMod)
                     .height(barH),
             ) {
                 sorts.forEach { s ->
                     val active = s.url == selected
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            // 1.192b（真机反馈）：去掉默认 ripple 方形遮罩
-                            .clickable(
-                                interactionSource = null,
-                                indication = null,
-                            ) { onSelect(s.url) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            s.title,
-                            fontSize = 13.sp,
-                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (active) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    // P3：段基座在 RowScope 里先算好（key 的内容 lambda 不是 RowScope，不能直接用 weight）
+                    val segBase = Modifier.weight(1f).fillMaxHeight()
+                    // P3：用 url 作 key —— 段数变化时 remember 槽位不漂移
+                    androidx.compose.runtime.key(s.url) {
+                        // 1.223：每段按压走「立即触发」（Initial pass），在可滚动容器里也不延迟
+                        val (segTrigger, segPress) = rememberInstantPressScale()
+                        Box(
+                            segBase
+                                .then(segTrigger)
+                                .pressScale(segPress)
+                                .clickable(
+                                    interactionSource = null,
+                                    indication = null,
+                                ) { onSelect(s.url) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                s.title,
+                                fontSize = 13.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (active) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -474,11 +508,12 @@ internal fun SortBar(
     }
 }
 
+
 /**
  * 胶囊 chip（横滑条条目：文字 + 可选圆形 logo 或矢量图标）
  *
  * 1.192：iOS 玻璃质感重绘——
- * · 选中 = 平面化的近实心玻璃胶囊（浅色 = 白 / 深色 = #2E2E30），无投影、无渐变
+ * · 选中 = 实心玻璃胶囊（浅色 = 白 / 深色 = #2E2E30）+ 极轻浮起投影，无渐变
  * · 未选 = 极淡半透明胶囊，文字取 onSurfaceVariant
  * · 按压 spring 缩放反馈（0.90 / StiffnessHigh），无 ripple 压暗
  * 尺寸与旧版完全一致（12dp / 7dp 内边距），不改变各页横滑条布局高度。
@@ -494,9 +529,65 @@ internal fun glassBorder(dark: Boolean, selected: Boolean = false): Color =
     else (if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f))
 
 /**
- * 1.192f: 玻璃胶囊的通用「按住缩放」反馈 —— 与主页横滑条 Chip 完全同一套
- * （spring + StiffnessHigh，无 ripple）。任何玻璃条/玻璃小按钮都该用它，
- * 避免同一种控件在不同页面出现「压暗」与「缩放」两种手感。
+ * 1.223：**立即**按压缩放 —— 返回 (触发按压的 Modifier, 缩放值)。
+ *
+ * 为什么要单独一套：在可滚动容器（`LazyRow` / `LazyColumn`）里，`clickable` 的按压反馈会被
+ * 父级滚动手势的判定推迟——表现为「顶部横滑条要按住一会儿才缩」，而普通 `Row` 里的 chip
+ * 按下当帧就缩。这里改为在 **Initial pass** 直接捕获 down，按下当帧即触发缩放，
+ * 与容器是否可滚动无关，全站手感一致。
+ */
+@Composable
+internal fun rememberInstantPressScale(): Pair<Modifier, Float> {
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessHigh,
+        ),
+        label = "instantPressScale",
+    )
+    val trigger = Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            pressed = true
+            waitForUpOrCancellation(pass = PointerEventPass.Initial)
+            pressed = false
+        }
+    }
+    return trigger to scale
+}
+
+/**
+ * 1.223：按住 spring 缩放的手感值 —— 与主页横滑条 Chip 完全同源
+ * （MediumBouncy + StiffnessHigh，按下 0.90，无 ripple）。
+ *
+ * 这是全站「按压缩放」的唯一定义：tab / chip / 玻璃小按钮一律复用它，
+ * 配合 [Modifier.pressScale] + 提供同一 interaction 的 clickable 使用。
+ */
+@Composable
+internal fun rememberPressScale(interaction: MutableInteractionSource): Float {
+    val pressed by interaction.collectIsPressedAsState()
+    return animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessHigh,
+        ),
+        label = "pressScale",
+    ).value
+}
+
+/** 1.223：应用按住缩放（只做手感，不绘制任何底色/描边）。 */
+internal fun Modifier.pressScale(scale: Float): Modifier =
+    this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+
+/**
+ * 1.192f: 玻璃胶囊的通用「玻璃底 + 按住缩放」整体 ——
+ * 配色走 glassFill / glassBorder，手感走 rememberPressScale。
  */
 @Composable
 internal fun Modifier.glassPress(
@@ -505,25 +596,27 @@ internal fun Modifier.glassPress(
     border: Color,
     onClick: () -> Unit,
 ): Modifier {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.90f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessHigh,
-        ),
-        label = "glassPress",
-    )
+    // 1.223：同样走「立即触发」——用户主页等含滚动的页面里也不延迟
+    val (trigger, scale) = rememberInstantPressScale()
     return this
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
+        .then(trigger)
+        .pressScale(scale)
         .clip(shape)
         .background(fill)
         .border(0.6.dp, border, shape)
-        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+        .clickable(interactionSource = null, indication = null, onClick = onClick)
+}
+
+/**
+ * 1.198：只裁水平方向，垂直方向放行。
+ * 横滑条的 chip 带浮起阴影，`clipToBounds` 把上下两端的阴影一起裁掉了；
+ * 这里只裁掉「滑出视野的内容」，纵向留出空间让阴影完整显示。
+ */
+internal fun Modifier.clipHorizontally(): Modifier = this.drawWithContent {
+    val content = this
+    clipRect(left = 0f, top = -size.height, right = size.width, bottom = size.height * 2f) {
+        content.drawContent()
+    }
 }
 
 @Composable
@@ -536,38 +629,38 @@ internal fun Chip(
     onClick: () -> Unit,
 ) {
     val dark = isAppDarkTheme()
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    // 1.192d（真机反馈）：按压只用 spring 缩放，不做变暗。
-    // 相比最初那版：StiffnessHigh 让按下那一帧就起步（不再是慢起势），
-    // 深度加大到 0.90，快速轻点也看得见；松手仍靠 spring 弹性回弹。
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.90f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessHigh,
-        ),
-        label = "chipPress",
-    )
+    // 1.223：按压反馈改走「立即触发」（Initial pass 捕获 down）——
+    // 在 LazyRow 等可滚动容器里 clickable 的 press 会被滚动手势推迟，
+    // 顶部横滑条曾表现为「按住一会儿才缩」。详见 rememberInstantPressScale。
+    val (pressTrigger, scale) = rememberInstantPressScale()
     val shape = RoundedCornerShape(50)
     // 1.192b（真机反馈）：去掉立体感——不再用投影/上下渐变/白色高光描边，
     // 改成「平铺半透明玻璃块 + 一层极淡描边」，接近 iOS 原生 chip 的扁平观感。
     // 1.192f: 配色收敛到全站唯一的 glassFill / glassBorder
     val bg = glassFill(dark, selected)
-    val edge = glassBorder(dark, selected)
+    // 1.194（方案 A）：选中态不再描边，改为极轻投影「浮起」；未选保持原样。
+    val edge = if (selected) Color.Transparent else glassBorder(dark, false)
     val contentColor =
         if (selected) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
+            // 1.196：shadow 提到最外层 —— 它自身就是一层 graphicsLayer，之前被
+            // graphicsLayer(scale) 包在内部，系统阴影可能根本不绘制（「怎么调都看不到」的最大嫌疑）。
+            // 强度按真机可见量级给：未选 5dp / 选中 8dp。
+            .shadow(
+                elevation = if (selected) 8.dp else 5.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(if (selected) 0.40f else 0.28f),
+                spotColor = Color.Black.copy(if (selected) 0.40f else 0.28f),
+            )
+            .then(pressTrigger)
+            .pressScale(scale)
             .clip(shape)
             .background(bg)
             .border(0.6.dp, edge, shape)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = null, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

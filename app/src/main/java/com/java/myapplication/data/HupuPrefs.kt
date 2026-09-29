@@ -25,6 +25,8 @@ object HupuPrefs {
     private const val KEY_SCORE_GAMES = "score_games_v1"
     private const val KEY_SCORE_COMMON_HIDDEN = "score_common_hidden_v1"
     private const val KEY_FILTER_KEYWORDS = "filter_keywords_v1"
+    private const val KEY_BLACKLIST = "blacklist_v1"
+    private const val KEY_THREAD_AUTHORS = "thread_authors_v1"
     private const val KEY_FAVORITE_TOPICS = "favorite_topics_v1"
     private const val KEY_REFRESH_MODE = "refresh_mode_v1"
 
@@ -40,6 +42,8 @@ object HupuPrefs {
     const val MAX_SCORE_GAMES = 20
     /** 过滤关键词每组上限：足够重度用户沉淀屏蔽词表 */
     const val MAX_FILTER_KEYWORDS = 100
+    /** 1.222: 热帖作者缓存条数上限（tid → 作者；一条约 40B，4000 条约 160KB） */
+    const val MAX_THREAD_AUTHORS = 4000
     /** 1.191: 收藏专区上限——横滑条首位，过多会滑不过来 */
     const val MAX_FAVORITE_TOPICS = 50
 
@@ -260,6 +264,136 @@ object HupuPrefs {
         cachedKeywords = null
         filterVersion++
     }
+
+    // ---------- 本地黑名单（我的 → 黑名单） ----------
+    /** 版本号：黑名单增删后 +1，各列表订阅刷新 */
+    var blacklistVersion by mutableIntStateOf(0)
+        private set
+
+    private var cachedBlacklistEntries: List<HupuBlacklistEntry>? = null
+    private var cachedBlacklistMap: Map<String, String>? = null
+
+    /** 管理页列表：按人成组（一人可能有多把 id 钥匙），按加入顺序 */
+    fun loadBlacklistEntries(): List<HupuBlacklistEntry> {
+        cachedBlacklistEntries?.let { return it }
+        val json = prefs.getString(KEY_BLACKLIST, null) ?: return emptyList()
+        val list = decodeBlacklistEntriesJson(json)
+        cachedBlacklistEntries = list
+        return list
+    }
+
+    /** 判定表：id（puid / euid / commentUserId） → 昵称。过滤挂点统一用这张扁平表。 */
+    fun loadBlacklist(): Map<String, String> {
+        cachedBlacklistMap?.let { return it }
+        val m = LinkedHashMap<String, String>()
+        loadBlacklistEntries().forEach { e -> e.ids.forEach { m[it] = e.name } }
+        cachedBlacklistMap = m
+        return m
+    }
+
+    /** 1.222：黑名单人数（设置行标签用） */
+    fun blacklistCount(): Int = loadBlacklistEntries().size
+
+    private fun saveBlacklistEntries(list: List<HupuBlacklistEntry>) {
+        prefs.edit().putString(KEY_BLACKLIST, encodeBlacklistEntriesJson(list)).apply()
+        cachedBlacklistEntries = list
+        cachedBlacklistMap = null
+        blacklistVersion++
+    }
+
+    /** 任一 id 命中即视为已拉黑（同一个人可能有 puid/euid 多个键） */
+    fun isBlacklistedAny(ids: List<String>): Boolean =
+        HupuBlacklist.blockedAny(ids, loadBlacklist())
+
+    /**
+     * 加入黑名单：把能拿到的 id **全部**记下（用户主页同时有 puid 与 euid），
+     * 这样同一个人的帖子、回复、评分评论都会被命中。
+     * 已在黑名单里的人：合并新 id（并补齐头像/昵称），保留最初的拉黑时间。
+     * 返回 false = 无有效 id / 已存在（无变化） / 已达上限。
+     */
+    fun addToBlacklist(ids: List<String>, name: String, avatar: String = ""): Boolean {
+        val keys = ids.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (keys.isEmpty()) return false
+        val n = HupuBlacklist.normalizeName(name)
+        val cur = loadBlacklistEntries()
+        val idx = cur.indexOfFirst { e -> e.ids.any { it in keys } }
+        if (idx >= 0) {
+            val old = cur[idx]
+            val merged = LinkedHashMap<String, String>().also { m ->
+                old.ids.forEach { m[it] = it }
+                keys.forEach { m[it] = it }
+            }.keys.toList()
+            val newName = if (n.isNotEmpty()) n else old.name
+            val newAvatar = if (avatar.isNotEmpty()) avatar else old.avatar
+            if (merged == old.ids && newName == old.name && newAvatar == old.avatar) return false
+            val next = cur.toMutableList()
+            next[idx] = old.copy(ids = merged, name = newName, avatar = newAvatar)
+            saveBlacklistEntries(next)
+            return true
+        }
+        // 1.223: 上限按「人」计（与设置页计数一致）——旧实现按 id 键计，
+        // 一个人占两把钥匙（puid + euid）时会提前撞上限
+        if (cur.size + 1 > HupuBlacklist.MAX_ENTRIES) return false
+        val next = cur + HupuBlacklistEntry(
+            ids = keys,
+            name = n,
+            avatar = avatar,
+            at = System.currentTimeMillis(),
+        )
+        saveBlacklistEntries(next)
+        return true
+    }
+
+    /** 移除该人的全部 id 键（调用方把知道的 id 都传进来） */
+    fun removeFromBlacklist(ids: List<String>) {
+        val keys = ids.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (keys.isEmpty()) return
+        val cur = loadBlacklistEntries()
+        val next = cur.filterNot { e -> e.ids.any { it in keys } }
+        if (next.size == cur.size) return
+        saveBlacklistEntries(next)
+    }
+
+    /** 1.222：按整条（人）移除 */
+    fun removeBlacklistEntry(entry: HupuBlacklistEntry) = removeFromBlacklist(entry.ids)
+
+    fun clearBlacklist() {
+        prefs.edit().remove(KEY_BLACKLIST).apply()
+        cachedBlacklistEntries = emptyList()
+        cachedBlacklistMap = null
+        blacklistVersion++
+    }
+
+    // ---------- 热帖作者缓存（1.222） ----------
+    // 首页热帖列表（/all-gambia pageData.threads）**不带 author**，要做到「拉黑后热帖里的帖子也消失」，
+    // 只能按 tid 逐个补取作者。补到的结果按 tid 长期缓存（作者几乎不变），首次解析后即秒开。
+    private var cachedThreadAuthors: Map<String, String>? = null
+
+    /** tid → "puid|euid" */
+    fun loadThreadAuthors(): Map<String, String> {
+        cachedThreadAuthors?.let { return it }
+        val json = prefs.getString(KEY_THREAD_AUTHORS, null) ?: return emptyMap()
+        val m = decodeThreadAuthorsJson(json)
+        cachedThreadAuthors = m
+        return m
+    }
+
+    /** 合并写入（只写新增部分，避免每次全量重写） */
+    fun putThreadAuthors(add: Map<String, String>) {
+        if (add.isEmpty()) return
+        val merged = LinkedHashMap(loadThreadAuthors())
+        merged.putAll(add)
+        // 上限保护：超出后丢弃最旧的（LinkedHashMap 保留插入顺序，新加入的在尾部）
+        while (merged.size > MAX_THREAD_AUTHORS) {
+            val it = merged.keys.iterator()
+            if (!it.hasNext()) break
+            it.next()
+            it.remove()
+        }
+        prefs.edit().putString(KEY_THREAD_AUTHORS, encodeThreadAuthorsJson(merged)).apply()
+        cachedThreadAuthors = merged
+    }
+
     // ---------- Reading font size (Profile -> TextSize; thread detail body only) ----------
     /** Scale range of the reading font size */
     const val FONT_SCALE_MIN = 0.8f
@@ -604,7 +738,96 @@ internal fun decodeFilterKeywordsJson(json: String): HupuFilter.Keywords {
         HupuFilter.Keywords(title = arr("title"), zone = arr("zone"), comment = arr("comment"))
     } catch (e: Exception) { HupuFilter.Keywords() }
 }
+/** 1.222: 黑名单一个人（一组 id 钥匙 + 昵称/头像/拉黑时间），纯 Kotlin 可单测 */
+data class HupuBlacklistEntry(
+    /** puid / euid / commentUserId —— 任一命中即视为同一人 */
+    val ids: List<String>,
+    val name: String,
+    /** 1.222: 头像（拉黑时顺带记下，管理页展示） */
+    val avatar: String = "",
+    /** 1.222: 拉黑时间（epoch millis；0 = 旧数据未知） */
+    val at: Long = 0L,
+)
 
+/** 1.222: 打开用户主页用的 id —— euid 是长数字（≥12 位），优先；否则退回第一把钥匙 */
+internal fun blacklistProfileId(entry: HupuBlacklistEntry): String =
+    entry.ids.firstOrNull { it.length >= 12 } ?: entry.ids.firstOrNull().orEmpty()
+
+/** 1.222: 拉黑时间显示（纯 JVM，可单测）；at = 0 视为未知 */
+internal fun formatBlacklistTime(at: Long): String {
+    if (at <= 0L) return "拉黑时间未知"
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+    return "拉黑于 " + fmt.format(java.util.Date(at))
+}
+
+/** 黑名单纯 JSON 编解码（便于单测，不依赖 Android）：[{ids:[..],name,avatar,at}] */
+internal fun encodeBlacklistEntriesJson(list: List<HupuBlacklistEntry>): String {
+    val a = JSONArray()
+    list.forEach { e ->
+        val o = JSONObject()
+        val ids = JSONArray()
+        e.ids.forEach { ids.put(it) }
+        o.put("ids", ids)
+        o.put("name", e.name)
+        o.put("avatar", e.avatar)
+        o.put("at", e.at)
+        a.put(o)
+    }
+    return a.toString()
+}
+
+/** 解码：兼容 1.221 的旧格式 [{id,name}]（无时间/头像） */
+internal fun decodeBlacklistEntriesJson(json: String): List<HupuBlacklistEntry> {
+    return try {
+        val a = JSONArray(json)
+        val out = ArrayList<HupuBlacklistEntry>()
+        for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            val ids = o.optJSONArray("ids")?.let { arr ->
+                (0 until arr.length()).mapNotNull { k ->
+                    arr.optString(k).trim().takeIf { it.isNotEmpty() }
+                }
+            } ?: listOfNotNull(o.optString("id").trim().takeIf { it.isNotEmpty() })
+            if (ids.isEmpty()) continue
+            out += HupuBlacklistEntry(
+                ids = ids.distinct(),
+                name = o.optString("name"),
+                avatar = o.optString("avatar"),
+                at = o.optLong("at", 0L),
+            )
+        }
+        out
+    } catch (e: Exception) { emptyList() }
+}
+
+/** 兼容入口（1.221 的单 id 扁平表）：测试与旧调用方仍可用 */
+internal fun encodeBlacklistJson(m: Map<String, String>): String =
+    encodeBlacklistEntriesJson(m.map { (id, name) -> HupuBlacklistEntry(ids = listOf(id), name = name) })
+
+internal fun decodeBlacklistJson(json: String): Map<String, String> {
+    val m = LinkedHashMap<String, String>()
+    decodeBlacklistEntriesJson(json).forEach { e -> e.ids.forEach { m[it] = e.name } }
+    return m
+}
+
+/** 热帖作者缓存 JSON：{"tid":"puid|euid"} */
+internal fun encodeThreadAuthorsJson(m: Map<String, String>): String {
+    val o = JSONObject()
+    m.forEach { (tid, v) -> o.put(tid, v) }
+    return o.toString()
+}
+
+internal fun decodeThreadAuthorsJson(json: String): Map<String, String> {
+    return try {
+        val o = JSONObject(json)
+        val out = LinkedHashMap<String, String>()
+        o.keys().forEach { k ->
+            val v = o.optString(k)
+            if (k.isNotEmpty() && v.isNotEmpty()) out[k] = v
+        }
+        out
+    } catch (e: Exception) { emptyMap() }
+}
 /** 收藏表情包条目：只存图片 URL（虎扑没有专门的表情包通道，发出的表情包就是图片） */
 data class HupuSticker(val url: String)
 

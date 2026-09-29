@@ -308,7 +308,7 @@ internal fun StickerSearchSheet(
                     .fillMaxWidth()
                     .fillMaxHeight(STICKER_SEARCH_SHEET_HEIGHT)
                     .graphicsLayer { translationY = (1f - progress.value) * size.height }
-                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .clip(sheetTopCornerShape())
                     .background(MaterialTheme.colorScheme.background)
                     .tapGuard(),
             ) {

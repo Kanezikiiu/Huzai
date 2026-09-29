@@ -7,6 +7,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,7 +49,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -57,10 +62,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.java.myapplication.data.HupuAccount
+import com.java.myapplication.data.HupuBlacklist
 import com.java.myapplication.data.HupuFollowStore
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.data.HupuFollowUser
 import com.java.myapplication.data.HupuFloorReplies
+import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuProfileReply
 import com.java.myapplication.data.HupuProfileThread
 import com.java.myapplication.data.HupuRepository
@@ -77,11 +84,19 @@ import com.java.myapplication.ui.components.glassFill
 import com.java.myapplication.ui.components.glassPress
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.LiquidGlassButton
+import com.java.myapplication.ui.glass.LiquidGlassCard
 import com.java.myapplication.ui.glass.buttonBorder
 import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.liquidPressTransform
+import com.java.myapplication.ui.glass.rememberLiquidHighlight
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.LiquidIconButton
 
 /**
  * \u7528\u6237\u4e3b\u9875\uff08\u76d6\u5165\u5f0f\u4e8c\u7ea7\u9875\uff09\uff1a\u8d44\u6599\u5361\uff08\u65e0\u80cc\u666f\u56fe\uff0c\u65b9\u6848A\uff09+ \u7edf\u8ba1\u884c + \u53d1\u5e16/\u56de\u5e16\u53cc Tab\u3002
@@ -92,8 +107,20 @@ import kotlinx.coroutines.launch
 fun UserProfilePage(
     euid: String,
     onClose: () -> Unit,
+    /** 1.222: 层叠序号——从「黑名单管理页」再进主页时需盖在该页之上（该页 zIndex=2f） */
+    zIndex: Float = 1f,
 ) {
     val repo = remember { HupuRepository() }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // 1.222: 顶栏「更多」→ Liquid Glass 弹窗（按钮纵向排列）。
+    // 弹窗必须采样同一窗口的 LayerBackdrop，所以给「内容」挂记录层，
+    // 弹窗自身作为它之后的兄弟节点（否则会采到自己 / 跨窗口取不到像素）。
+    val pageBg = MaterialTheme.colorScheme.background
+    val pageBackdrop = rememberLayerBackdrop {
+        drawRect(pageBg)
+        drawContent()
+    }
+    var showMore by remember { mutableStateOf(false) }
     // \u540c\u4e00 euid \u7684\u4e0a\u5c42\u53cd\u590d\u8fdb\u51fa\u4e0d\u91cd\u62c9\uff1brefresh=true \u65f6\u91cd\u62c9
     var profile by remember { mutableStateOf<HupuUserProfile?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -112,6 +139,8 @@ fun UserProfilePage(
     var followed by remember(euid) { mutableStateOf(HupuFollowStore.fastFollowed(euid)) }
     var followBusy by remember { mutableStateOf(false) }
     var followToast by remember { mutableStateOf<String?>(null) }
+    // 1.221：本地黑名单态（纯本地、**不需要登录**；拉黑后该人的帖子/回复/评分评论不再出现）
+    var blacklisted by remember(euid) { mutableStateOf(false) }
     LaunchedEffect(followToast) {
         if (followToast != null) {
             delay(2200)
@@ -196,6 +225,34 @@ fun UserProfilePage(
                 followToast = err
             }
             followBusy = false
+        }
+    }
+
+    /**
+     * 1.221 拉黑 / 取消拉黑：**纯本地**操作（不影响服务端、不需要登录），
+     * 立即生效并给出与「关注」同款的顶部提示。
+     * 同时记下 puid 与 euid —— 不同接口给的 id 不一定同值，两个都记才不会漏过滤。
+     */
+    fun toggleBlacklist() {
+        val p = profile ?: return
+        val ids = listOf(p.puid, p.euid)
+        if (ids.all { it.isBlank() }) {
+            followToast = "用户信息不完整，稍后再试"
+            return
+        }
+        if (!blacklisted) {
+            if (HupuPrefs.addToBlacklist(ids, p.name, p.avatar)) {
+                blacklisted = true
+                followToast = "已拉黑 ${p.name}"
+            } else {
+                // 已存在（幂等）或已达上限
+                blacklisted = HupuPrefs.isBlacklistedAny(ids)
+                followToast = if (blacklisted) "已在黑名单中" else "黑名单已满（${HupuBlacklist.MAX_ENTRIES}）"
+            }
+        } else {
+            HupuPrefs.removeFromBlacklist(ids)
+            blacklisted = false
+            followToast = "已移出黑名单"
         }
     }
 
@@ -310,6 +367,11 @@ fun UserProfilePage(
         else if (HupuFollowStore.synced) false
         else null
     }
+    // 1.221 黑名单态：资料到达后按本地表同步；订阅版本号 → 管理页删除后本页按钮即时回位
+    LaunchedEffect(profile?.puid, profile?.euid, HupuPrefs.blacklistVersion) {
+        val p = profile ?: return@LaunchedEffect
+        blacklisted = HupuPrefs.isBlacklistedAny(listOf(p.puid, p.euid))
+    }
     LaunchedEffect(profile?.puid) {
         val p = profile
         if (p == null || p.isSelf || p.puid.isEmpty() || !HupuAccount.isLoggedIn) return@LaunchedEffect
@@ -324,6 +386,9 @@ fun UserProfilePage(
     }
     // ---------- \u767b\u5f55\u6001\u4e94 Tab \u5217\u8868\u52a0\u8f7d ----------
     val listLs = rememberLazyListState()
+    // 1.193: Tab 行横滑状态提到页面级 —— 若 remember 写在 LazyColumn item 内部，
+    // 该 item 划出屏幕被回收后滚动位置会被重置回最左。
+    val tabsScroll = rememberScrollState()
     // \u5217\u8868\u4ee3\u9645\uff1a\u4efb\u4f55\u5207\u6362\uff08tab/followType/profile \u5c31\u7eea\uff09\u90fd\u4f5c\u5e9f\u5728\u9014\u8bf7\u6c42\u7684\u5199\u5165\uff0c\u9632\u6b62\u4e32\u5217\u8868
     var listEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(euid, profile, tab, followType) {
@@ -410,27 +475,22 @@ fun UserProfilePage(
     Box(
         Modifier
             .fillMaxSize()
-            .zIndex(1f)
+            .zIndex(zIndex)
             .graphicsLayer { translationX = (1f - progress.value) * size.width }
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
             // \u9876\u680f\uff1a\u8fd4\u56de + \u6635\u79f0\uff08\u907f\u8ba9\u72b6\u6001\u680f\uff09
             Row(
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { closing = true }) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "\u8fd4\u56de",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+                LiquidBackButton(onClick = { closing = true })
+                Spacer(Modifier.width(8.dp))
                 Text(
                     // 1.163: 资料卡已显示昵称，顶栏统一恒显示「用户主页」
                     "用户主页",
@@ -441,7 +501,18 @@ fun UserProfilePage(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(48.dp))
+                // 1.222: 顶栏右侧「更多」——打开 Liquid Glass 操作弹窗（按钮纵向排列）。
+                // 只有存在可用操作（非本人主页、且有 id）时才显示，避免弹出空菜单。
+                val canMore = profile?.let {
+                    !it.isSelf && (it.puid.isNotEmpty() || it.euid.isNotEmpty())
+                } == true
+                if (canMore) {
+                    LiquidIconButton(
+                        icon = HupuIcons.MoreVert,
+                        contentDescription = "更多",
+                        onClick = { showMore = true },
+                    )
+                }
             }
 
             when {
@@ -462,6 +533,12 @@ fun UserProfilePage(
                 }
                 else -> {
                     val p = profile ?: return
+                    // 1.193: 数据行已并入资料卡，回调在这里算好再传进去
+                    //   （1.179 语义不变：粉丝 → 关注我的/关注TA的；关注 → 我关注的/TA关注的）
+                    val openFollowers: (() -> Unit)? =
+                        if (logged) ({ tab = 4; followType = 2 }) else null
+                    val openFollowing: (() -> Unit)? =
+                        if (logged) ({ tab = 4; followType = 1 }) else null
                     LazyColumn(
                         state = listLs,
                         modifier = Modifier.fillMaxSize(),
@@ -474,6 +551,8 @@ fun UserProfilePage(
                         item(key = "card") {
                             ProfileCard(
                                 p = p,
+                                onOpenFollowers = openFollowers,
+                                onOpenFollowing = openFollowing,
                                 showFollow = !p.isSelf && logged && p.puid.isNotEmpty(),
                                 followed = followed,
                                 followBusy = followBusy,
@@ -495,21 +574,19 @@ fun UserProfilePage(
                                 } else null,
                             )
                         }
-                        // \u7edf\u8ba1\u884c
-                        item(key = "stats") {
-                            // 1.179: 点子数据直达「关注」tab 对应分组：
-                            //   粉丝 → 关注我的/关注TA的（followType=2）
-                            //   关注 → 我关注的/TA关注的（followType=1）
-                            // 仅登录态可点（未登录无「关注」tab，做预防性禁用）
-                            val openFollowers: (() -> Unit)? =
-                                if (logged) ({ tab = 4; followType = 2 }) else null
-                            val openFollowing: (() -> Unit)? =
-                                if (logged) ({ tab = 4; followType = 1 }) else null
-                            StatsRow(p, openFollowers, openFollowing)
-                        }
                         // \u53cc Tab
                         item(key = "tabs") {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // 1.193: Tab 行改为「可横向滑动」。
+                            // 依据：登录态 5 个 chip 实测总宽 ≈370dp，而可用宽度只有 328dp
+                            //（360dp 屏 − 两侧 16dp 内容边距），窄屏必然溢出。
+                            // 为什么不改等宽分段：chip 文本带计数（「发帖 1.2万」）长度可变，
+                            // 等宽会截断计数；折行则破坏「一排 tab」的视觉语义。
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(tabsScroll),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 // \u767b\u5f55\u6001\u4e94 Tab\uff08\u8ba1\u6570\u5bf9\u9f50 PC \u5b98\u65b9\u6620\u5c04\uff1a\u53d1\u8d34=bbs_msg_count\uff0c\u56de\u5e16=bbs_post_count\uff09\uff1b\u672a\u767b\u5f55\u4ec5\u4e24 Tab
                                 if (logged) {
                                     TabChip("\u53d1\u5e16 ${formatCount(p.msgCount)}", tab == 0) { tab = 0 }
@@ -736,10 +813,87 @@ fun UserProfilePage(
                 }
             }
         }
+        // ---------- 1.222 「更多」弹窗（Liquid Glass，按钮纵向排列） ----------
+        // 位置：作为「内容记录层」之后的兄弟节点（毛玻璃才能正确采样背后的页面像素）。
+        // 目前只有一项：拉黑 / 取消拉黑该用户（纯本地、不需要登录）。
+        val moreTarget = profile
+        if (showMore && moreTarget != null && !moreTarget.isSelf) {
+            val hasId = moreTarget.puid.isNotEmpty() || moreTarget.euid.isNotEmpty()
+            if (hasId) {
+                LiquidGlassCard(
+                    backdrop = pageBackdrop,
+                    onDismiss = { showMore = false },
+                ) { close ->
+                    Text(
+                        "更多操作",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp),
+                    )
+                    Text(
+                        moreTarget.name,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 16.dp),
+                    )
+                    LiquidGlassButton(
+                        text = "分享该用户",
+                        accent = false,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp),
+                    ) {
+                        // 分享的是官方用户主页链接（my.hupu.com/{euid}），无 euid 时退回 puid
+                        val shareId = moreTarget.euid.ifEmpty { moreTarget.puid }
+                        shareLinkToSystem(
+                            ctx = ctx,
+                            chooserTitle = "分享用户主页",
+                            shareText = "「${moreTarget.name}」的虎扑主页",
+                            shareUrl = "https://my.hupu.com/$shareId",
+                        )
+                        close()
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    LiquidGlassButton(
+                        text = if (blacklisted) "取消拉黑该用户" else "拉黑该用户",
+                        accent = false,
+                        contentColor = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp),
+                    ) {
+                        toggleBlacklist()
+                        close()
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    LiquidGlassButton(
+                        text = "取消",
+                        accent = false,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+                    ) { close() }
+                }
+            }
+        }
     }
 }
 
-/** \u8d44\u6599\u5361\uff1a\u5934\u50cf + \u6635\u79f0 + Lv \u5fbd\u7ae0 + \u7b49\u7ea7\u8fdb\u5ea6\u6761 + IP \u5c5e\u5730/\u52a0\u5165\u5929\u6570\uff08\u65e0\u80cc\u666f\u56fe\uff0c\u7528\u6237\u786e\u8ba4\uff09 */
+/** 资料卡（1.193 方向A「沉浸式个人档案」，四段式）：
+ *  ① 身份行：头像 72 + 昵称/Lv 徽章 + 信息行（IP 属地 · 加入天数 · 声望）
+ *  ② 操作行：私信 / 关注（等宽平分；仅非本人主页、且按钮就绪时出现）
+ *  ③ 指标行：等级积分 ｜ 下一级 + 进度条（无等级数据则整段隐藏）
+ *  ④ 数据行：粉丝 / 关注 / 被点亮 / 被推荐（改为卡内嵌，不再单独成卡）
+ *  无背景图（用户确认）。
+ *  1.193c（真机反馈）：声望由 ③ 移入 ① 的信息行，紧跟在「加入天数」右侧。
+ *
+ * 版式依据（360dp 屏实测）：卡内可用 296dp，减去 72dp 头像 + 12dp 后中列仅剩 212dp。
+ * 昵称(18sp 约 54dp) + Lv 徽章(约 38dp) = 约 100dp 可放下；若再把「私信+关注」
+ * 两个按钮(约 120dp)塞进同一行，中列只剩 92dp —— 所以身份行与操作行必须拆开。
+ */
 @Composable
 private fun ProfileCard(
     p: HupuUserProfile,
@@ -748,15 +902,27 @@ private fun ProfileCard(
     followBusy: Boolean = false,
     onToggleFollow: () -> Unit = {},
     onPm: (() -> Unit)? = null,
+    onOpenFollowers: (() -> Unit)? = null,
+    onOpenFollowing: (() -> Unit)? = null,
 ) {
+    val dark = isAppDarkTheme()
+    // 官方 Lv 徽章色（levelColor 为空/非法时回落主题色）
+    val levelColor = runCatching {
+        Color(android.graphics.Color.parseColor(p.levelColor))
+    }.getOrDefault(MaterialTheme.colorScheme.primary)
+    // 1.193: 先落到局部 val，避免在 Compose lambda 里对可空参数做智能转换
+    val pmAction = onPm
+    val canFollow = showFollow && followed != null
+
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        // ---------- ① 身份行：头像 + 昵称/Lv + 信息行 ----------
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (p.avatar.isNotEmpty()) {
                 AsyncImage(
@@ -764,88 +930,154 @@ private fun ProfileCard(
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(72.dp)
                         .clip(CircleShape),
                 )
                 Spacer(Modifier.width(12.dp))
             }
             Column(Modifier.weight(1f)) {
-                Text(
-                    p.name,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (p.levelDesc.isNotBlank() || p.locationStr.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (p.levelDesc.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        p.name,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        // fill = false：昵称按内容宽度占用，不和徽章抢整行
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (p.levelDesc.isNotBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        // 1.214（真机反馈）：保留渐变 + 液体按压手感，并做成可点击
+                        //（点击动作暂为占位——需要接什么菜单/页面请告知）
+                        val lvHighlight = rememberLiquidHighlight()
+                        Box(
+                            Modifier
+                                .liquidPressTransform(lvHighlight)
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            lerp(levelColor, Color.White, 0.18f),
+                                            lerp(levelColor, Color.Black, 0.08f),
+                                        )
+                                    )
+                                )
+                                .clickable(
+                                    interactionSource = null,
+                                    indication = null,
+                                    role = Role.Button,
+                                ) { /* 占位：等级铭牌点击动作 */ }
+                                .then(lvHighlight.modifier)
+                                .then(lvHighlight.gestureModifier)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
                             Text(
                                 p.levelDesc,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color.White,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(
-                                        runCatching {
-                                            Color(android.graphics.Color.parseColor(p.levelColor))
-                                        }.getOrDefault(MaterialTheme.colorScheme.primary)
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
-                        if (p.locationStr.isNotBlank()) {
-                            Spacer(Modifier.width(8.dp))
+                    }
+                }
+                // 信息行：IP 属地 · 加入天数 · 声望（分段拼接，任一为空则自动省略）
+                // 1.193c（真机反馈）：声望从 ③ 指标行移回此处，排在「加入天数」右侧。
+                // 为免声望数值变大（4 位以上）时整行被省略号截断，这里拆成两段：
+                //   左段（IP 属地 / 加入天数）weight(1f, fill = false) → 空间不足时自己省略
+                //   右段（声望）不参与压缩 → 永远完整可见
+                val infoLine = listOfNotNull(
+                    p.locationStr.takeIf { it.isNotBlank() }?.let { "IP 属地 $it" },
+                    p.regTimeStr.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                val repText = if (p.reputation > 0) "声望 ${formatCount(p.reputation)}" else ""
+                if (infoLine.isNotEmpty() || repText.isNotEmpty()) {
+                    Spacer(Modifier.height(5.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (infoLine.isNotEmpty()) {
                             Text(
-                                "IP \u5c5e\u5730 ${p.locationStr}",
-                                fontSize = 12.sp,
+                                infoLine,
+                                fontSize = 11.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                        if (repText.isNotEmpty()) {
+                            Text(
+                                if (infoLine.isEmpty()) repText else " · $repText",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                             )
                         }
                     }
                 }
             }
-            // 1.130: 私信小图标按钮（置于关注按钮左侧；非本人主页才显示）
-            if (onPm != null) {
-                val dark = isAppDarkTheme()
-                Spacer(Modifier.width(8.dp))
-                // 1.192e: 私信按钮 → 液态玻璃按钮（项目变体，不采样 backdrop）
-                LiquidButton(
-                    onClick = onPm,
-                    fill = buttonFill(dark),
-                    border = buttonBorder(dark),
-                    height = 38.dp,
-                    contentPadding = 15.dp,
-                ) {
-                    Icon(
-                        HupuIcons.Mail,
-                        contentDescription = "发私信",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
+        }
+        // ---------- ② 操作行：私信 / 关注（等宽平分） ----------
+        // 1.222:「拉黑」已从操作行移到顶栏「更多」弹窗里（产品要求：三点 → 弹窗 → 纵向按钮）
+        if (pmAction != null || canFollow) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (pmAction != null) {
+                    LiquidButton(
+                        onClick = pmAction,
+                        fill = buttonFill(dark),
+                        border = buttonBorder(dark),
+                        modifier = Modifier.weight(1f),
+                        // 1.206（真机反馈）：38 → 42dp —— 原来跟排序条同高，作为「操作按钮」显扁
+                        height = 42.dp,
+                        contentPadding = 12.dp,
+                        // 1.193b（真机反馈）：图标与文字的间距对齐「关注」按钮 ——
+                        // 关注是 arrangement 3dp + 显式 Spacer 3dp（共 6dp），此前这里是 8+6=14dp
+                        arrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
+                    ) {
+                        Icon(
+                            HupuIcons.Mail,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            "私信",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (canFollow) {
+                    FollowButton(
+                        followed == true,
+                        followBusy,
+                        onToggleFollow,
+                        Modifier.weight(1f),
                     )
                 }
-            }
-            // 1.127: 状态未定时不渲染按钮，避免先显示「关注」再跳成「已关注」
-            if (showFollow && followed != null) {
-                Spacer(Modifier.width(10.dp))
-                FollowButton(followed == true, followBusy, onToggleFollow)
+                // 单按钮时用等宽占位：否则「关注态未知 → 已知」的那一瞬，
+                // 按钮会从满行宽突变到半行宽（可见跳变）。
+                val shownActions = (if (pmAction != null) 1 else 0) + (if (canFollow) 1 else 0)
+                if (shownActions < 2) Spacer(Modifier.weight(1f))
             }
         }
-        // \u7b49\u7ea7\u8fdb\u5ea6\u6761\uff08\u5b98\u65b9\u8272\uff09
+        // ---------- ③ 指标行：等级积分 ｜ 下一级 + 进度条 ----------
+        //（1.193c：声望已上移到 ① 的信息行，和「加入天数」并排，此处不再重复）
         if (p.levelScore > 0 && p.nextLevelScore > p.levelScore) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "\u7b49\u7ea7\u79ef\u5206 ${formatCount(p.levelScore.toInt())}",
+                        "等级积分 ${formatCount(p.levelScore.toInt())}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "\u4e0b\u4e00\u7ea7 ${formatCount(p.nextLevelScore.toInt())}",
+                        "下一级 ${formatCount(p.nextLevelScore.toInt())}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -863,50 +1095,38 @@ private fun ProfileCard(
                             .fillMaxWidth(frac.toFloat())
                             .height(5.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(
-                                runCatching {
-                                    Color(android.graphics.Color.parseColor(p.levelColor))
-                                }.getOrDefault(MaterialTheme.colorScheme.primary)
-                            ),
+                            .background(levelColor),
                     )
                 }
             }
-        // 1.190: 「加入虎扑 N 天」与「声望」同行——声望在天数右侧（与网页资料卡一致）
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (p.regTimeStr.isNotBlank()) {
-                Text(
-                    p.regTimeStr,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (p.reputation > 0) {
-                if (p.regTimeStr.isNotBlank()) Spacer(Modifier.width(12.dp))
-                Text(
-                    "\u58f0\u671b ${formatCount(p.reputation)}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
-        }
+        // ---------- ④ 数据行：卡内嵌四格 ----------
+        // 1.193b（真机反馈）：去掉分隔线（1 条横线 + 3 条纵线），改用留白分组
+        StatsRow(p, onOpenFollowers, onOpenFollowing)
     }
 }
 
-/** 1.126 关注按钮：未关注 = 主题色实心 + 加号；已关注 = 浅灰底。即时反馈，失败由调用方回滚 */
+/** 1.126 关注按钮：未关注 = 主题色实心 + 加号；已关注 = 浅灰底。即时反馈，失败由调用方回滚。
+ *  1.193: 增加 modifier —— 在操作行里用 weight(1f) 与「私信」按钮等宽平分。 */
 @Composable
-private fun FollowButton(followed: Boolean, busy: Boolean, onClick: () -> Unit) {
+private fun FollowButton(
+    followed: Boolean,
+    busy: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val dark = isAppDarkTheme()
     val bg = buttonFill(dark)
     val fg = if (followed) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
-    // 1.192e: 关注按钮 → 液态玻璃按钮（未关注 = 主题色调玻璃；已关注 = 浅灰玻璃）
+    // 1.192e: 关注按钮 → 液态玻璃按钮（未关注 = 主题色；已关注 = 浅灰玻璃）
     LiquidButton(
         onClick = { if (!busy) onClick() },
         isInteractive = !busy,
-        // 未关注 = 实心主题色；已关注 = 按钮中性底（深色为实体深灰）
         fill = if (followed) bg else MaterialTheme.colorScheme.primary,
         border = if (followed) buttonBorder(dark) else Color.Transparent,
-        height = 38.dp,
+        modifier = modifier,
+        // 1.206（真机反馈）：与「私信」同步 38 → 42dp
+        height = 42.dp,
         contentPadding = 16.dp,
         arrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
     ) {
@@ -920,7 +1140,7 @@ private fun FollowButton(followed: Boolean, busy: Boolean, onClick: () -> Unit) 
             Spacer(Modifier.width(3.dp))
         }
         Text(
-            if (followed) "\u5df2\u5173\u6ce8" else "\u5173\u6ce8",
+            if (followed) "已关注" else "关注",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = fg,
@@ -928,7 +1148,9 @@ private fun FollowButton(followed: Boolean, busy: Boolean, onClick: () -> Unit) 
     }
 }
 
-/** \u7edf\u8ba1\u884c\uff1a\u7c89\u4e1d/\u5173\u6ce8/\u88ab\u70b9\u4eae/\u88ab\u63a8\u8350\uff08\u540e\u4e24\u8005\u4e0d\u5c01\u9876\uff09 */
+/** 数据行（1.193）：改为资料卡内嵌 —— 不再自带背景/圆角/内边距，
+ *  四格等宽，作为资料卡的「第 ④ 段」。
+ *  1.193b（真机反馈）：去掉卡内分隔线（横 1 + 纵 3），改用留白分组。 */
 @Composable
 private fun StatsRow(
     p: HupuUserProfile,
@@ -936,28 +1158,35 @@ private fun StatsRow(
     onOpenFollowing: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatCell("\u7c89\u4e1d", p.followers, onOpenFollowers)
-        StatCell("\u5173\u6ce8", p.following, onOpenFollowing)
-        StatCell("\u88ab\u70b9\u4eae", p.beLightCount)
-        StatCell("\u88ab\u63a8\u8350", p.beRecommendCount)
+        StatCell("粉丝", p.followers, onOpenFollowers, Modifier.weight(1f))
+        StatCell("关注", p.following, onOpenFollowing, Modifier.weight(1f))
+        StatCell("被点亮", p.beLightCount, null, Modifier.weight(1f))
+        StatCell("被推荐", p.beRecommendCount, null, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun StatCell(label: String, value: Int, onClick: (() -> Unit)? = null) {
+private fun StatCell(
+    label: String,
+    value: Int,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        // 1.179: 可点（粉丝/关注）时加点击反馈；不可点保持原样（不占额外尺寸）
-        modifier = if (onClick != null) {
-            Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
-        } else Modifier,
+        modifier = modifier.then(
+            // 1.179: 可点（粉丝/关注）时加点击反馈；不可点保持原样（不占额外尺寸）
+            if (onClick != null) {
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClick)
+            } else {
+                Modifier
+            },
+        ),
     ) {
         Text(
             formatCount(value),

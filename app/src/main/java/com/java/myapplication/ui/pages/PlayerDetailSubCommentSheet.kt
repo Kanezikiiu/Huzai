@@ -94,6 +94,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.java.myapplication.data.GrandExpandState
+import com.java.myapplication.data.HupuBlacklist
 import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuAccount
@@ -103,11 +104,15 @@ import com.java.myapplication.data.mergeWithOptimistic
 import com.java.myapplication.data.flattenWithDescendants
 import com.java.myapplication.data.HupuSelfDetail
 import com.java.myapplication.data.ScoreCommentState
+import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.EmojiText
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.HeroBadgeAvatar
 
+import com.java.myapplication.ui.components.SheetTopBar
+import com.java.myapplication.ui.components.sheetTopCornerShape
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SortBar
 import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
@@ -215,19 +220,15 @@ fun SubCommentSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.80f)
                 .graphicsLayer { translationY = (1f - progress.value) * size.height }
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .clip(sheetTopCornerShape())
                 .background(MaterialTheme.colorScheme.background)
                 .tapGuard(),
         ) {
-            // 抓手条
-            Box(
-                Modifier
-                    .padding(top = 8.dp)
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
-                    .align(Alignment.CenterHorizontally),
+            // 1.206b（真机反馈）：抓手条 + 左标题 + 右「kyant 毛玻璃圆形关闭按钮」
+            // —— 与帖子详情页楼中楼完全同款，定义见 components/SheetChrome.kt
+            SheetTopBar(
+                title = "楼中楼",
+                onClose = onBack,
             )
             // 1.58 状态机三分支：无数据+加载中=骨架；无数据+无加载=真失败；
             // 有数据（含加载中——切排序保留旧列表）=列表 + 顶部小 loading 角标
@@ -263,9 +264,13 @@ fun SubCommentSheet(
                             }
                             // 评论关键词过滤（楼中楼子评论）：composable 作用域计算
                             val ckw = remember(HupuPrefs.filterVersion) { HupuPrefs.loadFilterKeywords() }
-                            val filteredSubs = remember(d.comments, ckw) {
-                                if (ckw.comment.isEmpty()) d.comments
+                            // 1.221：本地黑名单——被拉黑者的子评论连同其全部后代「整棵」不显示
+                            // （pruneScoreComments 递归剪枝，节点被删后其内嵌孙评论一并消失）
+                            val blacklist = remember(HupuPrefs.blacklistVersion) { HupuPrefs.loadBlacklist() }
+                            val filteredSubs = remember(d.comments, ckw, blacklist) {
+                                val base = if (ckw.comment.isEmpty()) d.comments
                                 else d.comments.filterNot { sub -> HupuFilter.blockedComment(sub.content, ckw) }
+                                HupuBlacklist.pruneScoreComments(base, blacklist)
                             }
                             // 子回复流 = 服务端数据 ⊕ 本机乐观层（key=母评论 id；按 commentId 去重，
                             // 服务端返回同一条后不会再重复显示）
@@ -386,25 +391,18 @@ fun SubCommentSheet(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.weight(1f),
                                         )
-                                        // 排序 tab（官方楼中楼同款：默认最亮）
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            listOf(
-                                                "brightest" to "最亮",
-                                                "latest" to "最晚",
-                                                "earliest" to "最早",
-                                            ).forEach { (key, label) ->
-                                                val active = key == sheet.sortKey
-                                                Text(
-                                                    label,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                                                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier
-                                                        .padding(start = 10.dp)
-                                                        .clickable { onSortChange(key) },
-                                                )
-                                            }
-                                        }
+                                        // 1.216：排序「最亮 / 最晚 / 最早」升级为二级排序条（SortBar，紧凑模式）
+                                        // ——与帖子详情页「回复数 + 排序条」同款右对齐形态。
+                                        SortBar(
+                                            sorts = listOf(
+                                                SortTab(0, "最亮", "brightest"),
+                                                SortTab(1, "最晚", "latest"),
+                                                SortTab(2, "最早", "earliest"),
+                                            ),
+                                            selected = sheet.sortKey,
+                                            onSelect = onSortChange,
+                                            segWidth = 56.dp,
+                                        )
                                     }
                                 }
                                 // 1.150: 空态——母评论暂无子回复时明确提示，不再让用户以为加载失败
@@ -423,7 +421,12 @@ fun SubCommentSheet(
                                     }
                                 }
                                 items(displaySubs, key = { it.commentId }) { sub ->
-                                    val gs = sheet.grandMap[sub.commentId]
+                                    // 1.221：本地黑名单——「展开更多回复」拉平的孙评论同样整棵过滤
+                                    // （本人命中，或祖先链上有人命中 → 一并隐藏，避免出现孤儿回复）
+                                    val rawGs = sheet.grandMap[sub.commentId]
+                                    val gs = rawGs?.let { st ->
+                                        st.copy(comments = HupuBlacklist.pruneScoreFlat(st.comments, sub, blacklist))
+                                    }
                                     SubCommentRow(
                                         sub,
                                         onOpenUser = onOpenUser,

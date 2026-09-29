@@ -51,6 +51,7 @@ import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
 import kotlin.coroutines.cancellation.CancellationException
+import com.java.myapplication.ui.components.LiquidBackButton
 
 /**
  * 1.178: 结构化正文（赛事战报等）的承载页——盖入式二级页内嵌 WebView。
@@ -116,23 +117,11 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { closing = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "返回",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
+                LiquidBackButton(onClick = { closing = true })
+                Spacer(Modifier.width(8.dp))
                 Text(
                     embed.title,
                     fontSize = 17.sp,

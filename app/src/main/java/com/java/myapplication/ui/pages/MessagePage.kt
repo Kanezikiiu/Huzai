@@ -65,6 +65,7 @@ import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import com.java.myapplication.ui.components.LiquidBackButton
 
 /**
  * 1.97 消息中心：提到我的 / 评论 / 亮了-推荐（去掉官方「动态」）。
@@ -237,19 +238,11 @@ fun MessageCenterPage(onClose: () -> Unit) {
                     Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                        .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .clickable { closing = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                    Spacer(Modifier.width(6.dp))
+                    LiquidBackButton(onClick = { closing = true })
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         "消息",
                         fontSize = 18.sp,
@@ -547,19 +540,11 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { closing = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(Modifier.width(6.dp))
+                LiquidBackButton(onClick = { closing = true })
+                Spacer(Modifier.width(8.dp))
                 Text(
                     title,
                     fontSize = 18.sp,

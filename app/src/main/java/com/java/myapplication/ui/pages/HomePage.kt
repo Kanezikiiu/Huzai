@@ -28,7 +28,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
@@ -43,6 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import com.java.myapplication.data.HupuAuthor
 import com.java.myapplication.data.HupuBoardPage
 import com.java.myapplication.data.HupuFloorReplies
 import com.java.myapplication.data.HupuReply
@@ -55,6 +58,8 @@ import com.java.myapplication.data.HupuRepository
 import com.java.myapplication.data.HupuTopicInfo
 import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.*
+import androidx.compose.foundation.layout.PaddingValues
+import com.java.myapplication.ui.components.clipHorizontally
 
 /** 首页：全站热帖（默认）+ 热门话题流（单选切换、排序、无限滚动） */
 @Composable
@@ -263,6 +268,52 @@ private fun FeedContent(
     val currentSort = if (selected == "hot") null else selectedSort
     val feedKey = if (selected == "hot") "hot" else "$selected#${currentSort ?: selected}"
 
+    // ---------- 1.222 热帖作者补齐（黑名单在热帖流生效的前提） ----------
+    // 为什么需要：首页热帖数据源（/all-gambia 的 pageData.threads）**整页不含 author**
+    //（实测 0 个 puid/puname），FeedList 的按人过滤自然无从命中；话题流/专区流的列表自带
+    // author，所以那边一直是正常的。
+    // 做法：仅在黑名单非空时，按 tid 从 `/api/v2/threads?tid=` 补取作者（4 条一批 + 批间小睡），
+    // 结果按 tid 长期缓存（作者几乎不变）——所以只有第一次会补，之后秒开；没有黑名单则零请求。
+    var hotAuthors by remember { mutableStateOf<Map<String, HupuAuthor>>(emptyMap()) }
+    LaunchedEffect(data.threads, HupuPrefs.blacklistVersion) {
+        if (HupuPrefs.loadBlacklist().isEmpty()) {
+            hotAuthors = emptyMap()
+            return@LaunchedEffect
+        }
+        val cache = HupuPrefs.loadThreadAuthors()
+        val seeded = LinkedHashMap<String, HupuAuthor>()
+        data.threads.forEach { t ->
+            cache[t.tid]?.let { v ->
+                val i = v.indexOf('|')
+                val p = if (i >= 0) v.substring(0, i) else v
+                val e = if (i >= 0) v.substring(i + 1) else ""
+                if (p.isNotEmpty() || e.isNotEmpty()) seeded[t.tid] = HupuAuthor(puid = p, name = "", euid = e)
+            }
+        }
+        hotAuthors = seeded
+        val missing = data.threads.map { it.tid }.filter { it.isNotEmpty() && !cache.containsKey(it) }
+        if (missing.isEmpty()) return@LaunchedEffect
+        val fresh = LinkedHashMap<String, String>()
+        missing.chunked(4).forEach { chunk ->
+            val got = coroutineScope {
+                chunk.map { tid -> async { tid to repo.threadAuthor(tid) } }.awaitAll()
+            }
+            got.forEach { (tid, a) ->
+                if (a != null && (a.puid.isNotEmpty() || a.euid.isNotEmpty())) {
+                    fresh[tid] = "${a.puid}|${a.euid}"
+                    hotAuthors = hotAuthors + (tid to a)
+                }
+            }
+            delay(120)
+        }
+        if (fresh.isNotEmpty()) HupuPrefs.putThreadAuthors(fresh)
+    }
+    // 把补齐的作者并回列表（未补到的保持原样 = 不过滤，宁可漏杀不可错杀）
+    val hotThreads = remember(data.threads, hotAuthors) {
+        if (hotAuthors.isEmpty()) data.threads
+        else data.threads.map { t -> hotAuthors[t.tid]?.let { a -> t.copy(author = a) } ?: t }
+    }
+
     // 话题首屏加载：有缓存直接显示，无缓存才进加载态（下拉刷新时绕过缓存）
     LaunchedEffect(feedKey, refreshTick) {
         if (selected == "hot") {
@@ -397,9 +448,9 @@ private fun FeedContent(
                 // sel 是本层自己的目标态：淡出中的旧页面内容不会被新选中项污染（解决残留/闪烁）
                 val selSort = if (sel == "hot") null else if (sel == selected) selectedSort else null
                 when {
-                    // 默认：全站热帖（70 条一次性，无分页）
+                    // 默认：全站热帖（70 条一次性，无分页）；threads 用补过作者的那份，黑名单才能生效
                     sel == "hot" -> FeedList(
-                        threads = data.threads,
+                        threads = hotThreads,
                         useBigCards = true,
                         resetKey = if (sel == selected) "hot-$refreshVersion-$hotResetTick" else "hot",
                         onOpenThread = { if (sel == selected) openThread(it) },
@@ -534,8 +585,10 @@ private fun TopicBar(
         modifier = Modifier
             .fillMaxWidth()
             // 可视窗口与下方条目对齐（左右 16dp），越线滚动内容被裁剪覆盖
-            .padding(horizontal = 16.dp)
-            .clipToBounds()
+            // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+            .padding(horizontal = 8.dp)
+            .clipHorizontally()
+            .padding(horizontal = 8.dp)
             .padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

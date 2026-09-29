@@ -61,7 +61,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -83,6 +82,8 @@ import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
+import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.clipHorizontally
 
 /**
  * 主页频道自定义页（盖入式二级页）：
@@ -257,19 +258,11 @@ fun TopicPickerPage(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { closing = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(Modifier.width(6.dp))
+                LiquidBackButton(onClick = { closing = true })
+                Spacer(Modifier.width(8.dp))
                 Text(
                     "自定义首页频道",
                     fontSize = 18.sp,
@@ -357,8 +350,10 @@ fun TopicPickerPage(onClose: () -> Unit) {
                         state = cateBarState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .clipToBounds()
+                            // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                            .padding(horizontal = 8.dp)
+                            .clipHorizontally()
+                            .padding(horizontal = 8.dp)
                             .padding(bottom = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
@@ -497,9 +492,11 @@ private fun SelectedBar(
         state = listState,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+            .padding(horizontal = 8.dp)
+            .clipHorizontally()
+            .padding(horizontal = 8.dp)
             .padding(vertical = 8.dp)
-            .clipToBounds()
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { off ->

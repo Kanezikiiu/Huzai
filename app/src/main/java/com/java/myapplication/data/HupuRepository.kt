@@ -17,6 +17,15 @@ class HupuRepository {
         return withContext(Dispatchers.Default) { HupuParser.parseBoardPage(html) }
     }
 
+    /**
+     * 1.222: 单条帖子的作者（`/api/v2/threads?tid=`）。
+     * 首页热帖列表不带 author，黑名单过滤前需要按 tid 补齐作者身份。
+     */
+    suspend fun threadAuthor(tid: String): HupuAuthor? {
+        val json = HupuApi.fetchThreadAuthorJson(tid) ?: return null
+        return withContext(Dispatchers.Default) { HupuParser.parseThreadAuthor(json) }
+    }
+
     /** 全站版块/话题导航树（取自任一 /all-* 页） */
     suspend fun categories(refresh: Boolean = false): List<HupuCategory> {
         val html = HupuApi.fetchHtml("/all-gambia", forceNetwork = refresh) ?: return emptyList()

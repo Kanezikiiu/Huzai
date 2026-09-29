@@ -63,31 +63,19 @@ fun ProfilePage(modifier: Modifier = Modifier) {
     // 浏览记录挂载用 epoch 键：每次点击入口都保证全新实例（key 变化即重建）——
     // 退场动画中/异常残留的旧实例被直接替换销毁，点击永远不会被吞
     var historyEpoch by remember { mutableIntStateOf(0) }
-    // 评分频道自定义 / 信息流设置：epoch 键控挂载（同浏览记录，防退场动画吞点击）
+    // 评分频道自定义：epoch 键控挂载（同浏览记录，防退场动画吞点击）
     var scorePickerEpoch by remember { mutableIntStateOf(0) }
-    var filterEpoch by remember { mutableIntStateOf(0) }
-    var textSizeEpoch by remember { mutableIntStateOf(0) }
-    var refreshEpoch by remember { mutableIntStateOf(0) }
-    // 1.130 主题模式设置页挂载 + 当前模式标签（订阅版本号，切主题后本行即时刷新）
-    var themeEpoch by remember { mutableIntStateOf(0) }
+    // 1.223 合并页挂载：过滤与屏蔽（关键词 + 黑名单）/ 显示与阅读（外观 + 字号 + 刷新率）
+    var filterBlockEpoch by remember { mutableIntStateOf(0) }
+    var displayEpoch by remember { mutableIntStateOf(0) }
+    // 黑名单人数标签（订阅版本号，拉黑/移除后本行即时刷新）
+    val blacklistCount = remember(HupuPrefs.blacklistVersion) { HupuPrefs.blacklistCount() }
     // 1.134 关于页挂载（epoch 键控，同其他二级页）
     var aboutEpoch by remember { mutableIntStateOf(0) }
     // 1.182 默认启动页：标准设置行 + iOS 风格选择弹窗（改动下次冷启动生效）
     var startTabAsk by remember { mutableStateOf(false) }
     var startTabIdx by remember { mutableIntStateOf(HupuPrefs.loadStartTab()) }
-    val themeMode = remember(HupuPrefs.themeModeVersion) { HupuPrefs.loadThemeMode() }
-    val themeModeLabel = when (themeMode) {
-        HupuPrefs.THEME_LIGHT -> "浅色"
-        HupuPrefs.THEME_DARK -> "深色"
-        else -> "跟随系统"
-    }
-    // 1.179: 色彩主题标签（订阅版本号，切换后本行即时刷新）
-    val themeAccent = remember(HupuPrefs.colorThemeVersion) { HupuPrefs.loadColorTheme() }
-    val themeAccentLabel = if (themeAccent == com.java.myapplication.ui.theme.ACCENT_DYNAMIC) {
-        "动态取色"
-    } else {
-        com.java.myapplication.ui.theme.accentPaletteOf(themeAccent).label
-    }
+
     // 登录：登录页 epoch 键控挂载 + 退出确认展开态
     var loginEpoch by remember { mutableIntStateOf(0) }
     var logoutAsk by remember { mutableStateOf(false) }
@@ -103,9 +91,8 @@ fun ProfilePage(modifier: Modifier = Modifier) {
     // 避免多页叠加：顶层关闭后下层还在、Tab 栏却提前冒出
     fun profilePageOpen(): Boolean =
         showPicker || loginEpoch > 0 || postEpoch > 0 || msgEpoch > 0 ||
-            historyEpoch > 0 || scorePickerEpoch > 0 || filterEpoch > 0 ||
-            textSizeEpoch > 0 || refreshEpoch > 0 || themeEpoch > 0 ||
-            aboutEpoch > 0 || userPageStack.isNotEmpty()
+            historyEpoch > 0 || scorePickerEpoch > 0 || filterBlockEpoch > 0 ||
+            displayEpoch > 0 || aboutEpoch > 0 || userPageStack.isNotEmpty()
     var postToast by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(postToast) {
         if (postToast != null) {
@@ -221,14 +208,10 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                // 设置组
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                ) {
+                Spacer(Modifier.height(20.dp))
+                // ---------- 个性化 ----------
+                ProfileGroupLabel("个性化")
+                ProfileGroup {
                     SettingRow(
                         icon = HupuIcons.Tune,
                         title = "首页频道自定义",
@@ -242,43 +225,44 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         onClick = { if (!profilePageOpen()) scorePickerEpoch++ },
                     )
                     SettingRow(
-                        icon = HupuIcons.History,
-                        title = "浏览记录",
-                        subtitle = "最近浏览的帖子（最多 300 条）",
-                        onClick = { if (!profilePageOpen()) historyEpoch++ },
-                    )
-                    SettingRow(
-                        icon = HupuIcons.FilterAlt,
-                        title = "信息流设置",
-                        subtitle = "标题/分区/评论关键词过滤",
-                        onClick = { if (!profilePageOpen()) filterEpoch++ },
-                    )
-                    SettingRow(
-                        icon = HupuIcons.FormatSize,
-                        title = "\u9605\u8bfb\u5b57\u53f7",
-                        subtitle = "\u5e16\u5b50\u6b63\u6587\u6587\u5b57\u5927\u5c0f\uff08\u5373\u65f6\u9884\u89c8\uff09",
-                        onClick = { if (!profilePageOpen()) textSizeEpoch++ },
-                    )
-                    SettingRow(
-                        icon = HupuIcons.Speed,
-                        title = "屏幕刷新率",
-                        subtitle = "档位来自设备真实支持的显示模式",
-                        onClick = { if (!profilePageOpen()) refreshEpoch++ },
-                    )
-                    SettingRow(
-                        icon = HupuIcons.DarkMode,
-                        title = "界面设置",
-                        subtitle = themeModeLabel + " · " + themeAccentLabel,
-                        onClick = { if (!profilePageOpen()) themeEpoch++ },
-                    )
-                    // 1.182 默认启动页：与相邻行同构的设置行（点击弹选择框，改动下次冷启动生效）
-                    SettingRow(
                         icon = Icons.Rounded.Home,
                         title = "默认启动页",
                         subtitle = START_TAB_LABELS.getOrNull(startTabIdx) ?: "首页",
                         onClick = { startTabAsk = true },
                     )
-                    // 1.134 关于改为二级页入口（替代原内联关于区块）
+                }
+                Spacer(Modifier.height(20.dp))
+                // ---------- 过滤与屏蔽 ----------
+                ProfileGroupLabel("过滤与屏蔽")
+                ProfileGroup {
+                    SettingRow(
+                        icon = HupuIcons.FilterAlt,
+                        title = "过滤与屏蔽",
+                        subtitle = "关键词过滤 · " + if (blacklistCount > 0) "已拉黑 $blacklistCount 人" else "黑名单",
+                        onClick = { if (!profilePageOpen()) filterBlockEpoch++ },
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                // ---------- 显示与阅读 ----------
+                ProfileGroupLabel("显示与阅读")
+                ProfileGroup {
+                    SettingRow(
+                        icon = HupuIcons.DarkMode,
+                        title = "显示与阅读",
+                        subtitle = "外观 · 阅读字号 · 屏幕刷新率",
+                        onClick = { if (!profilePageOpen()) displayEpoch++ },
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                // ---------- 其他 ----------
+                ProfileGroupLabel("其他")
+                ProfileGroup {
+                    SettingRow(
+                        icon = HupuIcons.History,
+                        title = "浏览记录",
+                        subtitle = "最近浏览的帖子（最多 300 条）",
+                        onClick = { if (!profilePageOpen()) historyEpoch++ },
+                    )
                     SettingRow(
                         icon = HupuIcons.Info,
                         title = "关于",
@@ -288,8 +272,8 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     if (prof != null) {
                         SettingRow(
                             icon = HupuIcons.Logout,
-                            title = "\u9000\u51fa\u767b\u5f55",
-                            subtitle = "\u6e05\u9664\u767b\u5f55\u51ed\u636e\u5e76\u8fd4\u56de\u672a\u767b\u5f55\u72b6\u6001",
+                            title = "退出登录",
+                            subtitle = "清除登录凭据并返回未登录状态",
                             onClick = { logoutAsk = true },
                         )
                     }
@@ -343,40 +327,37 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                 ScorePickerPage(onClose = { scorePickerEpoch = 0 })
             }
         }
-        // 信息流设置页：从右盖入、返回滑出
-        if (filterEpoch > 0) {
-            androidx.compose.runtime.key(filterEpoch) {
-                FilterSettingsPage(onClose = { filterEpoch = 0 })
+        // 1.223 过滤与屏蔽合并页：关键词过滤 + 黑名单（点条目可进用户主页，压入 userPageStack）
+        if (filterBlockEpoch > 0) {
+            androidx.compose.runtime.key(filterBlockEpoch) {
+                FilterBlockSettingsPage(
+                    onClose = { filterBlockEpoch = 0 },
+                    onOpenUser = { id -> if (userPageStack.size < 4) userPageStack.add(id) },
+                )
             }
         }
         // Reading font size page: cover-in from right, slide-out on back
         // \u7528\u6237\u4e3b\u9875\u6808\uff1a\u5df2\u767b\u5f55\u8d26\u53f7\u5361\u7247\u70b9\u51fb\u6253\u5f00\uff0c\u5c42\u5c42\u53e0\u52a0\u53ef\u9010\u5c42\u8fd4\u56de
         userPageStack.forEachIndexed { si, subEuid ->
             androidx.compose.runtime.key(si) {
-                UserProfilePage(euid = subEuid, onClose = { userPageStack.removeAt(si) })
+                UserProfilePage(
+                    euid = subEuid,
+                    onClose = { userPageStack.removeAt(si) },
+                    // 过滤与屏蔽合并页 zIndex=2f：从它点条目进主页时要盖在它之上
+                    zIndex = if (filterBlockEpoch > 0) 3f else 1f,
+                )
             }
         }
-        if (textSizeEpoch > 0) {
-            androidx.compose.runtime.key(textSizeEpoch) {
-                TextSizeSettingsPage(onClose = { textSizeEpoch = 0 })
+        // 1.223 显示与阅读合并页：外观主题 + 阅读字号 + 屏幕刷新率
+        if (displayEpoch > 0) {
+            androidx.compose.runtime.key(displayEpoch) {
+                DisplaySettingsPage(onClose = { displayEpoch = 0 })
             }
         }
-                // 消息中心：从右盖入、返回滑出（epoch 键控，同其他二级页）
+        // 消息中心：从右盖入、返回滑出（epoch 键控，同其他二级页）
         if (msgEpoch > 0) {
             androidx.compose.runtime.key(msgEpoch) {
                 MessageCenterPage(onClose = { msgEpoch = 0 })
-            }
-        }
-        // 屏幕刷新率设置页：从右盖入、返回滑出（同其他二级页）
-        if (refreshEpoch > 0) {
-            androidx.compose.runtime.key(refreshEpoch) {
-                RefreshRateSettingsPage(onClose = { refreshEpoch = 0 })
-            }
-        }
-        // 1.130 主题模式设置页：从右盖入、返回滑出（同其他二级页）
-        if (themeEpoch > 0) {
-            androidx.compose.runtime.key(themeEpoch) {
-                ThemeSettingsPage(onClose = { themeEpoch = 0 })
             }
         }
         // 1.134 关于页：从右盖入、返回滑出（同其他二级页）
@@ -421,6 +402,32 @@ fun ProfilePage(modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * 1.223：分组标题（小灰字，置于分组卡片上方）。
+ * 引入分组后，「我的」不再是一张 11 行的大列表，而是「个性化 / 过滤与屏蔽 / 显示与阅读 / 其他」四组。
+ */
+@Composable
+private fun ProfileGroupLabel(text: String) {
+    Text(
+        text,
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+    )
+}
+
+/** 1.223：分组卡片容器（iOS inset-grouped 风格：圆角 + surface 底，组内各行紧贴）。 */
+@Composable
+private fun ProfileGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface),
+        content = content,
+    )
 }
 
 /** 设置行：图标 + 标题/副标题 + 箭头 */

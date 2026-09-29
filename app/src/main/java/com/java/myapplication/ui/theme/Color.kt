@@ -3,16 +3,45 @@ package com.java.myapplication.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ---------- 中性色（所有色彩主题共用）----------
-// 保持中性的底/面，保证与悬浮毛玻璃 Tab 栏、卡片风格一致；色彩主题只换强调色。
+// 1.217：补全一整套「冷调中性」表面色阶，与底/面同源。
+// 起因：原先只覆盖了 background/surface/surfaceVariant 等少数几个字段，其余
+// （surfaceContainer*、onSurfaceVariant、outline*…）全部回落到 Material3 默认的
+// 中性紫灰，因而深色模式观感「发白、没质感」，且动态取色的壁纸中性面也与自定义
+// 底色不同源。现在统一收敛到这组冷调取值，深浅两套对称。
 val LedgerBackgroundLight = Color(0xFFF7F9FC)
 val LedgerSurfaceLight = Color(0xFFFFFFFF)
 val LedgerSurfaceVariantLight = Color(0xFFDFE2EB)
 val LedgerOnSurfaceLight = Color(0xFF191C20)
+val LedgerOnSurfaceVariantLight = Color(0xFF5A6069)
+val LedgerSurfaceContainerLowestLight = Color(0xFFFFFFFF)
+val LedgerSurfaceContainerLowLight = Color(0xFFF4F6F9)
+val LedgerSurfaceContainerLight = Color(0xFFEEF1F5)
+val LedgerSurfaceContainerHighLight = Color(0xFFE8ECF1)
+val LedgerSurfaceContainerHighestLight = Color(0xFFE1E5EB)
+val LedgerSurfaceDimLight = Color(0xFFDADEE4)
+val LedgerSurfaceBrightLight = Color(0xFFFFFFFF)
+val LedgerOutlineLight = Color(0xFF8A9099)
+val LedgerOutlineVariantLight = Color(0xFFC9CDD6)
+val LedgerInverseSurfaceLight = Color(0xFF2E3238)
+val LedgerInverseOnSurfaceLight = Color(0xFFF2F3F6)
 
 val LedgerBackgroundDark = Color(0xFF111418)
 val LedgerSurfaceDark = Color(0xFF1A1D22)
-val LedgerSurfaceVariantDark = Color(0xFF41474D)
+// 1.217：由 #41474D 调暗 —— 原值明显偏亮，是「发白」的主要来源之一
+val LedgerSurfaceVariantDark = Color(0xFF2B3036)
 val LedgerOnSurfaceDark = Color(0xFFE1E2E8)
+val LedgerOnSurfaceVariantDark = Color(0xFFA6ACB6)
+val LedgerSurfaceContainerLowestDark = Color(0xFF0C0F12)
+val LedgerSurfaceContainerLowDark = Color(0xFF15181D)
+val LedgerSurfaceContainerDark = Color(0xFF1C1F24)
+val LedgerSurfaceContainerHighDark = Color(0xFF24272D)
+val LedgerSurfaceContainerHighestDark = Color(0xFF2C3037)
+val LedgerSurfaceDimDark = Color(0xFF0F1216)
+val LedgerSurfaceBrightDark = Color(0xFF35393F)
+val LedgerOutlineDark = Color(0xFF6E747D)
+val LedgerOutlineVariantDark = Color(0xFF3A3F46)
+val LedgerInverseSurfaceDark = Color(0xFFE1E2E8)
+val LedgerInverseOnSurfaceDark = Color(0xFF2A2E33)
 
 // 语义色（不随色彩主题变化）
 val ExpenseRed = Color(0xFFE5484D)

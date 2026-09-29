@@ -44,6 +44,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Check
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.SheetTopBar
+import com.java.myapplication.ui.components.sheetTopCornerShape
 import com.java.myapplication.ui.components.StickerAddCell
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Share
@@ -111,6 +113,7 @@ import androidx.compose.foundation.combinedClickable
 import com.java.myapplication.ui.components.HUPU_EMOJI
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import com.java.myapplication.data.HupuBlacklist
 import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.data.HupuPostApi
@@ -223,19 +226,15 @@ internal fun FloorSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.80f)
                 .graphicsLayer { translationY = (1f - progress.value) * size.height }
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .clip(sheetTopCornerShape())
                 .background(MaterialTheme.colorScheme.background)
                 .tapGuard(),
         ) {
-            // 抓手条
-            Box(
-                Modifier
-                    .padding(top = 8.dp)
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
-                    .align(Alignment.CenterHorizontally),
+            // 1.206b（真机反馈）：抓手条 + 左标题 + 右「kyant 毛玻璃圆形关闭按钮」
+            // —— 去掉了分隔线与右侧计数，定义见 components/SheetChrome.kt
+            SheetTopBar(
+                title = "楼中楼",
+                onClose = onBack,
             )
             val state = if (data != null) "ok" else if (loading) "loading" else "error"
             Crossfade(targetState = state, animationSpec = tween(180), label = "floorSwitch") { s ->
@@ -255,11 +254,13 @@ internal fun FloorSheet(
                         } else {
                             // 评论关键词过滤（楼中楼子回复）：composable 作用域计算
                             val fkw = remember(HupuPrefs.filterVersion) { HupuPrefs.loadFilterKeywords() }
-                            val floorFilteredSubs = remember(fr.subReplies, fkw) {
+                            // 1.221：本地黑名单——被拉黑者的子回复不显示；其深层回复只在该节点的
+                            // 「展开 N 条回复」里可达（新压一层 sheet），节点被删即整棵不可达。
+                            val floorFilteredSubs = remember(fr.subReplies, fkw, HupuPrefs.blacklistVersion) {
                                 val base = if (fkw.comment.isEmpty()) fr.subReplies
                                 else fr.subReplies.filterNot { sub -> HupuFilter.blockedComment(HupuFilter.stripHtml(sub.contentHtml), fkw) }
                                 // 1.129 防闪退：子回复列表同样以 pid 为 key，兜底去重
-                                base.distinctBy { it.pid }
+                                HupuBlacklist.pruneSubReplies(base, HupuPrefs.loadBlacklist()).distinctBy { it.pid }
                             }
                             LazyColumn(
                                 state = listState,

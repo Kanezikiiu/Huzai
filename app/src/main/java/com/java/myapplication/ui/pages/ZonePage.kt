@@ -49,7 +49,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +82,8 @@ import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.TopicFeedState
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tabSwipeSwitch
+import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.clipHorizontally
 
 /**
  * 专区页：13 大类 → 版块网格（3 列）→ 版块话题流（盖入式二级页）。
@@ -314,7 +315,8 @@ fun ZonePage(modifier: Modifier = Modifier) {
                     } else {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 140.dp),
+                            // 1.199：上方留白交给横滑条自身的 bottom padding，这里不再叠加
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 140.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize(),
@@ -589,23 +591,11 @@ private fun TopicFeedOverlay(
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { onBack() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "返回",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
+                LiquidBackButton(onClick = { onBack() })
+                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         topic.name,
@@ -704,8 +694,10 @@ private fun CateBar(
         state = barState,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clipToBounds()
+            // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+            .padding(horizontal = 8.dp)
+            .clipHorizontally()
+            .padding(horizontal = 8.dp)
             .padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

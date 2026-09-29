@@ -119,6 +119,7 @@ import androidx.compose.foundation.combinedClickable
 import com.java.myapplication.ui.components.HUPU_EMOJI
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import com.java.myapplication.data.HupuBlacklist
 import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.data.HupuPostApi
@@ -139,6 +140,8 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.normalizeCover
 // 1.192g: 「只看楼主 / 排序状态」= 按钮 → LiquidButton（不再走 tab 条的 glassPress）
 import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.components.SortBar
+import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.glass.buttonBorder
 import com.java.myapplication.ui.glass.buttonFill
 import com.java.myapplication.ui.theme.isAppDarkTheme
@@ -240,6 +243,7 @@ fun ThreadDetailOverlay(
         drawRect(actionBarBg)
         drawContent()
     }
+    // 1.220：「只看楼主」已由开关改为分段控件，不再需要它专用的画布背景折射源。
     // 翻页哨兵：注意依赖 detail（canLoadMore 不能被 remember 的闭包 stale 捕获）
     // 1.185: 排序三态 0=默认(正序) 1=最新(倒序) 2=最热(本地按点亮降序)；点击循环（声明上提：可加载性依赖它）
     var sortMode by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -876,12 +880,14 @@ fun ThreadDetailOverlay(
                         ) {
                             // 浏览流评论关键词过滤：命中的回复不显示（内容是 HTML，剥标签后判定）
                             val ckw = remember(HupuPrefs.filterVersion) { HupuPrefs.loadFilterKeywords() }
-                            val filteredReplies = remember(d.replies, ckw) {
+                            // 1.221：本地黑名单——被拉黑者的一级回复不显示（主楼不受影响，仍可阅读）
+                            val filteredReplies = remember(d.replies, ckw, HupuPrefs.blacklistVersion) {
                                 // 1.128：先剔除「回复某条评论」的子回复——官方 SSR 把它平铺进最外层，
                                 // 但楼中楼里同样可见，属重复展示；真一级评论无 quote → quotePid 为空。
                                 val topOnly = topLevelReplies(d.replies)
-                                if (ckw.comment.isEmpty()) topOnly
+                                val kw = if (ckw.comment.isEmpty()) topOnly
                                 else topOnly.filterNot { r -> HupuFilter.blockedComment(HupuFilter.stripHtml(r.contentHtml), ckw) }
+                                HupuBlacklist.pruneReplies(kw, HupuPrefs.loadBlacklist())
                             }
                             // Reply toolbar state: only-OP filter + hot sort (stable, applied over keyword filter)
                             var onlyOp by remember { mutableStateOf(false) }
@@ -986,71 +992,55 @@ fun ThreadDetailOverlay(
                                         onOpenEmbed = { embedPage = it },
                                     )
                                 }
-                                item(key = "r-count") {
-                                    Text(
-                                        "回复 ${d.replyCount}",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-                                    )
-                                }
-                                item(key = "r-tools") {
+item(key = "r-count") {
+                                    // 1.201（真机反馈）：排序改为「默认 | 最新 | 热门」分段控件，与「只看楼主」独立开关
+                                    // 并列在「回复数」右侧同一行 —— 分段只负责排序，「楼主」不再混进排序里（两者互不干扰）
                                     val dark = isAppDarkTheme()
                                     Row(
-                                        Modifier.fillMaxWidth().padding(top = 2.dp),
+                                        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        // 1.192g: 「只看楼主 / 排序状态」是**按钮**而不是 tab 条 ——
-                                        // tab 条 = 一组互斥选项 + 选中项位置概念；这两个是「独立开关」与「循环切换」，
-                                        // 所以用 LiquidButton（流体高光 + 按压形变），与 tab 的 spring 缩放区分。
-                                        // 1.192h: 不再采样 backdrop——drawBackdrop 默认带的 Highlight/Shadow
-                                        // 就是那圈「亮边」。
-                                        // 1.192j: 选中态改**实心主题色**（原来 primary@0.16 太淡），字色用
-                                        // onPrimary——各调色板自带的对色（浅色=白 / 深色=极深色），不会与底同色；
-                                        // 未选态白底 + 描边。
-                                        LiquidButton(
-                                            onClick = { onlyOp = !onlyOp },
-                                            fill = if (onlyOp) MaterialTheme.colorScheme.primary else buttonFill(dark),
-                                            border = if (onlyOp) Color.Transparent else buttonBorder(dark),
-                                            // 1.192i/j: 30 → 34 → 38dp，内边距 12 → 14 → 16，字 12 → 13sp
-                                            //（再胖一点，不再细长）
-                                            height = 38.dp,
-                                            contentPadding = 16.dp,
-                                            arrangement = Arrangement.Center,
-                                        ) {
-                                            Text(
-                                                "\u53ea\u770b\u697c\u4e3b",
-                                                fontSize = 13.sp,
-                                                fontWeight = if (onlyOp) FontWeight.SemiBold else FontWeight.Medium,
-                                                color = if (onlyOp) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        Text(
+                                            "回复 ${d.replyCount}",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (sortSwitching) {
+                                            Spacer(Modifier.width(6.dp))
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(12.dp),
+                                                strokeWidth = 1.5.dp,
+                                                color = MaterialTheme.colorScheme.primary,
                                             )
                                         }
-                                        LiquidButton(
-                                            onClick = { sortMode = (sortMode + 1) % 3 },
-                                            fill = buttonFill(dark),
-                                            border = buttonBorder(dark),
-                                            // 1.192i/j: 30 → 34 → 38dp，内边距 12 → 14 → 16，字 12 → 13sp
-                                            height = 38.dp,
-                                            contentPadding = 16.dp,
-                                            arrangement = Arrangement.Center,
-                                        ) {
-                                            if (sortSwitching) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(12.dp),
-                                                    strokeWidth = 1.5.dp,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                )
-                                                Spacer(Modifier.width(6.dp))
-                                            }
-                                            Text(
-                                                when (sortMode) { 0 -> "\u9ed8\u8ba4\u987a\u5e8f"; 1 -> "\u6700\u65b0"; else -> "\u6700\u70ed" },
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
+                                        Spacer(Modifier.weight(1f))
+                                        // 1.220（真机反馈）：只看楼主由「开关」改为与排序条**同款的分段控件**
+                                        // （全部 / 楼主）——既消除「开关 vs 排序条」的异构割裂，也让高度 /
+                                        // 圆角 / 选中胶囊语汇完全一致；「全部 / 楼主」本身也比人形图标更直白。
+                                        SortBar(
+                                            sorts = listOf(
+                                                SortTab(0, "全部", "all"),
+                                                SortTab(1, "楼主", "op"),
+                                            ),
+                                            selected = if (onlyOp) "op" else "all",
+                                            onSelect = { onlyOp = it == "op" },
+                                            // 行宽受限：两个控件都用 48dp 段宽（360dp 屏刚好放下）
+                                            segWidth = 48.dp,
+                                        )
+                                        // 排序：三选一分段控件（与列表排序条同款样式，紧凑模式）
+                                        SortBar(
+                                            sorts = listOf(
+                                                SortTab(0, "默认", "0"),
+                                                SortTab(1, "最新", "1"),
+                                                SortTab(2, "热门", "2"),
+                                            ),
+                                            selected = sortMode.toString(),
+                                            onSelect = { sortMode = it.toIntOrNull() ?: 0 },
+                                            // 1.220：与左侧「全部 / 楼主」统一为 48dp，保证两控件同族且不溢出
+                                            segWidth = 48.dp,
+                                        )
                                     }
                                 }
                                 items(displayReplies, key = { it.pid }) { r ->

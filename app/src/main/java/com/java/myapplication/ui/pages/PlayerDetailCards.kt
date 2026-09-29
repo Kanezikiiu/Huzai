@@ -113,6 +113,7 @@ import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.components.LiquidBackButton
 
 /** 顶栏：返回 + 头像/名字/均分 */
 @Composable
@@ -124,20 +125,8 @@ internal fun PlayerHeader(d: HupuSelfDetail, onBack: () -> Unit) {
             .padding(start = 0.dp, end = 16.dp, top = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable { onBack() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        Spacer(Modifier.width(4.dp))
+        LiquidBackButton(onClick = { onBack() })
+        Spacer(Modifier.width(8.dp))
         HeroBadgeAvatar(avatar = d.image, heroIcon = d.heroIcon, size = 52.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {

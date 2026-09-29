@@ -52,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +63,9 @@ import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.FixedChannelRow
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.components.LiquidBackButton
+import androidx.compose.foundation.layout.PaddingValues
+import com.java.myapplication.ui.components.clipHorizontally
 /**
  * 评分频道自定义页（盖入式二级页）：与主页频道自定义同构。
  * - 顶部已选条：长按拖拽排序 / 点按移除（保存顺序即横滑条顺序）
@@ -185,19 +187,11 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { closing = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(Modifier.width(6.dp))
+                LiquidBackButton(onClick = { closing = true })
+                Spacer(Modifier.width(8.dp))
                 Text(
                     "自定义评分频道",
                     fontSize = 18.sp,
@@ -349,9 +343,11 @@ private fun ScoreSelectedBar(
         state = listState,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+            .padding(horizontal = 8.dp)
+            .clipHorizontally()
+            .padding(horizontal = 8.dp)
             .padding(vertical = 8.dp)
-            .clipToBounds()
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { off ->

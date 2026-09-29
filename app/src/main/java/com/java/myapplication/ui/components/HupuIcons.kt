@@ -124,4 +124,16 @@ object HupuIcons {
     val ContentCopy: ImageVector = materialIcon(name = "HupuIcons.ContentCopy") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M16,1H4C2.9,1 2,1.9 2,3v14h2V3h12V1zM19,5H8C6.9,5 6,5.9 6,7v14c0,1.1 0.9,2 2,2h11c1.1,0 2,-0.9 2,-2V7C21,5.9 20.1,5 19,5zM19,21H8V7h11V21z"))
     }
+    /** 1.193 顶栏「更多」（Material more_vert 24px）——用于用户主页三点占位按钮 */
+    val MoreVert: ImageVector = materialIcon(name = "HupuIcons.MoreVert") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,8c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM12,10c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2zM12,16c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z"))
+    }
+    /** 1.206 关闭（Material close 24px）——用于半屏 sheet 顶部的毛玻璃圆形关闭按钮 */
+    val Close: ImageVector = materialIcon(name = "HupuIcons.Close") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z"))
+    }
+    /** 1.221 屏蔽 / 拉黑（Material block 24px：圆圈加斜杠）——用于用户主页「拉黑」按钮 */
+    val Block: ImageVector = materialIcon(name = "HupuIcons.Block") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM4,12c0,-4.42 3.58,-8 8,-8 1.85,0 3.55,0.63 4.9,1.69L5.69,16.9C4.63,15.55 4,13.85 4,12zM12,20c-1.85,0 -3.55,-0.63 -4.9,-1.69L18.31,7.1C19.37,8.45 20,10.15 20,12c0,4.42 -3.58,8 -8,8z"))
+    }
 }

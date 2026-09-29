@@ -97,6 +97,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.java.myapplication.data.GrandExpandState
+import com.java.myapplication.data.HupuBlacklist
 import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuAccount
@@ -106,11 +107,13 @@ import com.java.myapplication.data.mergeWithOptimistic
 import com.java.myapplication.data.flattenWithDescendants
 import com.java.myapplication.data.HupuSelfDetail
 import com.java.myapplication.data.ScoreCommentState
+import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.EmojiText
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.HeroBadgeAvatar
 
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SortBar
 import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
@@ -344,9 +347,11 @@ fun PlayerDetailOverlay(
                     } else {
                         // 浏览流评论关键词过滤：命中的评论不显示（composable 作用域计算）
                         val ckw = remember(HupuPrefs.filterVersion) { HupuPrefs.loadFilterKeywords() }
-                        val filteredComments = remember(comments, ckw) {
-                            if (ckw.comment.isEmpty()) comments
+                        // 1.221：本地黑名单——被拉黑者的评论连同其整棵子回复一起不显示
+                        val filteredComments = remember(comments, ckw, HupuPrefs.blacklistVersion) {
+                            val base = if (ckw.comment.isEmpty()) comments
                             else comments.filterNot { c -> HupuFilter.blockedComment(c.content, ckw) }
+                            HupuBlacklist.pruneScoreComments(base, HupuPrefs.loadBlacklist())
                         }
                         LazyColumn(
                             state = listState,
@@ -371,37 +376,29 @@ fun PlayerDetailOverlay(
                                 item(key = "hot") { HottestCard(d.hottestComments) }
                             }
                             // 评论
-                            item(key = "c-title") {
-                                Column(Modifier.fillMaxWidth()) {
-                                    Text(
-                                        "全部评论 $commentCount",
+                                item(key = "c-title") {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                                    ) {
+                                        Text(
+                                            "全部评论 $commentCount",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
-                                    )
-                                    // 排序 tab：最亮 / 最晚 / 最早（对齐官方 ej 配置）
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-                                    ) {
-                                        listOf(
-                                            "brightest" to "最亮",
-                                            "latest" to "最晚",
-                                            "earliest" to "最早",
-                                        ).forEach { (key, label) ->
-                                            val active = key == sortKey
-                                            Text(
-                                                label,
-                                                fontSize = 12.sp,
-                                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier
-                                                    .padding(end = 14.dp)
-                                                    .clickable { onSortChange(key) },
-                                            )
-                                        }
-                                    }
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        // 1.216b（真机反馈）：排序条移到「评论数量」右侧，与楼中楼面板同款（紧凑模式）
+                                        SortBar(
+                                            sorts = listOf(
+                                                SortTab(0, "最亮", "brightest"),
+                                                SortTab(1, "最晚", "latest"),
+                                                SortTab(2, "最早", "earliest"),
+                                            ),
+                                            selected = sortKey,
+                                            onSelect = onSortChange,
+                                            segWidth = 56.dp,
+                                        )
                                 }
                             }
                             if (switching) {

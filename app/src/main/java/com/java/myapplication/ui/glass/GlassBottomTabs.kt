@@ -79,7 +79,10 @@ fun GlassBottomTabs(
 
     BoxWithConstraints(
         modifier,
-        contentAlignment = Alignment.CenterStart
+        // 1.200：内容若比容器窄（宽屏 480dp 上限生效等）会贴左，看起来就是「Tab 栏左移」
+        // → 改为居中；但胶囊 Box 的基准位置必须显式钉在左侧（见下方 .align），
+        // 否则它会跟着一起居中（1.199 踩过：胶囊右移约 1.5 格）
+        contentAlignment = Alignment.Center
     ) {
         val density = LocalDensity.current
         val tabWidth = with(density) {
@@ -270,6 +273,11 @@ fun GlassBottomTabs(
 
         Box(
             Modifier
+                // 1.200：显式钉住基准位置（垂直居中 / 水平靠左），不再继承 contentAlignment。
+                // 胶囊的水平位置完全由下面的 translationX = value * tabWidth 驱动，
+                // 该公式假定「原点在容器左边缘」——所以无论默认启动页是哪个 Tab，
+                // 胶囊都会被推到正确格子，与「内容变窄时居中」互不影响。
+                .align(Alignment.CenterStart)
                 .padding(horizontal = 4f.dp)
                 .graphicsLayer {
                     translationX =

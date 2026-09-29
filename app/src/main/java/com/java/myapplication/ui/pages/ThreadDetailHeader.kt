@@ -166,6 +166,7 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.HupuAuthor
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.LiquidBackButton
 
 /** 顶栏：返回＋居中专区名＋（本人帖的编辑 / 删除入口） */
 @Composable
@@ -184,20 +185,7 @@ internal fun ThreadHeader(
             // 这里不再自带 statusBarsPadding —— 否则头条会多留一份状态栏高度。
             .padding(top = 8.dp, bottom = 10.dp),
     ) {
-        Box(
-            Modifier
-                .align(Alignment.CenterStart)
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable { onBack() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        LiquidBackButton(onClick = { onBack() }, modifier = Modifier.align(Alignment.CenterStart))
         Text(
             forumName,
             fontSize = 16.sp,
@@ -273,6 +261,25 @@ internal fun shareThreadToSystem(
         )
     }
     runCatching { ctx.startActivity(android.content.Intent.createChooser(send, "分享帖子")) }
+}
+
+/**
+ * 1.223：通用「分享链接」（标题 + 链接）——与 [shareThreadToSystem] 同源，供用户主页分享复用。
+ */
+internal fun shareLinkToSystem(
+    ctx: android.content.Context,
+    chooserTitle: String,
+    shareText: String,
+    shareUrl: String,
+) {
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(
+            android.content.Intent.EXTRA_TEXT,
+            if (shareText.isNotEmpty()) "$shareText $shareUrl" else shareUrl,
+        )
+    }
+    runCatching { ctx.startActivity(android.content.Intent.createChooser(send, chooserTitle)) }
 }
 
 /** 主楼：作者行 + 正文 + 视频 + 元信息 */

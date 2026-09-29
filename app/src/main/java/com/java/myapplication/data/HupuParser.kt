@@ -460,6 +460,21 @@ object HupuParser {
         )
     }
 
+    /**
+     * 1.222: `/api/v2/threads?tid=` 详情接口里的作者。
+     * 首页热帖列表不带 author，黑名单过滤需要按 tid 补取作者时用这里。
+     */
+    fun parseThreadAuthor(json: String): HupuAuthor? {
+        return try {
+            val o = JSONObject(json)
+            if (o.optInt("code", 0) != 200) return null
+            val t = o.optJSONObject("data")?.optJSONObject("thread") ?: return null
+            authorFrom(t.optJSONObject("author"))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private inline fun <T> JSONArray.mapNotNull(transform: (JSONObject?) -> T?): List<T> {
         val out = ArrayList<T>(length())
         for (i in 0 until length()) {

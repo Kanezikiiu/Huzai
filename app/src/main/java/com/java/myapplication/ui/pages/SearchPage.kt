@@ -71,7 +71,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -94,12 +93,11 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.normalizeCover
-import com.java.myapplication.ui.components.glassBorder
-import com.java.myapplication.ui.components.glassFill
-import com.java.myapplication.ui.components.glassPress
 import com.java.myapplication.ui.components.thumbnailUrl
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.clipHorizontally
 
 /**
  * 搜索页（盖入式二级页，桌面版搜索通道）：
@@ -286,8 +284,10 @@ fun SearchPage(
                     state = filterBarState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clipToBounds()
+                        // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                        .padding(horizontal = 8.dp)
+                        .clipHorizontally()
+                        .padding(horizontal = 8.dp)
                         .padding(top = 8.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -412,19 +412,11 @@ private fun SearchHeader(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable { onBack() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = MaterialTheme.colorScheme.onSurface)
-        }
-        Spacer(Modifier.width(4.dp))
+        LiquidBackButton(onClick = { onBack() })
+        Spacer(Modifier.width(8.dp))
         OutlinedTextField(
             colors = huzaiFieldColors(),
             value = query,
@@ -732,8 +724,10 @@ private fun ForumPickerSheet(
                 state = cateBarState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clipToBounds()
+                    // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                    .padding(horizontal = 8.dp)
+                    .clipHorizontally()
+                    .padding(horizontal = 8.dp)
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
