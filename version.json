@@ -1,8 +1,8 @@
 {
-  "versionCode": 202,
-  "versionName": "1.192",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.192/huzai-1.192-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.192",
-  "changelog": "· 顶部频道条外观优化\n· 部分按钮外观优化\n· 频道支持隐藏固定项，并修正「重置」行为\n· 阅读字号条、打分面板升级材质\n· 搜索历史改多行，专区面板更规整\n· 修复底部 Tab 栏消失、登录卡顿等问题",
+  "versionCode": 203,
+  "versionName": "1.193",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.193/huzai-1.193-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.193",
+  "changelog": "· 新增本地黑名单：拉黑后可屏蔽其帖子与全部回复/评论\n· 用户主页全新改版，并支持「分享该用户」\n· 「我的」页整理为四个分组，合并同类项\n· 全站 Tab 按压手感优化，按下即时反馈\n· 返回/私信/关注等按钮外观优化\n· 深色模式配色重做，改善「发白」观感\n· 修复其他若干问题，记不清了，就这样吧(¬▂¬)",
   "forceUpdate": false
 }
