@@ -388,7 +388,6 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var pickedUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    var errToast by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
@@ -489,7 +488,6 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
                     if (up.url != null) {
                         val err = sendPm(conv.puid, "<img src=\"${up.url}\"/>")
                         if (err == null) {
-                            errToast = null
                             refreshLatest()
                         } else com.java.myapplication.ui.components.HuzaiToast.show(err)
                     } else {
@@ -629,23 +627,6 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
         }
 
         // 错误提示条
-        errToast?.let { msg ->
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 90.dp)) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(androidx.compose.ui.graphics.Color(0xE6303030))
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
-            LaunchedEffect(msg) {
-                delay(2200)
-                errToast = null
-            }
-        }
     }
 }
 

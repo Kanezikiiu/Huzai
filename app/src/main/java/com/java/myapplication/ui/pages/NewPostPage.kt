@@ -158,7 +158,6 @@ fun NewPostPage(
     var voteCreating by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(0) }
     var publishing by remember { mutableStateOf(false) }
-    var toast by remember { mutableStateOf<String?>(null) }
     var topic by remember { mutableStateOf<HupuPostApi.Topic?>(null) }
     var zone by remember { mutableStateOf<HupuPostApi.Zone?>(null) }
     var showPicker by remember { mutableStateOf(false) }
@@ -374,13 +373,6 @@ fun NewPostPage(
     }
 
     // toast 2.6s 自动消失
-    LaunchedEffect(toast) {
-        if (toast != null) {
-            delay(2600)
-            toast = null
-        }
-    }
-
     fun publish() {
         if (publishing) return
         val t = title.trim()
@@ -1035,19 +1027,6 @@ fun NewPostPage(
         }
 
         // toast
-        toast?.let { msg ->
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 70.dp)) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xE6303030))
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
-        }
     }
 
     if (showPicker) {

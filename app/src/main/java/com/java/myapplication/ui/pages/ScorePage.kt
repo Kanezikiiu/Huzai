@@ -164,13 +164,6 @@ fun ScorePage(modifier: Modifier = Modifier) {
     val subComments = remember { mutableStateMapOf<String, ScoreCommentState>() }
     // ---------- 1.64 评分 & 点亮（登录态；key 与 PlayerDetailPage 的 litKey 同构） ----------
     // 提示条（点亮/打分结果；2600ms 自动清除，点击立即消失——与帖子详情页同手感）
-    var scoreToast by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(scoreToast) {
-        if (scoreToast != null) {
-            kotlinx.coroutines.delay(2600)
-            scoreToast = null
-        }
-    }
     // 打分面板（按选手键控：同一时间只挂一个打开位）
     var scorePanelOpen by remember { mutableStateOf(false) }
     var scorePanelKey by remember { mutableStateOf("") }
@@ -1323,26 +1316,6 @@ fun ScorePage(modifier: Modifier = Modifier) {
             )
         }
         // 1.64 评分/点亮提示条（与帖子详情页同形态：顶部胶囊、点击消失）
-        scoreToast?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .zIndex(30f)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .clickable { scoreToast = null }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
         // 1.146: 删除收藏表情确认弹窗（评分回复框「我的表情」长按触发）
         // 1.191: 换成 Liquid Glass 同款外观（Q 弹出入场）
         scoreStickerToDelete?.let { st ->

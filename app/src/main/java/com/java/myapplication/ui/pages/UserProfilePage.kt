@@ -139,16 +139,8 @@ fun UserProfilePage(
     // 入参可能是短 puid（关注列表入口）或 euid：能确定「已关注」就第一帧直接渲染
     var followed by remember(euid) { mutableStateOf(HupuFollowStore.fastFollowed(euid)) }
     var followBusy by remember { mutableStateOf(false) }
-    var followToast by remember { mutableStateOf<String?>(null) }
     // 1.221：本地黑名单态（纯本地、**不需要登录**；拉黑后该人的帖子/回复/评分评论不再出现）
     var blacklisted by remember(euid) { mutableStateOf(false) }
-    LaunchedEffect(followToast) {
-        if (followToast != null) {
-            delay(2200)
-            followToast = null
-        }
-    }
-
     // \u76d6\u5165\u52a8\u753b + \u4e8c\u7ea7\u9875\u8ba1\u6570\uff08Tab \u680f\u9690\u85cf\uff09\uff1a\u4e0e HistoryPage \u540c\u6b3e
     val progress = remember { Animatable(0f) }
     DisposableEffect(Unit) {
@@ -784,26 +776,6 @@ fun UserProfilePage(
         }
         // 1.104: 用户主页私信聊天页（盖入，puid 即 euid；点顶栏可跳对方主页——此处传 null 防循环）
         // 1.126 关注反馈（置顶显示，点击立即消失）
-        followToast?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .zIndex(9f)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .clickable { followToast = null }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
         pmConv?.let { c ->
             if (pmEpoch > 0) {
                 androidx.compose.runtime.key(pmEpoch) {

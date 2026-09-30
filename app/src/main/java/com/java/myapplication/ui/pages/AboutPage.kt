@@ -142,18 +142,10 @@ fun AboutPage(onClose: () -> Unit) {
         }
     }
 
-    var toast by remember { mutableStateOf<String?>(null) }
     // 1.177: 检查更新（手动触发）
     val scope = rememberCoroutineScope()
     var updateChecking by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<HupuUpdateInfo?>(null) }
-    LaunchedEffect(toast) {
-        if (toast != null) {
-            kotlinx.coroutines.delay(2000)
-            toast = null
-        }
-    }
-
     // 保存日志：SAF 让用户选择保存位置（无需任何存储权限）
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
@@ -356,20 +348,6 @@ fun AboutPage(onClose: () -> Unit) {
         sub?.let { s -> AboutSubPage(s, context, onClose = { sub = null }) }
 
         // 顶部提示
-        toast?.let { msg ->
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xE6303030))
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
-        }
-
         // 1.177: 发现新版本对话框
         updateInfo?.let { info ->
             UpdateDialog(

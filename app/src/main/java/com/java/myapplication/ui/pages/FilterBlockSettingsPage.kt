@@ -168,13 +168,6 @@ fun FilterBlockSettingsPage(
             entries = HupuPrefs.loadBlacklistEntries()
         }
     }
-    var toast by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(toast) {
-        if (toast != null) {
-            kotlinx.coroutines.delay(2200)
-            toast = null
-        }
-    }
     val openUser: (HupuBlacklistEntry) -> Unit = { e ->
         val id = blacklistProfileId(e)
         when {
@@ -322,26 +315,6 @@ fun FilterBlockSettingsPage(
             }
         }
         // 顶部提示（未登录 / 已移除）
-        toast?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .zIndex(9f)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .clickable { toast = null }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
     }
 }
 

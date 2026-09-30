@@ -79,8 +79,6 @@ fun LoginPage(onClose: () -> Unit) {
     var reloadTick by remember { mutableIntStateOf(0) }
     var oldWarnDismissed by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
-    var toast by remember { mutableStateOf<String?>(null) }
-    var toastTick by remember { mutableStateOf(0) }
     var closing by remember { mutableStateOf(false) }
     val progress = remember { androidx.compose.animation.core.Animatable(0f) }
     // 1.192: 先播「页面打开」动画，再挂载 WebView。WebView 构造 + 首次加载很重，
@@ -108,13 +106,6 @@ fun LoginPage(onClose: () -> Unit) {
             onClose()
         }
     }
-    LaunchedEffect(toastTick) {
-        if (toastTick > 0) {
-            kotlinx.coroutines.delay(2200)
-            toast = null
-        }
-    }
-
     // 返回手势跟手：手势进度直推透明度，取消则弹回
     PredictiveBackHandler { events ->
         if (closing) {
@@ -142,11 +133,9 @@ fun LoginPage(onClose: () -> Unit) {
             checking = false
             if (err == null) {
                 com.java.myapplication.ui.components.HuzaiToast.show("登录成功")
-                toastTick++
                 closing = true
             } else {
                 com.java.myapplication.ui.components.HuzaiToast.show(err)
-                toastTick++
             }
         }
     }
@@ -241,26 +230,6 @@ fun LoginPage(onClose: () -> Unit) {
         }
 
         // 结果提示条（顶部滑入淡出）
-        toast?.let { msg ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .zIndex(4f)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
     }
 }
 

@@ -95,13 +95,6 @@ fun ProfilePage(modifier: Modifier = Modifier) {
         showPicker || loginEpoch > 0 || postEpoch > 0 || msgEpoch > 0 ||
             historyEpoch > 0 || scorePickerEpoch > 0 || filterBlockEpoch > 0 ||
             displayEpoch > 0 || aboutEpoch > 0 || userPageStack.isNotEmpty()
-    var postToast by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(postToast) {
-        if (postToast != null) {
-            kotlinx.coroutines.delay(2200)
-            postToast = null
-        }
-    }
     // 1.106: 铃铛未读角标——进入「我的」页拉一次 + 前台每 2 分钟轮询
     LaunchedEffect(Unit) {
         HupuMsgBadge.refresh()
@@ -396,19 +389,6 @@ fun ProfilePage(modifier: Modifier = Modifier) {
             }
         }
         // 顶部提示（未登录 / 发布成功）
-        postToast?.let { msg ->
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 120.dp)) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(androidx.compose.ui.graphics.Color(0xE6303030))
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
-        }
     }
 }
 

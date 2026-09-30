@@ -100,7 +100,6 @@ fun ZonePage(modifier: Modifier = Modifier) {
     var loading by remember { mutableStateOf(true) }
     var cateRefreshTick by remember { mutableIntStateOf(0) }
     // 1.191: 收藏专区操作的轻提示（顶部胶囊，点击立即消失）
-    var zoneToast by remember { mutableStateOf<String?>(null) }
     // 当前选中大类（默认第 1 个；1.191 起有收藏专区时默认选中「收藏专区」）
     var selectedCateId by remember { mutableStateOf("") }
     // 1.191: 收藏专区——有收藏时在横滑条最前面插入「收藏专区」tab（默认选中）。
@@ -333,26 +332,6 @@ fun ZonePage(modifier: Modifier = Modifier) {
         }
 
         // 1.191: 收藏专区操作反馈（顶部胶囊，点击立即消失）
-        zoneToast?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .zIndex(9f)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .clickable { zoneToast = null }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
         // ---------- 二级页：版块话题流（盖入式转场） ----------
         if (opened != null) {
             // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）

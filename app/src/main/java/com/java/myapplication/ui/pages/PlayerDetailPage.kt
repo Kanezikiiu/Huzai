@@ -222,13 +222,6 @@ fun PlayerDetailOverlay(
     var stickerClearTarget by remember { mutableStateOf<String?>(null) }
     // 1.163: 评分评论作者 → 用户主页（盖入式叠层；未登录给提示，与帖子详情同款交互）
     val userPageStack = remember { androidx.compose.runtime.mutableStateListOf<String>() }
-    var userToast by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(userToast) {
-        if (userToast != null) {
-            delay(2000)
-            userToast = null
-        }
-    }
     val openUser: (String) -> Unit = { pu ->
         if (pu.isNotEmpty()) {
             if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
@@ -886,24 +879,6 @@ fun PlayerDetailOverlay(
             }
         }
         // 1.163: 用户主页未登录提示（2s 自动消失）
-        userToast?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .zIndex(31f)
-                    .padding(bottom = 150.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
         // 图片全屏查看器：盖过一切（页面 + 楼中楼）
         viewer?.let { (urls, i) ->
             com.java.myapplication.ui.components.ImageViewer(urls = urls, initialIndex = i) { viewer = null }
