@@ -83,7 +83,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import com.java.myapplication.ui.components.clipHorizontally
+import com.java.myapplication.ui.components.chipBarClip
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 评分页：6 大电竞项目赛程 + 选手评分（浏览，打分需登录暂不做）
@@ -625,9 +626,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxWidth()
                 // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                .padding(horizontal = 8.dp)
-                .clipHorizontally()
-                .padding(horizontal = 8.dp)
+                .chipBarClip()
                 .padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -967,7 +966,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 onScorePanelOpen = { open ->
                     if (open) {
                         if (!HupuAccount.isLoggedIn) {
-                            scoreToast = "请先在「我的」页登录"
+                            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
                         } else {
                             scorePanelKey = pKey
                             scorePanelOpen = true
@@ -982,7 +981,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                         val err = HupuAccount.scoreSave(op.bizType, op.bizId, v)
                         if (err != null) {
                             scorePanelSubmitting = false
-                            scoreToast = err
+                            com.java.myapplication.ui.components.HuzaiToast.show(err)
                             return@launch
                         }
                         myScores[pKey] = v
@@ -1023,7 +1022,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                                         commentCount = maxOf(cur.commentCount, cur.commentCount + 1),
                                     )
                                 }
-                                scoreToast = "已打 $v 分，评论已发布"
+                                com.java.myapplication.ui.components.HuzaiToast.show("已打 $v 分，评论已发布")
                                 // 静默重拉第一页并合并（服务端数据到位后接管，本地条目同 id 去重）
                                 val c = repo.scoreComments(
                                     op.bizType, op.bizId, cursor = 0L,
@@ -1037,10 +1036,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                                     )
                                 }
                             } else {
-                                scoreToast = "已打 $v 分，评论发布失败：" + res.error
+                                com.java.myapplication.ui.components.HuzaiToast.show("已打 $v 分，评论发布失败：" + res.error)
                             }
                         } else {
-                            scoreToast = "已打 $v 分"
+                            com.java.myapplication.ui.components.HuzaiToast.show("已打 $v 分")
                         }
                         scorePanelSubmitting = false
                         // 强刷 self：更新评分分布/均分/评分人数（登录态缓存分键）
@@ -1057,18 +1056,18 @@ fun ScorePage(modifier: Modifier = Modifier) {
                         if (err == null) {
                             myScores[pKey] = 0
                             scorePanelOpen = false
-                            scoreToast = "已取消评分"
+                            com.java.myapplication.ui.components.HuzaiToast.show("已取消评分")
                             val d = repo.scoreSelf(op.bizType, op.bizId, refresh = true)
                             if (d != null) selfDetails[pKey] = d
                         } else {
-                            scoreToast = err
+                            com.java.myapplication.ui.components.HuzaiToast.show(err)
                         }
                     }
                 },
                 scorePanelSubmitting = scorePanelSubmitting,
                 onLightComment = { target ->
                     if (!HupuAccount.isLoggedIn) {
-                        scoreToast = "请先在「我的」页登录"
+                        com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
                         return@PlayerDetailOverlay
                     }
                     val k = lightKey(target)
@@ -1079,7 +1078,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                         val err = HupuAccount.scoreLight(target.subjectId, target.commentId, !cur, state)
                         if (err != null) {
                             scoreLightState[k] = cur  // 失败回滚
-                            scoreToast = err
+                            com.java.myapplication.ui.components.HuzaiToast.show(err)
                         } else if (state.isNotEmpty()) {
                             scoreLightState[k] = state.first() == "lit"  // 服务端真相自愈
                         }
@@ -1113,7 +1112,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 },
                 onReply = { _, target ->
                     if (!HupuAccount.isLoggedIn) {
-                        scoreToast = "请先在「我的」页登录"
+                        com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
                     } else {
                         scoreReplyTarget = target
                         scoreReplyText = ""
@@ -1168,19 +1167,19 @@ fun ScorePage(modifier: Modifier = Modifier) {
                                     scoreReplyImageUploading = false
                                     if (uploadErrs.any { it.contains("登录已过期") }) {
                                         scoreReplySending = false
-                                        scoreToast = "登录已过期，请在「我的」页重新登录"
+                                        com.java.myapplication.ui.components.HuzaiToast.show("登录已过期，请在「我的」页重新登录")
                                         return@launch
                                     }
                                     if (urls.isEmpty() && scoreReplyImages.isNotEmpty()) {
                                         // 图片全失败：仅当文本也空时终止；否则仅发文本
                                         if (text.isEmpty()) {
                                             scoreReplySending = false
-                                            scoreToast = "图片上传失败：" + (uploadErrs.firstOrNull() ?: "未知错误")
+                                            com.java.myapplication.ui.components.HuzaiToast.show("图片上传失败：" + (uploadErrs.firstOrNull() ?: "未知错误"))
                                             return@launch
                                         }
                                     }
                                     if (urls.size < scoreReplyImages.size) {
-                                        scoreToast = "部分图片上传失败(${uploadErrs.firstOrNull() ?: ""})，已发送${urls.size}张"
+                                        com.java.myapplication.ui.components.HuzaiToast.show("部分图片上传失败(${uploadErrs.firstOrNull() ?: ")"} ，已发送${urls.size}张")
                                     }
                                 }
                                 val res = HupuAccount.publishScoreComment(
@@ -1213,7 +1212,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                                     optimisticScoreReplies[target.commentId] =
                                         (optimisticScoreReplies[target.commentId].orEmpty() + local)
                                             .distinctBy { it.commentId }
-                                    scoreToast = "回复成功"
+                                    com.java.myapplication.ui.components.HuzaiToast.show("回复成功")
                                     scoreReplyTarget = null
                                     scoreReplyText = ""
                                     scoreReplyImages = emptyList()
@@ -1267,7 +1266,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                                         }
                                     }
                                 } else {
-                                    scoreToast = res.error
+                                    com.java.myapplication.ui.components.HuzaiToast.show(res.error)
                                 }
                                 scoreReplySending = false
                             }

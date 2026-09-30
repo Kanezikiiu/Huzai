@@ -9,11 +9,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -56,6 +58,12 @@ internal fun LiquidIconButton(
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
     iconSize: Dp = 20.dp,
+    /** 图标颜色；默认 onSurface。带状态语义的按钮（如「已收藏」用主题色）可覆盖。 */
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    /** 是否可点；false 时不可点（置灰由调用方用 tint 控制） */
+    enabled: Boolean = true,
+    /** 忙碌态：用转圈替代图标。**底色 / 落影 / 尺寸完全不变**（不做「点一下整块变色」）。 */
+    busy: Boolean = false,
 ) {
     val dark = isAppDarkTheme()
     val highlight = rememberLiquidHighlight()
@@ -70,6 +78,7 @@ internal fun LiquidIconButton(
             .background(buttonFill(dark))
             .border(0.6.dp, buttonBorder(dark), CircleShape)
             .clickable(
+                enabled = enabled,
                 interactionSource = null,
                 indication = null,
                 role = Role.Button,
@@ -80,12 +89,20 @@ internal fun LiquidIconButton(
             .then(highlight.gestureModifier),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            icon,
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(iconSize),
-        )
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(iconSize),
+                color = tint,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(iconSize),
+            )
+        }
     }
 }
 

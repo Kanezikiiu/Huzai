@@ -59,7 +59,7 @@ import com.java.myapplication.ui.components.HeroBadgeAvatar
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.LiquidBackButton
-import com.java.myapplication.ui.components.clipHorizontally
+import com.java.myapplication.ui.components.chipBarClip
 
 /**
  * 比赛详情二级页（评分页 → 赛程卡点击进入）。
@@ -220,9 +220,7 @@ private fun TreeContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                    .padding(horizontal = 8.dp)
-                    .clipHorizontally()
-                    .padding(horizontal = 8.dp)
+                    .chipBarClip()
                     .padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -280,9 +278,7 @@ private fun TreeContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                        .padding(horizontal = 8.dp)
-                        .clipHorizontally()
-                        .padding(horizontal = 8.dp),
+                        .chipBarClip(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

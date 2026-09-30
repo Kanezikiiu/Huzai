@@ -71,8 +71,10 @@ import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.glass.LiquidButton
 import com.java.myapplication.ui.glass.buttonBorder
 import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.liquidElevation
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlin.coroutines.cancellation.CancellationException
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 「过滤与屏蔽」合并页（盖入式二级页）。
@@ -176,8 +178,8 @@ fun FilterBlockSettingsPage(
     val openUser: (HupuBlacklistEntry) -> Unit = { e ->
         val id = blacklistProfileId(e)
         when {
-            id.isEmpty() -> toast = "无法打开主页：缺少用户 id"
-            !HupuAccount.isLoggedIn -> toast = "请先在「我的」页登录"
+            id.isEmpty() -> com.java.myapplication.ui.components.HuzaiToast.show("无法打开主页：缺少用户 id")
+            !HupuAccount.isLoggedIn -> com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             else -> onOpenUser(id)
         }
     }
@@ -302,7 +304,7 @@ fun FilterBlockSettingsPage(
                                     onRemove = {
                                         HupuPrefs.removeBlacklistEntry(e)
                                         entries = HupuPrefs.loadBlacklistEntries()
-                                        toast = "已移出黑名单"
+                                        com.java.myapplication.ui.components.HuzaiToast.show("已移出黑名单")
                                     },
                                 )
                             }
@@ -370,10 +372,14 @@ private fun KeywordGroup(
         }
         var input by remember { mutableStateOf("") }
         OutlinedTextField(
-            colors = huzaiFieldColors(),
+            colors = huzaiFieldColors(container = false),
             value = input,
             onValueChange = { input = it },
-            modifier = Modifier.fillMaxWidth(),
+            // 1.223c: 输入框补悬浮感（与返回键同源、同款落影）
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
             placeholder = { Text("输入关键词，回车添加", fontSize = 13.sp) },
             singleLine = true,
             shape = RoundedCornerShape(16.dp),

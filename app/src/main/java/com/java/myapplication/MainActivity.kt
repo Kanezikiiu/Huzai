@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuCache
+import com.java.myapplication.data.HupuMsgBadge
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuUiSignals
 import com.java.myapplication.data.HupuUpdate
@@ -170,6 +171,11 @@ fun PocketLedgerApp() {
     // 切入时通知评分页做一次补偿重试，避免看到残留的「加载失败」
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) HupuUiSignals.enterScore()
+        // 1.223k: 「我的」页是**常驻组合**（四页常驻 + 盖入式平移），ProfilePage 里的
+        // LaunchedEffect(Unit) 只在冷启动触发一次——切过去并不会重查角标。
+        // 这里在切到「我的」Tab 时主动刷新一次：三类通知 + 私信在同一个 refresh 里重查，
+        // 两者的检测策略保持一致（用户反馈：私信切过去不提示、只有进消息页才提示）。
+        if (selectedTab == 3) HupuMsgBadge.refresh()
     }
     // 1.78: IME 底部 insets(组合期读取, 键盘弹出/收起自动重组; 回复框打开时把
     // Tab 栏出屏位移量补上键盘高度, 保证彻底推出屏不卡在键盘上缘)
@@ -334,5 +340,7 @@ fun PocketLedgerApp() {
                 },
             )
         }
+        // 1.223: 全局统一提示（位置 / 时长 / Q 弹出入场统一）——根 Box 最后一个子节点，盖过所有页面
+        com.java.myapplication.ui.components.HuzaiToastHost()
     }
 }

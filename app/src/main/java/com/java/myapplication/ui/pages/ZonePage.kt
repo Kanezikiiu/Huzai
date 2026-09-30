@@ -83,7 +83,9 @@ import com.java.myapplication.ui.components.TopicFeedState
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tabSwipeSwitch
 import com.java.myapplication.ui.components.LiquidBackButton
-import com.java.myapplication.ui.components.clipHorizontally
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.components.chipBarClip
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 专区页：13 大类 → 版块网格（3 列）→ 版块话题流（盖入式二级页）。
@@ -362,7 +364,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 isFavorite = favTopics.any { it.url == opened.url },
                 onToggleFavorite = {
                     val nowFav = HupuPrefs.toggleFavoriteTopic(opened)
-                    zoneToast = if (nowFav) "已收藏「${opened.name}」" else "已取消收藏"
+                    com.java.myapplication.ui.components.HuzaiToast.show(if (nowFav) "已收藏「${opened.name}」" else "已取消收藏")
                 },
                 closing = overlayClosing,
                 feedStates = feedStates,
@@ -614,20 +616,14 @@ private fun TopicFeedOverlay(
                     }
                 }
                 // 1.191: 收藏该专区（原「刷新」按钮——刷新已由下拉刷新覆盖）
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { onToggleFavorite() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        HupuIcons.StarRate,
-                        contentDescription = if (isFavorite) "取消收藏" else "收藏专区",
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                LiquidIconButton(
+                    icon = HupuIcons.StarRate,
+                    contentDescription = if (isFavorite) "取消收藏" else "收藏专区",
+                    onClick = { onToggleFavorite() },
+                    tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             // 排序子 Tab（服务器返回）
             if (sorts != null && sorts.isNotEmpty()) {
@@ -695,9 +691,7 @@ private fun CateBar(
         modifier = Modifier
             .fillMaxWidth()
             // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-            .padding(horizontal = 8.dp)
-            .clipHorizontally()
-            .padding(horizontal = 8.dp)
+            .chipBarClip()
             .padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

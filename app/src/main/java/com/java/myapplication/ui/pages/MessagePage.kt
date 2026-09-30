@@ -66,6 +66,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.LiquidIconButton
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 
 /**
  * 1.97 消息中心：提到我的 / 评论 / 亮了-推荐（去掉官方「动态」）。
@@ -261,17 +264,17 @@ fun MessageCenterPage(onClose: () -> Unit) {
                         .padding(horizontal = 16.dp, vertical = 20.dp),
                 ) {
                     NoticeEntry(
-                        icon = { Icon(HupuIcons.At, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) },
+                        icon = HupuIcons.At, iconSize = 26.dp,
                         label = "提到我的", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.mention,
                     ) { openedKind = NOTICE_MENTION; listEpoch++ }
                     NoticeEntry(
-                        icon = { Icon(HupuIcons.Comment, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) },
+                        icon = HupuIcons.Comment, iconSize = 24.dp,
                         label = "评论", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.reply,
                     ) { openedKind = NOTICE_REPLY; listEpoch++ }
                     NoticeEntry(
-                        icon = { Icon(HupuIcons.Light, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) },
+                        icon = HupuIcons.Light, iconSize = 26.dp,
                         label = "亮了/推荐", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.light,
                     ) { openedKind = NOTICE_LIGHT; listEpoch++ }
@@ -335,25 +338,26 @@ fun MessageCenterPage(onClose: () -> Unit) {
     LaunchedEffect(Unit) { HupuMsgBadge.refresh() }
 }
 
-/** 圆形入口按钮：浅灰半透明圆底 + 深蓝图标，weight 均分行宽；badge>0 时右上挂角标 */
+/** 圆形入口按钮：1.223 起升级为液态玻璃按钮（与返回键同源、同款落影 + 按压手感）；badge>0 时右上挂角标 */
 @Composable
 private fun NoticeEntry(
-    icon: @Composable () -> Unit,
+    icon: ImageVector,
     label: String,
     modifier: Modifier = Modifier,
+    iconSize: Dp = 26.dp,
     badge: Int = 0,
     onClick: () -> Unit,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box {
-            Box(
-                Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
-                    .clickable(onClick = onClick),
-                contentAlignment = Alignment.Center,
-            ) { icon() }
+            LiquidIconButton(
+                icon = icon,
+                contentDescription = label,
+                onClick = onClick,
+                size = 56.dp,
+                iconSize = iconSize,
+                tint = MaterialTheme.colorScheme.primary,
+            )
             if (badge > 0) {
                 androidx.compose.material3.Badge(
                     modifier = Modifier.align(Alignment.TopEnd),

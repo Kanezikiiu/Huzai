@@ -69,6 +69,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 1.99 私信：会话列表（挂在消息中心三按钮下方）+ 聊天页（文字 + 图片每次一张）。
@@ -460,7 +461,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
                 input = ""
                 refreshLatest()
             } else {
-                errToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             }
             sending = false
         }
@@ -477,12 +478,12 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
             // 1.170: 带上限读取（>32MB 或读取失败 → null）
             val bytes = com.java.myapplication.data.HupuImage.readCapped(ctx.contentResolver, uri)
             if (bytes == null) {
-                errToast = "读取图片失败（图片过大或已损坏）"
+                com.java.myapplication.ui.components.HuzaiToast.show("读取图片失败（图片过大或已损坏）")
             } else {
                 // 1.157: 统一走魔数嗅探（GIF/动画 WebP 原样上传，后缀不再决定格式）
                 val img = HupuImage.prepareForUpload(bytes, ctx.contentResolver.getType(uri) ?: "", uri.lastPathSegment ?: "")
                 if (img == null) {
-                    errToast = "不支持的图片格式"
+                    com.java.myapplication.ui.components.HuzaiToast.show("不支持的图片格式")
                 } else {
                     val up = HupuAccount.uploadReplyImage(img.bytes, img.ext, img.width, img.height)
                     if (up.url != null) {
@@ -490,16 +491,16 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
                         if (err == null) {
                             errToast = null
                             refreshLatest()
-                        } else errToast = err
+                        } else com.java.myapplication.ui.components.HuzaiToast.show(err)
                     } else {
-                        errToast = up.error ?: "图片上传失败"
+                        com.java.myapplication.ui.components.HuzaiToast.show(up.error ?: "图片上传失败")
                     }
                 }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            errToast = "图片发送失败: " + (e.message ?: e.javaClass.simpleName)
+            com.java.myapplication.ui.components.HuzaiToast.show("图片发送失败: " + (e.message ?: e.javaClass.simpleName))
         }
         sending = false
         pickedUri = null

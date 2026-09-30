@@ -86,13 +86,21 @@ import com.java.myapplication.data.HupuBlocks
 import com.java.myapplication.data.HupuDraft
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.data.HupuPostApi
+import com.java.myapplication.data.SortTab
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.components.SortBar
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 1.107: 发帖页（盖入式二级页，从「我的」页右上角铅笔进入）。
@@ -278,7 +286,7 @@ fun NewPostPage(
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         val room = (9 - imageUrls().size).coerceAtLeast(0)
         if (room <= 0) {
-            toast = "最多 9 张图片"
+            com.java.myapplication.ui.components.HuzaiToast.show("最多 9 张图片")
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -292,7 +300,7 @@ fun NewPostPage(
                     addImageBlock(res.url)
                     added++
                 } else {
-                    toast = "有图片上传失败"
+                    com.java.myapplication.ui.components.HuzaiToast.show("有图片上传失败")
                 }
             }
         }
@@ -321,7 +329,7 @@ fun NewPostPage(
             } else {
                 videoUrl = r.url
                 videoCover = HupuPostApi.videoCover(r.url)
-                if (videoCover == null) toast = "封面获取失败，帖子将使用默认封面"
+                if (videoCover == null) com.java.myapplication.ui.components.HuzaiToast.show("封面获取失败，帖子将使用默认封面")
             }
         }
     }
@@ -377,31 +385,31 @@ fun NewPostPage(
         if (publishing) return
         val t = title.trim()
         if (t.length < 4) {
-            toast = "标题不少于 4 个字"
+            com.java.myapplication.ui.components.HuzaiToast.show("标题不少于 4 个字")
             return
         }
         if (plainText().isEmpty() && imageUrls().isEmpty() && videoUrl == null && !hasVote()) {
-            toast = "正文不能为空"
+            com.java.myapplication.ui.components.HuzaiToast.show("正文不能为空")
             return
         }
         if (topic == null) {
-            toast = "请选择专区"
+            com.java.myapplication.ui.components.HuzaiToast.show("请选择专区")
             return
         }
         if (!HupuAccount.isLoggedIn) {
-            toast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         if (uploading > 0) {
-            toast = "图片还在上传，稍等"
+            com.java.myapplication.ui.components.HuzaiToast.show("图片还在上传，稍等")
             return
         }
         if (videoUploading) {
-            toast = "视频还在上传，稍等"
+            com.java.myapplication.ui.components.HuzaiToast.show("视频还在上传，稍等")
             return
         }
         if (videoUri != null && videoUrl == null) {
-            toast = videoError ?: "视频上传失败，请重新选择"
+            com.java.myapplication.ui.components.HuzaiToast.show(videoError ?: "视频上传失败，请重新选择")
             return
         }
         publishing = true
@@ -469,7 +477,7 @@ fun NewPostPage(
                 }
                 is HupuPostApi.Result.Err -> {
                     publishing = false
-                    toast = r.msg
+                    com.java.myapplication.ui.components.HuzaiToast.show(r.msg)
                 }
             }
         }
@@ -505,17 +513,26 @@ fun NewPostPage(
                 if (publishing) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
-                    Text(
-                        if (editTid != null) "保存" else "发布",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (title.trim().length >= 4) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { publish() }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+                    // 1.223: 「发布 / 保存」升级为液态玻璃按钮（同源落影 + 按压形变）
+                    val canPub = title.trim().length >= 4
+                    val dark = isAppDarkTheme()
+                    LiquidButton(
+                        onClick = { publish() },
+                        fill = if (canPub) MaterialTheme.colorScheme.primary else buttonFill(dark),
+                        border = if (canPub) Color.Transparent else buttonBorder(dark),
+                        // 1.223d: 圆角 16 → 20dp（真机反馈「稍微增加一点点」）
+                        shape = RoundedCornerShape(20.dp),
+                        height = 40.dp,
+                        contentPadding = 14.dp,
+                    ) {
+                        Text(
+                            if (editTid != null) "保存" else "发布",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (canPub) MaterialTheme.colorScheme.onPrimary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
@@ -575,7 +592,7 @@ fun NewPostPage(
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surface)
                         .clickable {
-                            if (topic == null) toast = "请先选择专区"
+                            if (topic == null) com.java.myapplication.ui.components.HuzaiToast.show("请先选择专区")
                             else showTagPicker = true
                         }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -626,6 +643,10 @@ fun NewPostPage(
                 Spacer(Modifier.height(10.dp))
 
                 // 类型行：原创/转载
+                // 1.223: 类型改为分段控件（与排序条同款 iOS 分段）
+                // 1.223c: 恢复 surface 卡片容器；卡片内给分段条垫一层**页面底色**的凹槽——
+                // SortBar 的玻璃轨道是半透明白 7%，只有落在页面底色上才与帖子详情页排序条一致
+                // （深色下 surface #1A1D22 比 background #111418 亮，会把轨道抬到接近选中胶囊）。
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -636,22 +657,19 @@ fun NewPostPage(
                 ) {
                     Text("类型", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(12.dp))
-                    listOf("ORIGINAL" to "原创", "REPRINT" to "转载").forEach { (value, label) ->
-                        val on = creationType == value
-                        Text(
-                            label,
-                            fontSize = 13.sp,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (on) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                                    else Color.Transparent
-                                )
-                                .clickable { creationType = value }
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        SortBar(
+                            sorts = listOf(
+                                SortTab(0, "原创", "ORIGINAL"),
+                                SortTab(1, "转载", "REPRINT"),
+                            ),
+                            selected = creationType,
+                            segWidth = 56.dp,
+                            onSelect = { creationType = it },
                         )
                     }
                 }
@@ -659,6 +677,8 @@ fun NewPostPage(
                 Spacer(Modifier.height(10.dp))
 
                 // 可见范围：公开可见 / 仅自己可见（官方只有这两档）
+                // 1.223: 可见范围改为分段控件（与排序条同款 iOS 分段）
+                // 1.223c: 恢复 surface 卡片 + 卡片内垫页面底色凹槽（同「类型」行）。
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -669,22 +689,19 @@ fun NewPostPage(
                 ) {
                     Text("可见范围", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(12.dp))
-                    listOf("ALL_SEE" to "公开可见", "SELF_SEE" to "仅自己可见").forEach { (value, label) ->
-                        val on = visibleRange == value
-                        Text(
-                            label,
-                            fontSize = 13.sp,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (on) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                                    else Color.Transparent
-                                )
-                                .clickable { visibleRange = value }
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        SortBar(
+                            sorts = listOf(
+                                SortTab(0, "公开可见", "ALL_SEE"),
+                                SortTab(1, "仅自己可见", "SELF_SEE"),
+                            ),
+                            selected = visibleRange,
+                            segWidth = 88.dp,
+                            onSelect = { visibleRange = it },
                         )
                     }
                 }
@@ -900,80 +917,61 @@ fun NewPostPage(
                 // 工具行：加图片 / 加视频 + 说明
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val hasVideo = videoUri != null || videoUrl != null
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable(enabled = uploading == 0) {
-                                when {
-                                    hasVideo -> toast = "视频与图片不能同时添加，请先移除视频"
-                                    imageUrls().size >= 9 -> toast = "最多 9 张图片"
-                                    else -> pickImages.launch("image/*")
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            HupuIcons.ImageIcon,
-                            contentDescription = "添加图片",
-                            tint = if (hasVideo) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
+                    // 1.223: 工具按钮升级为液态玻璃按钮（与返回键同源、同款落影）
+                    LiquidIconButton(
+                        icon = HupuIcons.ImageIcon,
+                        contentDescription = "添加图片",
+                        onClick = {
+                            when {
+                                hasVideo -> com.java.myapplication.ui.components.HuzaiToast.show("视频与图片不能同时添加，请先移除视频")
+                                imageUrls().size >= 9 -> com.java.myapplication.ui.components.HuzaiToast.show("最多 9 张图片")
+                                else -> pickImages.launch("image/*")
+                            }
+                        },
+                        enabled = uploading == 0,
+                        iconSize = 22.dp,
+                        tint = if (hasVideo) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                               else MaterialTheme.colorScheme.primary,
+                    )
                     Spacer(Modifier.width(10.dp))
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable(enabled = !videoUploading && !hasVote()) {
-                                when {
-                                    hasVideo -> toast = "已添加视频，请先移除再重新选择"
-                                    hasVote() -> toast = "投票帖不支持视频"
-                                    imageUrls().isNotEmpty() -> toast = "视频与图片不能同时添加，请先移除图片"
-                                    else -> pickVideo.launch("video/mp4")
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            HupuIcons.Videocam,
-                            contentDescription = "添加视频",
-                            tint = when {
-                                videoUploading -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                imageUrls().isNotEmpty() -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                hasVote() -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else -> MaterialTheme.colorScheme.primary
-                            },
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
+                    // 1.223: 工具按钮升级为液态玻璃按钮（与返回键同源、同款落影）
+                    LiquidIconButton(
+                        icon = HupuIcons.Videocam,
+                        contentDescription = "添加视频",
+                        onClick = {
+                            when {
+                                hasVideo -> com.java.myapplication.ui.components.HuzaiToast.show("已添加视频，请先移除再重新选择")
+                                hasVote() -> com.java.myapplication.ui.components.HuzaiToast.show("投票帖不支持视频")
+                                imageUrls().isNotEmpty() -> com.java.myapplication.ui.components.HuzaiToast.show("视频与图片不能同时添加，请先移除图片")
+                                else -> pickVideo.launch("video/mp4")
+                            }
+                        },
+                        enabled = !videoUploading && !hasVote(),
+                        iconSize = 22.dp,
+                        tint = when {
+                            videoUploading -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            imageUrls().isNotEmpty() -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            hasVote() -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                    )
                     Spacer(Modifier.width(10.dp))
                     // 1.113: 添加投票（单选，2~10 项；与视频互斥）
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable {
-                                when {
-                                    hasVideo -> toast = "视频帖不支持投票"
-                                    hasVote() -> toast = "每帖仅支持 1 个投票"
-                                    else -> showVoteSheet = true
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            HupuIcons.Poll,
-                            contentDescription = "添加投票",
-                            tint = if (hasVideo || hasVote()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
+                    // 1.223: 工具按钮升级为液态玻璃按钮（与返回键同源、同款落影）
+                    LiquidIconButton(
+                        icon = HupuIcons.Poll,
+                        contentDescription = "添加投票",
+                        onClick = {
+                            when {
+                                hasVideo -> com.java.myapplication.ui.components.HuzaiToast.show("视频帖不支持投票")
+                                hasVote() -> com.java.myapplication.ui.components.HuzaiToast.show("每帖仅支持 1 个投票")
+                                else -> showVoteSheet = true
+                            }
+                        },
+                        iconSize = 22.dp,
+                        tint = if (hasVideo || hasVote()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                               else MaterialTheme.colorScheme.primary,
+                    )
                     Spacer(Modifier.width(10.dp))
                     Text(
                         when {
@@ -1074,7 +1072,7 @@ fun NewPostPage(
             onToggle = { tg ->
                 val idx = tags.indexOfFirst { it.id == tg.id }
                 if (idx >= 0) tags.removeAt(idx)
-                else if (tags.size >= 2) toast = "最多选择 2 个话题"
+                else if (tags.size >= 2) com.java.myapplication.ui.components.HuzaiToast.show("最多选择 2 个话题")
                 else tags.add(tg)
             },
             onDismiss = { showTagPicker = false },
@@ -1102,7 +1100,7 @@ fun NewPostPage(
                     val vid = HupuPostApi.createVote(vt, choices, limit, type)
                     voteCreating = false
                     if (vid == null) {
-                        toast = "投票创建失败，请重试"
+                        com.java.myapplication.ui.components.HuzaiToast.show("投票创建失败，请重试")
                     } else {
                         insertAttachment(
                             HupuDraft.Attachment.Vote(
@@ -1115,7 +1113,7 @@ fun NewPostPage(
                             ),
                         )
                         showVoteSheet = false
-                        toast = if (type == "checkbox") "多选投票已添加" else "投票已添加"
+                        com.java.myapplication.ui.components.HuzaiToast.show(if (type == "checkbox") "多选投票已添加" else "投票已添加")
                     }
                 }
             },

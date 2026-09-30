@@ -97,6 +97,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * \u7528\u6237\u4e3b\u9875\uff08\u76d6\u5165\u5f0f\u4e8c\u7ea7\u9875\uff09\uff1a\u8d44\u6599\u5361\uff08\u65e0\u80cc\u666f\u56fe\uff0c\u65b9\u6848A\uff09+ \u7edf\u8ba1\u884c + \u53d1\u5e16/\u56de\u5e16\u53cc Tab\u3002
@@ -205,11 +206,11 @@ fun UserProfilePage(
         val p = profile ?: return
         if (followBusy) return
         if (!HupuAccount.isLoggedIn) {
-            followToast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         if (p.puid.isEmpty()) {
-            followToast = "用户信息不完整，稍后再试"
+            com.java.myapplication.ui.components.HuzaiToast.show("用户信息不完整，稍后再试")
             return
         }
         val target = !(followed ?: false)
@@ -219,10 +220,10 @@ fun UserProfilePage(
             val err = if (target) HupuAccount.followUser(p.puid) else HupuAccount.unfollowUser(p.puid)
             if (err == null) {
                 HupuFollowStore.markFollowed(p.puid, target)
-                followToast = if (target) "已关注" else "已取消关注"
+                com.java.myapplication.ui.components.HuzaiToast.show(if (target) "已关注" else "已取消关注")
             } else {
                 followed = !target
-                followToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             }
             followBusy = false
         }
@@ -237,22 +238,22 @@ fun UserProfilePage(
         val p = profile ?: return
         val ids = listOf(p.puid, p.euid)
         if (ids.all { it.isBlank() }) {
-            followToast = "用户信息不完整，稍后再试"
+            com.java.myapplication.ui.components.HuzaiToast.show("用户信息不完整，稍后再试")
             return
         }
         if (!blacklisted) {
             if (HupuPrefs.addToBlacklist(ids, p.name, p.avatar)) {
                 blacklisted = true
-                followToast = "已拉黑 ${p.name}"
+                com.java.myapplication.ui.components.HuzaiToast.show("已拉黑 ${p.name}")
             } else {
                 // 已存在（幂等）或已达上限
                 blacklisted = HupuPrefs.isBlacklistedAny(ids)
-                followToast = if (blacklisted) "已在黑名单中" else "黑名单已满（${HupuBlacklist.MAX_ENTRIES}）"
+                com.java.myapplication.ui.components.HuzaiToast.show(if (blacklisted) "已在黑名单中" else "黑名单已满（${HupuBlacklist.MAX_ENTRIES}）")
             }
         } else {
             HupuPrefs.removeFromBlacklist(ids)
             blacklisted = false
-            followToast = "已移出黑名单"
+            com.java.myapplication.ui.components.HuzaiToast.show("已移出黑名单")
         }
     }
 
@@ -486,7 +487,7 @@ fun UserProfilePage(
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LiquidBackButton(onClick = { closing = true })
@@ -508,7 +509,7 @@ fun UserProfilePage(
                 } == true
                 if (canMore) {
                     LiquidIconButton(
-                        icon = HupuIcons.MoreVert,
+                        icon = HupuIcons.MoreHoriz,
                         contentDescription = "更多",
                         onClick = { showMore = true },
                     )

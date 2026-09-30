@@ -119,6 +119,7 @@ import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 选手详情页（评分第 4 层，盖入式三级页）。
@@ -230,7 +231,7 @@ fun PlayerDetailOverlay(
     }
     val openUser: (String) -> Unit = { pu ->
         if (pu.isNotEmpty()) {
-            if (HupuAccount.isLoggedIn) userPageStack.add(pu) else userToast = "请先在「我的」页登录"
+            if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
         }
     }
     // 1.164: 从楼中楼 sheet 里进主页 → 同时收起楼中楼面板（对齐帖子详情 1.131 的做法），
@@ -240,7 +241,7 @@ fun PlayerDetailOverlay(
             if (HupuAccount.isLoggedIn) {
                 onCloseSubSheet()
                 userPageStack.add(pu)
-            } else userToast = "请先在「我的」页登录"
+            } else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
         }
     }
     val progress = remember { Animatable(0f) }
@@ -348,10 +349,12 @@ fun PlayerDetailOverlay(
                         // 浏览流评论关键词过滤：命中的评论不显示（composable 作用域计算）
                         val ckw = remember(HupuPrefs.filterVersion) { HupuPrefs.loadFilterKeywords() }
                         // 1.221：本地黑名单——被拉黑者的评论连同其整棵子回复一起不显示
+                        // 1.223：关键词过滤改为**递归**（内嵌孙评论一并生效，与黑名单一致）
                         val filteredComments = remember(comments, ckw, HupuPrefs.blacklistVersion) {
-                            val base = if (ckw.comment.isEmpty()) comments
-                            else comments.filterNot { c -> HupuFilter.blockedComment(c.content, ckw) }
-                            HupuBlacklist.pruneScoreComments(base, HupuPrefs.loadBlacklist())
+                            HupuBlacklist.pruneScoreComments(
+                                HupuFilter.pruneScoreCommentTree(comments, ckw),
+                                HupuPrefs.loadBlacklist(),
+                            )
                         }
                         LazyColumn(
                             state = listState,

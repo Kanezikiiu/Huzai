@@ -31,11 +31,14 @@ import androidx.compose.material.icons.rounded.Search
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.java.myapplication.ui.glass.LiquidGlassDialog
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import com.java.myapplication.ui.components.huzaiFieldColors
+import com.java.myapplication.ui.components.META_LIGHT_GOLD
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,6 +51,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.java.myapplication.ui.components.HupuIcons
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -69,6 +74,8 @@ import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.glass.liquidElevation
 
 /**
  * 浏览记录页（盖入式二级页）：查看/查找/清空最近浏览的帖子。
@@ -242,7 +249,7 @@ fun HistoryPage(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LiquidBackButton(onClick = { closing = true })
@@ -260,21 +267,27 @@ fun HistoryPage(onClose: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(4.dp))
-                IconButton(onClick = {
-                    clearDialogCount = HupuPrefs.loadHistory().size
-                    showClearDialog = true
-                }) {
-                    Icon(Icons.Rounded.Delete, contentDescription = "清空记录", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                LiquidIconButton(
+                    icon = Icons.Rounded.Delete,
+                    contentDescription = "清空记录",
+                    onClick = {
+                        clearDialogCount = HupuPrefs.loadHistory().size
+                        showClearDialog = true
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             OutlinedTextField(
-                colors = huzaiFieldColors(),
+                colors = huzaiFieldColors(container = false),
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                 placeholder = { Text("搜索标题或版块", fontSize = 14.sp) },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 trailingIcon = {
@@ -413,6 +426,31 @@ fun HistoryPage(onClose: () -> Unit) {
     }
 }
 
+/** 1.223：历史行的「小图标 + 计数」（与信息流 MetaRow 同款细描边图标；可指定 tint）。 */
+@Composable
+private fun HistoryMeta(
+    icon: ImageVector,
+    text: String,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 /** 历史条目行：标题 + 话题/时间/数据（点击进详情） */
 @Composable
 private fun HistoryRow(e: HupuHistoryEntry, onOpen: () -> Unit) {
@@ -435,21 +473,9 @@ private fun HistoryRow(e: HupuHistoryEntry, onOpen: () -> Unit) {
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 复刻主页条目 MetaRow 形式：亮/评最前，依次版块名、时间（12sp 流式左对齐）
-            Text(
-                "💡${formatCount(e.lights)}",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            HistoryMeta(HupuIcons.MetaLightFilled, formatCount(e.lights), META_LIGHT_GOLD)
             Spacer(Modifier.width(12.dp))
-            Text(
-                "💬${formatCount(e.replies)}",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            HistoryMeta(HupuIcons.MetaComment, formatCount(e.replies))
             if (e.topicName.isNotBlank()) {
                 Spacer(Modifier.width(12.dp))
                 Text(

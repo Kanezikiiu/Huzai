@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.java.myapplication.ui.glass.buttonBorder
 import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.liquidElevation
 import com.java.myapplication.ui.glass.liquidPressTransform
 import com.java.myapplication.ui.glass.rememberLiquidHighlight
 import com.java.myapplication.ui.theme.isAppDarkTheme
@@ -143,6 +144,8 @@ internal fun GlassCloseButton(
             .size(30.dp)
             // 与「返回按钮」/「关注」完全同源的液体按压形变
             .liquidPressTransform(highlight)
+            // 1.223j: 补落影——与返回按钮同源同参数（此前只有玻璃底、没有浮起感）
+            .liquidElevation(CircleShape, dark)
             .clip(CircleShape)
             .background(buttonFill(dark))
             .border(0.6.dp, buttonBorder(dark), CircleShape)

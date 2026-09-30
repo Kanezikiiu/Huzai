@@ -59,7 +59,6 @@ import com.java.myapplication.data.HupuTopicInfo
 import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.*
 import androidx.compose.foundation.layout.PaddingValues
-import com.java.myapplication.ui.components.clipHorizontally
 
 /** 首页：全站热帖（默认）+ 热门话题流（单选切换、排序、无限滚动） */
 @Composable
@@ -397,19 +396,15 @@ private fun FeedContent(
             ),
     ) {
         PageHeader(title = "虎扑") {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable { searchOpen = true },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Search,
-                    contentDescription = "搜索",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            // 1.223：搜索键升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+            // 与标题的竖直对齐由 PageHeader 统一处理（标题与右侧内容同一竖直中心）。
+            // 1.223b：图标放大到 24dp——20dp 时放大镜的「镜圈」偏小，看着像羽毛球拍。
+            LiquidIconButton(
+                icon = Icons.Rounded.Search,
+                contentDescription = "搜索",
+                onClick = { searchOpen = true },
+                iconSize = 24.dp,
+            )
         }
         // 话题横滑条：固定在标题栏下方，单选切换内容流（再点已选返回热帖）
         TopicBar(effectiveTopics, selected, showHot) {
@@ -586,9 +581,7 @@ private fun TopicBar(
             .fillMaxWidth()
             // 可视窗口与下方条目对齐（左右 16dp），越线滚动内容被裁剪覆盖
             // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-            .padding(horizontal = 8.dp)
-            .clipHorizontally()
-            .padding(horizontal = 8.dp)
+            .chipBarClip()
             .padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

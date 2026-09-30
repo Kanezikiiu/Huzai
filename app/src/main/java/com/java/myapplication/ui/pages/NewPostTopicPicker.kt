@@ -52,6 +52,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import com.java.myapplication.ui.components.huzaiFieldColors
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -223,12 +225,14 @@ internal fun TagPickerSheet(
                 )
             }
             OutlinedTextField(
-                colors = huzaiFieldColors(),
+                colors = huzaiFieldColors(container = false),
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                 placeholder = { Text("搜索话题", fontSize = 14.sp) },
                 leadingIcon = {
                     Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -418,12 +422,14 @@ internal fun PostTopicSheet(
             } else {
                 // 搜索框
                 OutlinedTextField(
-                    colors = huzaiFieldColors(),
+                    colors = huzaiFieldColors(container = false),
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                     placeholder = { Text("搜索专区（至少 2 个字）", fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

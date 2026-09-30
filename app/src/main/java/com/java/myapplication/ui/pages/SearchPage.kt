@@ -33,6 +33,7 @@ import com.java.myapplication.ui.components.animateChipCenterTo
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -72,8 +73,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -97,7 +100,9 @@ import com.java.myapplication.ui.components.thumbnailUrl
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.LiquidBackButton
-import com.java.myapplication.ui.components.clipHorizontally
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.components.chipBarClip
 
 /**
  * 搜索页（盖入式二级页，桌面版搜索通道）：
@@ -113,6 +118,8 @@ fun SearchPage(
 ) {
     val repo = remember { HupuRepository() }
     val scope = rememberCoroutineScope()
+    // 1.223g: 回车提交后收键盘用
+    val keyboard = LocalSoftwareKeyboardController.current
     // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
     // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
     // actionBackdrop 同一套做法。记录层若透明，卡片会显得「非常透明」
@@ -264,7 +271,7 @@ fun SearchPage(
             .tapGuard(),
     ) {
         Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
-            SearchHeader(query, query.isNotBlank(), { query = it }, { submit(query) }, { closing = true })
+            SearchHeader(query, query.isNotBlank(), { query = it }, { submit(query); keyboard?.hide() }, { closing = true })
 
             // 筛选条：专区按钮 + 排序条（已搜索才显示）
             val dark = isAppDarkTheme()
@@ -285,9 +292,7 @@ fun SearchPage(
                     modifier = Modifier
                         .fillMaxWidth()
                         // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                        .padding(horizontal = 8.dp)
-                        .clipHorizontally()
-                        .padding(horizontal = 8.dp)
+                        .chipBarClip()
                         .padding(top = 8.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -412,43 +417,74 @@ private fun SearchHeader(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LiquidBackButton(onClick = { onBack() })
         Spacer(Modifier.width(8.dp))
-        OutlinedTextField(
-            colors = huzaiFieldColors(),
-            value = query,
-            onValueChange = onChange,
-            modifier = Modifier
+        // 1.223b：去掉右侧「搜索」按钮（搜索改由键盘回车 / 输入法搜索键触发）。
+        // 输入框改用 BasicTextField —— 高度收成 44dp（M3 OutlinedTextField 固定 56dp 太厚），
+        // 并铺满剩余宽度；配色沿用全局「无边框 + 柔和填充」，形状仍为 22dp 胶囊。
+        Box(
+            Modifier
                 .weight(1f)
-                .padding(vertical = 2.dp),
-            placeholder = { Text("搜索虎扑帖子", fontSize = 14.sp) },
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-            trailingIcon = {
+                .height(44.dp)
+                // 1.223b: 搜索框补悬浮感——与返回键同源、同款落影（同 elevation / 同配色）
+                .liquidElevation(RoundedCornerShape(22.dp), isAppDarkTheme())
+                .clip(RoundedCornerShape(22.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) {
+                        Text("搜索虎扑帖子", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    BasicTextField(
+                        value = query,
+                        onValueChange = onChange,
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (hasText) {
-                    IconButton(onClick = { onChange("") }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "清空", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .clickable { onChange("") },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "清空",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
                     }
                 }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(22.dp),
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-        )
-        Text(
-            "搜索",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (hasText) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .clickable(enabled = hasText) { onSubmit() }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-        )
+            }
+        }
     }
 }
 
@@ -479,9 +515,14 @@ private fun HistoryPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("搜索历史", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = onClearAsk) {
-                    Icon(Icons.Rounded.Delete, contentDescription = "清空历史", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
+                // 1.223：升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                LiquidIconButton(
+                    icon = Icons.Rounded.Delete,
+                    contentDescription = "清空历史",
+                    onClick = onClearAsk,
+                    iconSize = 18.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Spacer(Modifier.height(4.dp))
             // 1.192i: 搜索历史改**多行自适应换行**（这一页除搜索框外就是它，空间足够）；
@@ -700,12 +741,14 @@ private fun ForumPickerSheet(
             }
             // 搜索框
             OutlinedTextField(
-                colors = huzaiFieldColors(),
+                colors = huzaiFieldColors(container = false),
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                 placeholder = { Text("搜索版块", fontSize = 14.sp) },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 trailingIcon = {
@@ -725,9 +768,7 @@ private fun ForumPickerSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                    .padding(horizontal = 8.dp)
-                    .clipHorizontally()
-                    .padding(horizontal = 8.dp)
+                    .chipBarClip()
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

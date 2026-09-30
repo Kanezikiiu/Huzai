@@ -55,6 +55,8 @@ import com.java.myapplication.data.HupuMsgBadge
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.PageHeader
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.components.HuzaiToast
 
 /** 我的：设置入口（主页频道自定义等）+ 关于 */
 @Composable
@@ -121,27 +123,33 @@ fun ProfilePage(modifier: Modifier = Modifier) {
             PageHeader(title = "我的", trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 1.107: 发帖（未登录时提示，不打开编辑页）
-                    IconButton(onClick = {
-                        if (HupuAccount.profile == null) postToast = "请先在「我的」页登录"
-                        else if (!profilePageOpen()) postEpoch++
-                    }) {
-                        Icon(HupuIcons.Edit, contentDescription = "发帖", tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                    IconButton(onClick = { if (!profilePageOpen()) msgEpoch++ }) {
-                        androidx.compose.material3.BadgedBox(
-                            badge = {
-                                if (HupuMsgBadge.total > 0) {
-                                    androidx.compose.material3.Badge {
-                                        Text(
-                                            if (HupuMsgBadge.total > 99) "99+" else HupuMsgBadge.total.toString(),
-                                            fontSize = 9.sp,
-                                        )
-                                    }
+                    // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                    LiquidIconButton(
+                        icon = HupuIcons.Edit,
+                        contentDescription = "发帖",
+                        onClick = {
+                            if (HupuAccount.profile == null) com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
+                            else if (!profilePageOpen()) postEpoch++
+                        },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    androidx.compose.material3.BadgedBox(
+                        badge = {
+                            if (HupuMsgBadge.total > 0) {
+                                androidx.compose.material3.Badge {
+                                    Text(
+                                        if (HupuMsgBadge.total > 99) "99+" else HupuMsgBadge.total.toString(),
+                                        fontSize = 9.sp,
+                                    )
                                 }
-                            },
-                        ) {
-                            Icon(HupuIcons.Bell, contentDescription = "消息", tint = MaterialTheme.colorScheme.onSurface)
-                        }
+                            }
+                        },
+                    ) {
+                        LiquidIconButton(
+                            icon = HupuIcons.Bell,
+                            contentDescription = "消息",
+                            onClick = { if (!profilePageOpen()) msgEpoch++ },
+                        )
                     }
                 }
             })
@@ -382,7 +390,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     onClose = { postEpoch = 0 },
                     onPosted = { _ ->
                         postEpoch = 0
-                        postToast = "发布成功"
+                        com.java.myapplication.ui.components.HuzaiToast.show("发布成功")
                     },
                 )
             }

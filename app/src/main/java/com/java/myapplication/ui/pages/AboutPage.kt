@@ -76,6 +76,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.components.HuzaiToast
 
 /** 1.175 开源仓库地址（关于页「开发人员」与「开源仓库」快捷入口跳转目标）。 */
 private const val HUPU_REPO = "https://github.com/Kanezikiiu/Huzai"
@@ -161,12 +163,12 @@ fun AboutPage(onClose: () -> Unit) {
             val ok = runCatching {
                 context.contentResolver.openOutputStream(uri)?.use { it.write(log.toByteArray()) }
             }.isSuccess
-            toast = if (ok) "日志已保存" else "保存失败"
+            com.java.myapplication.ui.components.HuzaiToast.show(if (ok) "日志已保存" else "保存失败")
         }
     }
     fun saveLog() {
         if (readCrashLog(context).isBlank()) {
-            toast = "暂无日志可保存"
+            com.java.myapplication.ui.components.HuzaiToast.show("暂无日志可保存")
             return
         }
         val name = "huzai_log_" +
@@ -179,7 +181,7 @@ fun AboutPage(onClose: () -> Unit) {
                 Intent(Intent.ACTION_VIEW, Uri.parse(url))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
-        }.onFailure { toast = "无法打开链接" }
+        }.onFailure { com.java.myapplication.ui.components.HuzaiToast.show("无法打开链接") }
     }
 
     // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
@@ -312,9 +314,9 @@ fun AboutPage(onClose: () -> Unit) {
                                 when (r) {
                                     is HupuUpdateResult.Available -> updateInfo = r.info
                                     HupuUpdateResult.Latest ->
-                                        toast = "当前已是最新版本 v" + BuildConfig.VERSION_NAME
+                                        com.java.myapplication.ui.components.HuzaiToast.show("当前已是最新版本 v" + BuildConfig.VERSION_NAME)
                                     HupuUpdateResult.Failed ->
-                                        toast = "检查更新失败，请稍后重试"
+                                        com.java.myapplication.ui.components.HuzaiToast.show("检查更新失败，请稍后重试")
                                 }
                                 updateChecking = false
                             }
@@ -468,33 +470,15 @@ private fun CircleIconButton(
     busy: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Box(
-        Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(
-                if (busy) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (busy) {
-            // 1.182: 忙碌反馈——按钮内即时显示转圈（同时圆底染主题色），用户一看就知道已经点上了
-            CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Icon(
-                icon,
-                contentDescription = desc,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
+    // 1.223: 升级为液态玻璃按钮；
+    // 1.223c: 忙碌时**不再把圆底染成主题色**——只把图标换成转圈，底色/落影/尺寸完全不变。
+    LiquidIconButton(
+        icon = icon,
+        contentDescription = desc,
+        onClick = onClick,
+        iconSize = 22.dp,
+        busy = busy,
+    )
 }
 
 @Composable

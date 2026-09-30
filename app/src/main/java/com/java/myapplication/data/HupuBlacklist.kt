@@ -74,7 +74,9 @@ object HupuBlacklist {
         if (blockedScoreComment(c, entries)) return null
         if (c.subComments.isEmpty()) return c
         val kept = c.subComments.mapNotNull { pruneScoreNode(it, entries) }
-        return if (kept.size == c.subComments.size) c else c.copy(subComments = kept)
+        // 注意：按「内容是否变化」判断，不能只比 size——子节点存活但其后代被删时 size 不变，
+        // 只比 size 会把后代的剪枝结果丢掉（深层被拉黑者漏过滤）。
+        return if (kept == c.subComments) c else c.copy(subComments = kept)
     }
 
     /**

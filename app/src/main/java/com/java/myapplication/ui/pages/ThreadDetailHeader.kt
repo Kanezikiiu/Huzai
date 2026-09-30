@@ -43,7 +43,13 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.pressScale
+import com.java.myapplication.ui.components.rememberInstantPressScale
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.java.myapplication.ui.components.StickerAddCell
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Share
@@ -166,6 +172,7 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.HupuAuthor
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.glass.liquidElevation
 import com.java.myapplication.ui.components.LiquidBackButton
 
 /** 顶栏：返回＋居中专区名＋（本人帖的编辑 / 删除入口） */
@@ -196,51 +203,54 @@ internal fun ThreadHeader(
             modifier = Modifier
                 .align(Alignment.Center)
                 .padding(horizontal = when {
-                    // 1.190: 分享按钮移除后，右侧图标整体右移一格 → 标题的对称留白同步收窄
-                    // （右侧最内图标左缘 + 16dp 呼吸位；else 保持与左侧返回按钮对称的 48dp）
-                    onDelete != null -> 104.dp
-                    onEdit != null -> 64.dp
+                    // 1.223: 右侧「编辑 / 删除」已合并为一个胶囊（约 80dp 宽）→ 标题右侧留白统一
+                    // （胶囊左缘 + 16dp 呼吸位；无动作时保持与左侧返回按钮对称的 48dp）
+                    onEdit != null || onDelete != null -> 100.dp
                     else -> 48.dp
                 }),
         )
-        // 1.119: 删除入口（仅本人帖）：紧挨编辑左侧
-        // 1.190: 分享按钮移除后右侧整体右移一格——编辑占最右（距右缘 8dp，与左侧返回对称），
-        // 删除在其左（48dp），不再为已删除的分享留位
-        if (onDelete != null) {
-            Box(
+        // 1.223: 「编辑 / 删除」合并为一个玻璃胶囊（两个裸图标按钮，参考设计稿形态）
+        if (onEdit != null || onDelete != null) {
+            val dark = isAppDarkTheme()
+            Row(
                 Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 48.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable { onDelete() },
-                contentAlignment = Alignment.Center,
+                    // 1.223d: 去掉右侧 8dp 内缩——顶栏内容本身已带 16dp 横向留白，
+                    // 再缩 8dp 就会比下方正文多缩 8dp（真机反馈「未和下方右对齐」）。
+                    // 1.223j: 补落影——与返回按钮同源同参数（此前只有玻璃底、没有浮起感）。
+                    .liquidElevation(RoundedCornerShape(22.dp), dark)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(buttonFill(dark))
+                    .border(0.6.dp, buttonBorder(dark), RoundedCornerShape(22.dp))
+                    .padding(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Rounded.Delete,
-                    contentDescription = "删除帖子",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
+                if (onDelete != null) ThreadTopAction(Icons.Rounded.Delete, "删除帖子", onDelete)
+                if (onEdit != null) ThreadTopAction(HupuIcons.Edit, "编辑帖子", onEdit)
             }
         }
-        // 编辑入口（仅本人帖）：顶部右侧最外一格
-        if (onEdit != null) {
-            Box(
-                Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 8.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable { onEdit() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    HupuIcons.Edit,
-                    contentDescription = "编辑帖子",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
+    }
+}
+
+/** 1.223：顶栏小动作按钮（裸图标 + 全站统一按压缩放；本身不画圆底，由外层胶囊承载）。 */
+@Composable
+private fun ThreadTopAction(icon: ImageVector, desc: String, onClick: () -> Unit) {
+    val (trigger, scale) = rememberInstantPressScale()
+    Box(
+        Modifier
+            .size(38.dp)
+            .then(trigger)
+            .pressScale(scale)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(interactionSource = null, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = desc,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

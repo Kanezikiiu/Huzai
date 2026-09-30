@@ -83,7 +83,9 @@ import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import com.java.myapplication.ui.components.LiquidBackButton
-import com.java.myapplication.ui.components.clipHorizontally
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.components.chipBarClip
 
 /**
  * 主页频道自定义页（盖入式二级页）：
@@ -258,7 +260,7 @@ fun TopicPickerPage(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LiquidBackButton(onClick = { closing = true })
@@ -277,9 +279,13 @@ fun TopicPickerPage(onClose: () -> Unit) {
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(4.dp))
-                IconButton(onClick = { resetAsk = true }) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "重置频道", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                LiquidIconButton(
+                    icon = Icons.Rounded.Refresh,
+                    contentDescription = "重置频道",
+                    onClick = { resetAsk = true },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -318,12 +324,14 @@ fun TopicPickerPage(onClose: () -> Unit) {
 
                     // 搜索
                     OutlinedTextField(
-                        colors = huzaiFieldColors(),
+                        colors = huzaiFieldColors(container = false),
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                         placeholder = { Text("搜索版块", fontSize = 14.sp) },
                         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                         trailingIcon = {
@@ -351,9 +359,7 @@ fun TopicPickerPage(onClose: () -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                            .padding(horizontal = 8.dp)
-                            .clipHorizontally()
-                            .padding(horizontal = 8.dp)
+                            .chipBarClip()
                             .padding(bottom = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
@@ -493,9 +499,7 @@ private fun SelectedBar(
         modifier = Modifier
             .fillMaxWidth()
             // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-            .padding(horizontal = 8.dp)
-            .clipHorizontally()
-            .padding(horizontal = 8.dp)
+            .chipBarClip()
             .padding(vertical = 8.dp)
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(

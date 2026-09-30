@@ -189,6 +189,7 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.HupuAuthor
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 帖子详情页（盖入式二级页）。
@@ -442,7 +443,7 @@ fun ThreadDetailOverlay(
 
     fun onLight(reply: HupuReply, tid: String, fid: String) {
         if (!HupuAccount.isLoggedIn) {
-            replyToast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         val cur = replyLightState[reply.pid] ?: false
@@ -456,7 +457,7 @@ fun ThreadDetailOverlay(
             else HupuAccount.cancelLightReply(tid, reply.pid, puid, fid, state)
             if (err != null) {
                 replyLightState[reply.pid] = cur
-                replyToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             } else if (state.isNotEmpty()) {
                 replyLightState[reply.pid] = state.first() == "lit"
             }
@@ -465,7 +466,7 @@ fun ThreadDetailOverlay(
     // 楼中楼点亮（1.57）：目标可以是层内子回复或 sheet 母楼——puid 取目标作者 uid
     fun onLightSub(targetPid: String, targetPuid: String, tid: String, fid: String) {
         if (!HupuAccount.isLoggedIn) {
-            replyToast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         val cur = replyLightState[targetPid] ?: false
@@ -476,7 +477,7 @@ fun ThreadDetailOverlay(
             else HupuAccount.cancelLightReply(tid, targetPid, targetPuid, fid, state)
             if (err != null) {
                 replyLightState[targetPid] = cur
-                replyToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             } else if (state.isNotEmpty()) {
                 replyLightState[targetPid] = state.first() == "lit"
             }
@@ -485,7 +486,7 @@ fun ThreadDetailOverlay(
 
     fun onRecommend(tid: String, fid: String, on: Boolean) {
         if (!HupuAccount.isLoggedIn) {
-            replyToast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         mainRecommended = on
@@ -495,7 +496,7 @@ fun ThreadDetailOverlay(
             if (err != null) {
                 mainRecommended = !on
                 recommendDelta = 0
-                replyToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             }
         }
     }
@@ -506,7 +507,7 @@ fun ThreadDetailOverlay(
      */
     fun doCollect(tid: String, on: Boolean) {
         if (!HupuAccount.isLoggedIn) {
-            replyToast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         val prev = collected
@@ -517,9 +518,9 @@ fun ThreadDetailOverlay(
             collectChecking = false
             if (err != null) {
                 collected = prev  // 失败回滚
-                replyToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             } else {
-                replyToast = if (on) "已收藏" else "已取消收藏"
+                com.java.myapplication.ui.components.HuzaiToast.show(if (on) "已收藏" else "已取消收藏")
             }
         }
     }
@@ -593,7 +594,7 @@ fun ThreadDetailOverlay(
         val text = replyText.trim()
         if (text.isEmpty() && replyImages.isEmpty()) return
         if (!HupuAccount.isLoggedIn) {
-            replyToast = "请先在「我的」页登录"
+            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
             return
         }
         replySending = true
@@ -635,18 +636,18 @@ fun ThreadDetailOverlay(
                 imageUploading = false
                 if (uploadErrs.any { it.contains("登录已过期") }) {
                     replySending = false
-                    replyToast = "登录已过期，请在「我的」页重新登录"
+                    com.java.myapplication.ui.components.HuzaiToast.show("登录已过期，请在「我的」页重新登录")
                     return@launch
                 }
                 if (urls.isEmpty()) {
                     // 1.75: 失败原因直接可见（步骤+HTTP码），不再笼统提示
                     replySending = false
                     val reason = uploadErrs.firstOrNull() ?: "未知错误"
-                    replyToast = if (text.isEmpty()) "图片上传失败：$reason" else "图片上传失败($reason)，本次仅发送文字"
+                    com.java.myapplication.ui.components.HuzaiToast.show(if (text.isEmpty()) "图片上传失败：$reason" else "图片上传失败($reason)，本次仅发送文字")
                     return@launch
                 }
                 if (urls.size < replyImages.size) {
-                    replyToast = "部分图片上传失败(${uploadErrs.firstOrNull() ?: ""})，已发送${urls.size}张"
+                    com.java.myapplication.ui.components.HuzaiToast.show("部分图片上传失败(${uploadErrs.firstOrNull() ?: ")"} ，已发送${urls.size}张")
                 }
             }
             val pidOut = ArrayList<String>(1)
@@ -738,9 +739,9 @@ fun ThreadDetailOverlay(
                 replyBoxOpen = false
                 replyQuotePid = ""
                 replyQuoteName = ""
-                replyToast = "回复成功"
+                com.java.myapplication.ui.components.HuzaiToast.show("回复成功")
             } else {
-                replyToast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
             }
         }
     }
@@ -987,7 +988,7 @@ fun ThreadDetailOverlay(
                                         isFullscreen = videoFullscreen,
                                         onToggleFullscreen = { videoFullscreen = it },
                                         onImageClick = openImage,
-                                        onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else replyToast = "请先在「我的」页登录" } },
+                                        onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录") } },
                                         onToast = { replyToast = it },
                                         onOpenEmbed = { embedPage = it },
                                     )
@@ -1056,10 +1057,10 @@ item(key = "r-count") {
                                         onImageClick = openImage,
                                         onLight = { onLight(r, d.thread.tid, d.thread.fid) },
                                         isLit = replyLightState[r.pid] == true,
-                                        onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else replyToast = "\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55" } },
+                                        onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55") } },
                                         onQuoteReply = {
                                             if (!HupuAccount.isLoggedIn) {
-                                                replyToast = "\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55"
+                                                com.java.myapplication.ui.components.HuzaiToast.show("\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55")
                                             } else {
                                                 replyQuotePid = r.pid
                                                 replyQuoteName = r.author?.name ?: ""
@@ -1167,12 +1168,12 @@ item(key = "r-count") {
                             closingPids = emptySet()
                             floorStack = emptyList()
                             userPageStack.add(pu)
-                        } else replyToast = "\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55"
+                        } else com.java.myapplication.ui.components.HuzaiToast.show("\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55")
                     }
                 },
                 onQuoteReply = { pid, name ->
                     if (!HupuAccount.isLoggedIn) {
-                        replyToast = "\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55"
+                        com.java.myapplication.ui.components.HuzaiToast.show("\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55")
                     } else {
                         replyQuotePid = pid
                         replyQuoteName = name
@@ -1249,7 +1250,7 @@ item(key = "r-count") {
                     isCollected = collected,
                     onWrite = {
                         if (!HupuAccount.isLoggedIn) {
-                            replyToast = "请先在「我的」页登录"
+                            com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
                         } else {
                             replyQuotePid = ""
                             replyQuoteName = ""
@@ -1559,11 +1560,11 @@ item(key = "r-count") {
                     scope.launch {
                         val err = HupuPostApi.deleteThread(tid)
                         if (err == null) {
-                            replyToast = "已删除"
+                            com.java.myapplication.ui.components.HuzaiToast.show("已删除")
                             delay(500)
                             onBack()
                         } else {
-                            replyToast = err
+                            com.java.myapplication.ui.components.HuzaiToast.show(err)
                         }
                     }
                 },
@@ -1613,7 +1614,7 @@ item(key = "r-count") {
                 onClose = { editingTid = null },
                 onPosted = {
                     editingTid = null
-                    replyToast = "已保存"
+                    com.java.myapplication.ui.components.HuzaiToast.show("已保存")
                     onRefresh()
                 },
             )

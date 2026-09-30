@@ -3,8 +3,23 @@ package com.java.myapplication.ui.components
 import androidx.compose.material.icons.materialIcon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
+
+/**
+ * 1.223：按 Lucide 风格内嵌「描边图标」——细线 + 圆头圆角（与填充式图标区分，
+ * 用于信息流 meta 行等小号点缀场景）。
+ */
+private fun ImageVector.Builder.strokePath(d: String, width: Float = 2f): ImageVector.Builder =
+    addPath(
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = width,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+        pathData = addPathNodes(d),
+    )
 
 /**
  * 按需 Material 圆角图标：直接嵌入 Google 官方 24px SVG path 数据（addPathNodes 解析）。
@@ -12,6 +27,28 @@ import androidx.compose.ui.graphics.vector.addPathNodes
  * 每个图标仅 ~0.5KB path 字符串，真正按需。
  */
 object HupuIcons {
+    /** 1.223 信息流 meta「点亮」：闪光（Lucide sparkles，ISC 许可） */
+    val MetaLight: ImageVector = materialIcon(name = "HupuIcons.MetaLight") {
+        strokePath("M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z")
+        strokePath("M20 2v4")
+        strokePath("M22 4h-4")
+    }
+
+    /** 1.223 信息流 meta「评论」：圆气泡（Lucide message-circle，ISC 许可） */
+    val MetaComment: ImageVector = materialIcon(name = "HupuIcons.MetaComment") {
+        strokePath("M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719")
+    }
+
+    /** 1.223：信息流「点亮」**金色实心**版——主星填充 + 两支小星光仍描边（真机反馈：试试金色填充） */
+    val MetaLightFilled: ImageVector = materialIcon(name = "HupuIcons.MetaLightFilled") {
+        addPath(
+            fill = SolidColor(Color.Black),
+            pathData = addPathNodes("M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"),
+        )
+        strokePath("M20 2v4")
+        strokePath("M22 4h-4")
+    }
+
     val History: ImageVector = materialIcon(name = "HupuIcons.History") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M13.26 3C8.17 2.86 4 6.95 4 12H2.21c-.45 0-.67.54-.35.85l2.79 2.8c.2.2.51.2.71 0l2.79-2.8c.31-.31.09-.85-.36-.85H6c0-3.9 3.18-7.05 7.1-7 3.72.05 6.85 3.18 6.9 6.9.05 3.91-3.1 7.1-7 7.1-1.61 0-3.1-.55-4.28-1.48-.4-.31-.96-.28-1.32.08-.42.42-.39 1.13.08 1.49C9 20.29 10.91 21 13 21c5.05 0 9.14-4.17 9-9.26-.13-4.69-4.05-8.61-8.74-8.74zm-.51 5c-.41 0-.75.34-.75.75v3.68c0 .35.19.68.49.86l3.12 1.85c.36.21.82.09 1.03-.26.21-.36.09-.82-.26-1.03l-2.88-1.71v-3.4c0-.4-.34-.74-.75-.74z"))
     }
@@ -127,6 +164,10 @@ object HupuIcons {
     /** 1.193 顶栏「更多」（Material more_vert 24px）——用于用户主页三点占位按钮 */
     val MoreVert: ImageVector = materialIcon(name = "HupuIcons.MoreVert") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,8c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM12,10c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2zM12,16c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z"))
+    }
+    /** 1.223 顶栏「更多」横向三点（Material more_horiz 24px）——真机反馈：纵向三点改横向 */
+    val MoreHoriz: ImageVector = materialIcon(name = "HupuIcons.MoreHoriz") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M6,10c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2zM18,10c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2zM12,10c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z"))
     }
     /** 1.206 关闭（Material close 24px）——用于半屏 sheet 顶部的毛玻璃圆形关闭按钮 */
     val Close: ImageVector = materialIcon(name = "HupuIcons.Close") {

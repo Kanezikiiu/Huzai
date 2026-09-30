@@ -234,6 +234,9 @@ internal fun formatCount(n: Int): String = when {
     else -> n.toString()
 }
 
+/** 1.223：信息流「点亮」的金色（真机反馈：金色填充） */
+internal val META_LIGHT_GOLD = Color(0xFFF5B301)
+
 /** 信息流条目：左文右图（无图时纯文字） */
 @Composable
 internal fun FeedItem(thread: HupuThread, showImage: Boolean, onOpen: (HupuThread) -> Unit = {}) {
@@ -286,9 +289,9 @@ internal fun FeedItem(thread: HupuThread, showImage: Boolean, onOpen: (HupuThrea
 @Composable
 private fun MetaRow(thread: HupuThread) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        MetaText("💡${formatCount(thread.lights)}")
+        MetaCount(HupuIcons.MetaLightFilled, formatCount(thread.lights), tint = META_LIGHT_GOLD)
         Spacer(Modifier.width(12.dp))
-        MetaText("💬${formatCount(thread.replies)}")
+        MetaCount(HupuIcons.MetaComment, formatCount(thread.replies))
         thread.topic?.name?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.width(12.dp))
             MetaText(it)
@@ -297,6 +300,25 @@ private fun MetaRow(thread: HupuThread) {
             Spacer(Modifier.width(12.dp))
             MetaText(thread.createdAtText)
         }
+    }
+}
+
+/** 1.223：meta 行的小图标 + 计数（细描边图标，与 12sp 灰字同色；可指定 tint） */
+@Composable
+private fun MetaCount(
+    icon: ImageVector,
+    text: String,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        MetaText(text)
     }
 }
 
@@ -619,6 +641,33 @@ internal fun Modifier.clipHorizontally(): Modifier = this.drawWithContent {
     }
 }
 
+// ---------- 1.223 横滑条「裁剪窗」几何（全站单一真源） ----------
+
+/** 横滑条内容相对屏幕左右边缘的留白（与页面其它内容左缘保持一致）。 */
+private val CHIP_BAR_EDGE = 16.dp
+
+/**
+ * 裁剪窗相对屏幕边缘的内缩量。**越小，留给 chip 浮起阴影的槽越宽**（槽宽 = EDGE − 本值）。
+ *
+ * 旧值 8dp：槽只有 8dp，而阴影半径 ≈ elevation(8dp) + 模糊 ≈ 10~12dp →
+ * 首个/末个 chip 的外侧阴影被裁出一条**竖直硬边**（真机反馈「阴影缺失」）。
+ * 取 2dp：槽宽 14dp，阴影完整；裁剪边界几乎贴着屏幕，视觉上与「全宽滚动」一致。
+ */
+private val CHIP_BAR_CLIP_INSET = 2.dp
+
+/**
+ * 横滑条统一裁剪窗（首页话题条 / 专区分类条 / 评分频道条 / 赛事二级分类条 /
+ * 频道自定义页 / 搜索页历史条 等共用）。
+ *
+ * 只裁水平方向（纵向放行，见 [clipHorizontally]），并且让「裁掉越界内容」的边界
+ * 停在 [CHIP_BAR_CLIP_INSET]（几乎贴屏），从而给 chip 的浮起阴影留出
+ * `EDGE − CLIP_INSET` 的完整空间——不再被裁出硬边，同时内容左缘仍与页面其它内容对齐。
+ */
+internal fun Modifier.chipBarClip(): Modifier = this
+    .padding(horizontal = CHIP_BAR_CLIP_INSET)
+    .clipHorizontally()
+    .padding(horizontal = CHIP_BAR_EDGE - CHIP_BAR_CLIP_INSET)
+
 @Composable
 internal fun Chip(
     text: String,
@@ -693,7 +742,15 @@ internal fun Chip(
     }
 }
 
-/** 页面顶部标题栏（各页共用）：状态栏避让 + 左标题 + 右侧 40dp 槽位（保证各页顶部高度一致） */
+/**
+ * 页面顶部标题栏（各页共用）：状态栏避让 + 左标题 + 右侧 40dp 槽位（保证各页顶部高度一致）。
+ *
+ * 1.223：标题与右侧内容统一按**竖直中心**对齐——「首页 / 专区 / 评分 / 我的」四页共用本组件，
+ * 「我的」页右侧两个图标同样跟随。整行内容再上移 [PAGE_HEADER_LIFT]，使标题与右侧按钮
+ * 的竖直中心一致并略高于栏位中线（真机反馈）；上下留白对调，栏位总高保持不变。
+ */
+private val PAGE_HEADER_LIFT = 5.dp
+
 @Composable
 internal fun PageHeader(
     title: String,
@@ -703,7 +760,12 @@ internal fun PageHeader(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 6.dp),
+            .padding(
+                start = 20.dp,
+                end = 16.dp,
+                top = 10.dp - PAGE_HEADER_LIFT,
+                bottom = 6.dp + PAGE_HEADER_LIFT,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

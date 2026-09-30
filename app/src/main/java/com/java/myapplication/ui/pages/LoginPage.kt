@@ -58,6 +58,7 @@ import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuAccount
 import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.HuzaiToast
 
 /**
  * 登录页（盖入式二级页）：WebView 加载虎扑官方登录页。
@@ -140,11 +141,11 @@ fun LoginPage(onClose: () -> Unit) {
             val err = HupuAccount.ingestFromWebView()
             checking = false
             if (err == null) {
-                toast = "登录成功"
+                com.java.myapplication.ui.components.HuzaiToast.show("登录成功")
                 toastTick++
                 closing = true
             } else {
-                toast = err
+                com.java.myapplication.ui.components.HuzaiToast.show(err)
                 toastTick++
             }
         }

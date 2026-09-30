@@ -15,10 +15,18 @@ import androidx.compose.ui.graphics.Color
  * 描边全透明，光标用主题色。形状由各调用点自己决定（搜索框走 22dp 胶囊，
  * 其余走 12~16dp 圆角），所以只覆盖颜色、不动 shape。
  */
+/**
+ * 1.223f：`container = false` 时**输入框不自绘容器**（容器色全透明）——
+ * 配合调用点自己在 Modifier 链上画底色 + 落影。
+ * （把 Modifier.shadow 直接挂在 OutlinedTextField 上会和它的自绘容器冲突，
+ *   浅色模式下文字行会出现浅色/白色块。）
+ */
 @Composable
-fun huzaiFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
-    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+fun huzaiFieldColors(container: Boolean = true): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = if (container) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    else Color.Transparent,
+    unfocusedContainerColor = if (container) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    else Color.Transparent,
     focusedBorderColor = Color.Transparent,
     unfocusedBorderColor = Color.Transparent,
     disabledBorderColor = Color.Transparent,

@@ -218,7 +218,7 @@ fun SubCommentSheet(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(0.80f)
+                .fillMaxHeight(0.86f)
                 .graphicsLayer { translationY = (1f - progress.value) * size.height }
                 .clip(sheetTopCornerShape())
                 .background(MaterialTheme.colorScheme.background)
@@ -267,10 +267,13 @@ fun SubCommentSheet(
                             // 1.221：本地黑名单——被拉黑者的子评论连同其全部后代「整棵」不显示
                             // （pruneScoreComments 递归剪枝，节点被删后其内嵌孙评论一并消失）
                             val blacklist = remember(HupuPrefs.blacklistVersion) { HupuPrefs.loadBlacklist() }
+                            // 1.223：关键词过滤改为**递归**——此前只过滤直接子评论，
+                            // 内嵌孙评论（subComments）不受影响，是与黑名单不一致的漏网
                             val filteredSubs = remember(d.comments, ckw, blacklist) {
-                                val base = if (ckw.comment.isEmpty()) d.comments
-                                else d.comments.filterNot { sub -> HupuFilter.blockedComment(sub.content, ckw) }
-                                HupuBlacklist.pruneScoreComments(base, blacklist)
+                                HupuBlacklist.pruneScoreComments(
+                                    HupuFilter.pruneScoreCommentTree(d.comments, ckw),
+                                    blacklist,
+                                )
                             }
                             // 子回复流 = 服务端数据 ⊕ 本机乐观层（key=母评论 id；按 commentId 去重，
                             // 服务端返回同一条后不会再重复显示）
@@ -425,7 +428,9 @@ fun SubCommentSheet(
                                     // （本人命中，或祖先链上有人命中 → 一并隐藏，避免出现孤儿回复）
                                     val rawGs = sheet.grandMap[sub.commentId]
                                     val gs = rawGs?.let { st ->
-                                        st.copy(comments = HupuBlacklist.pruneScoreFlat(st.comments, sub, blacklist))
+                                        // 1.223：展开的孙评论同样按关键词剪枝（与黑名单同语义）
+                                        val kwKept = HupuFilter.pruneScoreCommentFlat(st.comments, sub, ckw)
+                                        st.copy(comments = HupuBlacklist.pruneScoreFlat(kwKept, sub, blacklist))
                                     }
                                     SubCommentRow(
                                         sub,

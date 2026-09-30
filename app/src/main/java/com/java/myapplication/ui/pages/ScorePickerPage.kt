@@ -64,8 +64,10 @@ import com.java.myapplication.ui.components.FixedChannelRow
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.components.LiquidIconButton
 import androidx.compose.foundation.layout.PaddingValues
-import com.java.myapplication.ui.components.clipHorizontally
+import com.java.myapplication.ui.components.chipBarClip
+
 /**
  * 评分频道自定义页（盖入式二级页）：与主页频道自定义同构。
  * - 顶部已选条：长按拖拽排序 / 点按移除（保存顺序即横滑条顺序）
@@ -187,7 +189,7 @@ fun ScorePickerPage(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LiquidBackButton(onClick = { closing = true })
@@ -206,9 +208,13 @@ fun ScorePickerPage(onClose: () -> Unit) {
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(4.dp))
-                IconButton(onClick = { resetAsk = true }) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "重置频道", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                LiquidIconButton(
+                    icon = Icons.Rounded.Refresh,
+                    contentDescription = "重置频道",
+                    onClick = { resetAsk = true },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             // 1.192: 「虎扑评分」固定频道开关（不参与排序）
             FixedChannelRow(
@@ -344,9 +350,7 @@ private fun ScoreSelectedBar(
         modifier = Modifier
             .fillMaxWidth()
             // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-            .padding(horizontal = 8.dp)
-            .clipHorizontally()
-            .padding(horizontal = 8.dp)
+            .chipBarClip()
             .padding(vertical = 8.dp)
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(

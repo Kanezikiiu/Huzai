@@ -100,9 +100,10 @@ object HupuMsgBadge {
 
     /** 私信真实未读：getPmList 第一页各会话 unread 求和。失败返回 null（维持原值）。 */
     private suspend fun fetchPmUnreadSum(): Int? {
+        // 1.223k: pageSize 20 → 50：角标只取第一页时，超出 20 条会话的未读会被漏掉
         val body = JSONObject()
             .put("unreadList", 0)
-            .put("page", JSONObject().put("pageNum", 1).put("pageSize", 20))
+            .put("page", JSONObject().put("pageNum", 1).put("pageSize", 50))
         val json = HupuApi.postSpaceApiJson("pm/getPmList", body.toString()) ?: return null
         return try {
             val arr = JSONObject(json).optJSONObject("data")?.optJSONArray("dataList") ?: return null

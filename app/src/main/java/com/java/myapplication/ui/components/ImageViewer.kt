@@ -77,6 +77,21 @@ import java.util.Locale
  * @param urls 同一条消息内的全部图片地址（顺序与正文渲染一致）
  * @param initialIndex 首帧展示的图片下标
  */
+/**
+ * 1.223：去掉虎扑 CDN 的 `x-oss-process` 处理参数，拿到**原图**地址。
+ * 正文/回复里的图片常带 `?x-oss-process=image/resize,w_xxx`（网页端点击后才看原图），
+ * 这正是「App 里比网页糊」的原因；查看器里可一键切到原图。
+ */
+private fun originalImageUrl(url: String): String {
+    val q = url.indexOf('?')
+    if (q < 0) return url
+    val base = url.substring(0, q)
+    val kept = url.substring(q + 1)
+        .split('&')
+        .filter { it.isNotEmpty() && !it.startsWith("x-oss-process=") }
+    return if (kept.isEmpty()) base else base + "?" + kept.joinToString("&")
+}
+
 @Composable
 fun ImageViewer(
     urls: List<String>,
@@ -96,8 +111,10 @@ fun ImageViewer(
     var scale by remember { mutableStateOf(1f) }
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
+    // 1.223: 是否切到「原图」（去掉 CDN 压缩参数）；切页复位
+    var originalMode by remember { mutableStateOf(false) }
     LaunchedEffect(pagerState.currentPage) {
-        scale = 1f; offsetX = 0f; offsetY = 0f
+        scale = 1f; offsetX = 0f; offsetY = 0f; originalMode = false
     }
     // 下载状态：null=未开始；true=下载中；false=已完成；msg=失败提示
     var downloading by remember { mutableStateOf(false) }
@@ -162,7 +179,13 @@ fun ImageViewer(
                     },
             ) {
                 AsyncImage(
-                    model = pages[page],
+                    // 1.223: 「原图」开关——压缩图（带 x-oss-process）时可按需取原图
+                    // 1.223h: 关键——按**原始分辨率**解码。此前 Coil 默认按控件尺寸解码，
+                    // 放大后看到的只是被缩小的位图，所以长截图怎么都糊。
+                    model = coil.request.ImageRequest.Builder(context)
+                        .data(if (originalMode) originalImageUrl(pages[page]) else pages[page])
+                        .size(coil.size.Size.ORIGINAL)
+                        .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -186,6 +209,27 @@ fun ImageViewer(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 1.223: 当前图是 CDN 压缩图时，提供「原图」一键切换（长截图/大图看细节用）
+            if (currentUrl.contains("x-oss-process", ignoreCase = true)) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (originalMode) Color.White.copy(alpha = 0.32f)
+                            else Color.White.copy(alpha = 0.15f)
+                        )
+                        .clickable { originalMode = !originalMode }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (originalMode) "压缩图" else "原图",
+                        fontSize = 13.sp,
+                        color = Color.White,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+            }
             // 下载按钮
             Box(
                 Modifier

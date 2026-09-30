@@ -1,8 +1,8 @@
 {
-  "versionCode": 203,
-  "versionName": "1.193",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.193/huzai-1.193-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.193",
-  "changelog": "· 新增本地黑名单：拉黑后可屏蔽其帖子与全部回复/评论\n· 用户主页全新改版，并支持「分享该用户」\n· 「我的」页整理为四个分组，合并同类项\n· 全站 Tab 按压手感优化，按下即时反馈\n· 返回/私信/关注等按钮外观优化\n· 深色模式配色重做，改善「发白」观感\n· 修复其他若干问题，记不清了，就这样吧(¬▂¬)",
+  "versionCode": 204,
+  "versionName": "1.194",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.194/huzai-1.194-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.194",
+  "changelog": "· 全站提示消息统一：位置、时长一致，带 Q 弹动效\n· 若干按钮外观优化\n· 信息流点亮图标改为金色实心，评论换圆气泡\n· 大图按原图分辨率加载\n· 楼中楼面板加高，搜索框外观优化\n· 修复关键词过滤在评分评价页面的孙评论中不生效的问题\n· 修复私信消息提示不及时的问题",
   "forceUpdate": false
 }

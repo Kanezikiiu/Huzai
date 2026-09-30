@@ -77,13 +77,13 @@ internal fun rememberLiquidHighlight(): InteractiveHighlight {
 internal fun Modifier.liquidElevation(
     shape: Shape,
     dark: Boolean,
-    elevation: Dp = 6.dp,
+    elevation: Dp = 8.dp,
 ): Modifier = shadow(
     elevation = elevation,
     shape = shape,
     clip = false,
-    ambientColor = Color.Black.copy(alpha = if (dark) 0.55f else 0.12f),
-    spotColor = Color.Black.copy(alpha = if (dark) 0.55f else 0.16f),
+    ambientColor = Color.Black.copy(alpha = if (dark) 0.60f else 0.15f),
+    spotColor = Color.Black.copy(alpha = if (dark) 0.60f else 0.20f),
 )
 
 /**

@@ -224,7 +224,7 @@ internal fun FloorSheet(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(0.80f)
+                .fillMaxHeight(0.86f)
                 .graphicsLayer { translationY = (1f - progress.value) * size.height }
                 .clip(sheetTopCornerShape())
                 .background(MaterialTheme.colorScheme.background)

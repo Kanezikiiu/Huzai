@@ -250,4 +250,18 @@ class HupuBlacklistTest {
         assertTrue(decodeThreadAuthorsJson("not json").isEmpty())
         assertTrue(decodeThreadAuthorsJson("{}").isEmpty())
     }
+
+    // ---------- 1.223 回归：递归剪枝在「子节点存活、其后代被删」时也要生效 ----------
+
+    @Test
+    fun pruneScoreComments_深层后代命中也要剪掉() {
+        // A(干净) > B(干净) > C(命中)。B 存活，但 C 必须被删——
+        // 旧实现只比 size，会把 B 的修改丢掉，导致深层漏过滤。
+        val c = scoreComment("3", "bad")
+        val b = scoreComment("2", "ok", subs = listOf(c))
+        val a = scoreComment("1", "fine", subs = listOf(b))
+        val out = HupuBlacklist.pruneScoreComments(listOf(a), mapOf("bad" to "拉黑"))
+        val bKept = out.single().subComments.single()
+        assertTrue(bKept.subComments.isEmpty())
+    }
 }
