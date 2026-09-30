@@ -3,6 +3,6 @@
   "versionName": "1.194",
   "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.194/huzai-1.194-release.apk",
   "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.194",
-  "changelog": "· 全站提示消息统一：位置、时长一致，带 Q 弹动效\n· 若干按钮外观优化\n· 信息流点亮图标改为金色实心，评论换圆气泡\n· 大图按原图分辨率加载\n· 楼中楼面板加高，搜索框外观优化\n· 修复关键词过滤在评分评价页面的孙评论中不生效的问题\n· 修复私信消息提示不及时的问题",
+  "changelog": "· 全站提示消息统一：位置、时长一致，带 Q 弹动效\n· 若干按钮外观优化\n· 信息流点亮图标改为金色实心星星，评论换圆气泡\n· 大图按原图分辨率加载\n· 楼中楼面板加高，搜索框外观优化\n· 修复关键词过滤在评分评价页面的孙评论中不生效的问题\n· 修复私信消息提示不及时的问题",
   "forceUpdate": false
 }
