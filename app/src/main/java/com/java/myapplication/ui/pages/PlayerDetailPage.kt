@@ -238,12 +238,15 @@ fun PlayerDetailOverlay(
         }
     }
     val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { progress.animateTo(1f, tween(280)) }
     LaunchedEffect(closing) {
-        if (closing) {
+    if (closing) {
             onExitStart()
             progress.animateTo(0f, tween(280))
             onClosed()
+        } else {
+        // 1.223r: 退场途中再次打开（含同一帖子）→ 重播入场，避免「看不见」
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(280))
         }
     }
     // 系统返回手势：预测性返回（单一 handler——多个 handler 共存时后组合者永远优先）。
@@ -847,24 +850,7 @@ fun PlayerDetailOverlay(
             }
         }
         // 1.146 收藏表情包 toast（2s 自动消失，宿主管理）
-        stickerToast?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .zIndex(30f)
-                    .padding(bottom = 120.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
+        LaunchedEffect(stickerToast) { stickerToast?.let { com.java.myapplication.ui.components.HuzaiToast.show(it) } }
         // 1.163: 用户主页（评分评论作者入口；盖入式叠层，返回手势已在上方分流）
         userPageStack.forEachIndexed { si, subEuid ->
             androidx.compose.runtime.key(si) {

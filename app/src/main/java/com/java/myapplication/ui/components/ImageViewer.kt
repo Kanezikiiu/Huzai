@@ -92,6 +92,9 @@ private fun originalImageUrl(url: String): String {
     return if (kept.isEmpty()) base else base + "?" + kept.joinToString("&")
 }
 
+/** 1.223ab: 本次进程内已切过「原图」的图片 URL —— 全屏查看器跨页、跨次共用，保证状态一致。 */
+private val viewerOriginalUrls = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
 @Composable
 fun ImageViewer(
     urls: List<String>,
@@ -111,15 +114,16 @@ fun ImageViewer(
     var scale by remember { mutableStateOf(1f) }
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
-    // 1.223: 是否切到「原图」（去掉 CDN 压缩参数）；切页复位
-    var originalMode by remember { mutableStateOf(false) }
     LaunchedEffect(pagerState.currentPage) {
-        scale = 1f; offsetX = 0f; offsetY = 0f; originalMode = false
+        scale = 1f; offsetX = 0f; offsetY = 0f
     }
     // 下载状态：null=未开始；true=下载中；false=已完成；msg=失败提示
     var downloading by remember { mutableStateOf(false) }
     var downloadMsg by remember { mutableStateOf<String?>(null) }
     val currentUrl = pages.getOrElse(pagerState.currentPage) { pages[0] }
+    // 1.223ab: 「原图」按 **URL** 记录（进程级集合）——
+    // 同一张图看过原图后，翻页切回来 / 重开全屏仍是原图，且按钮不再出现（状态始终一致）。
+    var originalMode by remember(currentUrl) { mutableStateOf(currentUrl in viewerOriginalUrls) }
 
     // 系统返回手势：吞掉进度、直接盖出退出（无页面级跟手需求，保持简洁）
     PredictiveBackHandler { events ->
@@ -178,14 +182,18 @@ fun ImageViewer(
                         }
                     },
             ) {
-                AsyncImage(
-                    // 1.223: 「原图」开关——压缩图（带 x-oss-process）时可按需取原图
-                    // 1.223h: 关键——按**原始分辨率**解码。此前 Coil 默认按控件尺寸解码，
-                    // 放大后看到的只是被缩小的位图，所以长截图怎么都糊。
-                    model = coil.request.ImageRequest.Builder(context)
-                        .data(if (originalMode) originalImageUrl(pages[page]) else pages[page])
-                        .size(coil.size.Size.ORIGINAL)
-                        .build(),
+                RetryAsyncImage(
+                    // 1.223u: 默认按控件尺寸解码（省内存，降低低内存机型 OOM/卡死风险）；
+                    // 仅当点开「原图」时才切到**原始分辨率**（同时去掉 CDN 压缩参数）。
+                    // 1.223z: 改用自带**失败自动重试**的图片组件（全屏看图遇到瞬时抖动不再空白）
+                    model = if (originalMode) {
+                        coil.request.ImageRequest.Builder(context)
+                            .data(originalImageUrl(pages[page]))
+                            .size(coil.size.Size.ORIGINAL)
+                            .build()
+                    } else {
+                        pages[page]
+                    },
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -209,21 +217,23 @@ fun ImageViewer(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 1.223: 当前图是 CDN 压缩图时，提供「原图」一键切换（长截图/大图看细节用）
-            if (currentUrl.contains("x-oss-process", ignoreCase = true)) {
+            // 1.223aa: 「原图」做成**一次性动作**——点过即隐藏。
+            // （原本可来回切，但切回「压缩图」实际不生效，且用户没这个需求，索性不再显示。）
+            // 翻页看下一张时会重新出现。
+            if (!originalMode) {
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(
-                            if (originalMode) Color.White.copy(alpha = 0.32f)
-                            else Color.White.copy(alpha = 0.15f)
-                        )
-                        .clickable { originalMode = !originalMode }
+                        .background(Color.White.copy(alpha = 0.15f))
+                        .clickable {
+                            originalMode = true
+                            viewerOriginalUrls.add(currentUrl)
+                        }
                         .padding(horizontal = 14.dp, vertical = 7.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        if (originalMode) "压缩图" else "原图",
+                        "原图",
                         fontSize = 13.sp,
                         color = Color.White,
                     )
@@ -328,18 +338,7 @@ fun ImageViewer(
                 downloadMsg = null
             }
         }
-        downloadMsg?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 48.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color.Black.copy(alpha = 0.7f))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(msg, fontSize = 13.sp, color = Color.White)
-            }
-        }
+        LaunchedEffect(downloadMsg) { downloadMsg?.let { com.java.myapplication.ui.components.HuzaiToast.show(it) } }
     }
 }
 

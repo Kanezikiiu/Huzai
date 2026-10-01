@@ -89,14 +89,16 @@ fun MatchDetailOverlay(
 ) {
     // 盖入动画：进入 0→1；返回动画结束后由父级移除本组件
     val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        progress.animateTo(1f, tween(280))
-    }
+    // 1.223q: 入场动画按标题重播（实例复用时不重播会导致新对局「点了没反应」）
     LaunchedEffect(closing) {
-        if (closing) {
+    if (closing) {
             onExitStart()
             progress.animateTo(0f, tween(280))
             onClosed()
+        } else {
+        // 1.223r: 退场途中再次打开（含同一帖子）→ 重播入场，避免「看不见」
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(280))
         }
     }
     // 系统返回手势：预测性返回（单一 handler——多个 handler 共存时后组合者永远优先）。

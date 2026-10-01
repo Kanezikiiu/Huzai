@@ -223,12 +223,17 @@ fun ThreadDetailOverlay(
     onFloorLoadMore: (String, HupuFloorReplies) -> Unit = { _, _ -> },
 ) {
     val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { progress.animateTo(1f, tween(280)) }
+    // 1.223r: 入场/退场共用同一个 closing 键控 effect —— 退场途中再次打开（含**同一个帖子**）
+    // 时 closing 会翻回 false，这里重新播入场，避免「其实已打开、却看不见 = 点了没反应」。
     LaunchedEffect(closing) {
-        if (closing) {
+    if (closing) {
             onExitStart()
             progress.animateTo(0f, tween(280))
             onClosed()
+        } else {
+        // 1.223r: 退场途中再次打开（含同一帖子）→ 重播入场，避免「看不见」
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(280))
         }
     }
 
@@ -755,9 +760,13 @@ fun ThreadDetailOverlay(
     // 帖子详情页正在退出：楼中楼 sheet 栈同步折叠清空（防止退场中途残留孤儿层，
     // 其 onClosed 回调在组件销毁后仍操作已失效的栈导致崩溃）
     LaunchedEffect(closing) {
-        if (closing) {
+    if (closing) {
             floorStack = emptyList()
             closingPids = emptySet()
+        } else {
+        // 1.223r: 退场途中再次打开（含同一帖子）→ 重播入场，避免「看不见」
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(280))
         }
     }
 
@@ -989,7 +998,7 @@ fun ThreadDetailOverlay(
                                         onToggleFullscreen = { videoFullscreen = it },
                                         onImageClick = openImage,
                                         onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录") } },
-                                        onToast = { replyToast = it },
+                                        onToast = { com.java.myapplication.ui.components.HuzaiToast.show(it) },
                                         onOpenEmbed = { embedPage = it },
                                     )
                                 }
@@ -1528,26 +1537,7 @@ item(key = "r-count") {
             }
         }
         // 提示条（点亮/推荐/发评论/收藏表情反馈；点击立即消失）
-        (replyToast ?: HupuPrefs.stickerToast)?.let { msg ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .zIndex(9f)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-            ) {
-                Text(
-                    msg,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
-                        .clickable { replyToast = null; HupuPrefs.stickerToast = null }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
+        LaunchedEffect(replyToast, HupuPrefs.stickerToast) { (replyToast ?: HupuPrefs.stickerToast)?.let { com.java.myapplication.ui.components.HuzaiToast.show(it) } }
         // 1.119: 删除帖子确认弹窗（1.191: 换成 Liquid Glass 同款外观）
         if (showDeleteConfirm) {
             LiquidGlassDialog(

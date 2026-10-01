@@ -466,6 +466,16 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
         if (openedThread != null) return
         threadClosing = false
         SecondaryPage.enter()
+        // 1.223y: 补写浏览记录 —— 从三个消息页（提到我的/评论/亮了）进来的帖子此前不入历史（老问题）。
+        // 通知条目拿不到版块名 → topicName 传空，由 addHistory 的「沿用旧值」兜住。
+        com.java.myapplication.data.HupuPrefs.addHistory(
+            com.java.myapplication.data.HupuHistoryEntry(
+                tid = n.tid,
+                title = n.threadTitle.ifBlank { "帖子" },
+                topicName = "",
+                visitedAt = System.currentTimeMillis(),
+            )
+        )
         openedThread = HupuThread(tid = n.tid, title = n.threadTitle.ifBlank { "帖子" })
         threadLoading = !threadDetails.containsKey(n.tid)
     }

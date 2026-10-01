@@ -109,6 +109,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.combinedClickable
@@ -597,20 +598,27 @@ internal fun StickerPane(
     bottomPad: Dp,
 ) {
     if (stickers.isEmpty()) {
-        // 1.165: 空态也保留首位「+」——本地添加是「还没有收藏」时唯一的入口，不能藏起来
-        Column(
-            Modifier.fillMaxSize().padding(top = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // 1.224: 空态复用与非空态**同一套网格** —— 「+」保持 1/5 单元格大小，提示文案跨整行。
+        // 此前用 Column(fillMaxSize) + 无约束的「+」，而 StickerAddCell 内部是
+        // .fillMaxWidth().aspectRatio(1f)：正方形边长 = 整块面板宽度，远超面板高度，
+        // 于是唯一的加号被撑成「整块面板那么大」（手机/平板都会）。
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(5),
+            contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = bottomPad),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            StickerAddCell()
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "还没有表情\n点「+」添加本地图片，或长按评论区的表情收藏",
-                fontSize = 13.sp,
-                lineHeight = 20.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
+            item(key = "__add_sticker__") { StickerAddCell() }
+            item(key = "__empty_hint__", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    "还没有表情\n点「+」添加本地图片，或长按评论区的表情收藏",
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
         }
         return
     }

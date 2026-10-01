@@ -112,6 +112,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.combinedClickable
 import com.java.myapplication.ui.components.HUPU_EMOJI
 import coil.compose.AsyncImagePainter
+import com.java.myapplication.ui.components.retryModelOf
 import coil.request.ImageRequest
 import com.java.myapplication.data.HupuFilter
 import com.java.myapplication.data.HupuImage
@@ -348,13 +349,31 @@ internal fun CommentImage(
     loadingModifier: Modifier = Modifier.fillMaxSize(),
 ) {
     val rectRef = remember { RectRef() }
+    // 1.223z: 图片失败自动重试（最多 2 次，700 / 1400ms 退避）——正文与回复的内嵌图共用本组件，
+    // 与全屏查看器同一套机制（失败多为瞬时网络抖动，重试基本能挡住）。
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var attempt by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var pendingRetry by remember { androidx.compose.runtime.mutableStateOf(false) }
+    LaunchedEffect(pendingRetry) {
+        if (pendingRetry) {
+            kotlinx.coroutines.delay(700L * (attempt + 1))
+            attempt++
+            pendingRetry = false
+        }
+    }
+    val retryModel = retryModelOf(ctx, model, attempt)
     Box {
         SubcomposeAsyncImage(
-            model = model,
+            model = retryModel,
             contentDescription = null,
             contentScale = contentScale,
             loading = { ImageLoadingBox(loadingModifier) },
             error = { ImageErrorBox(loadingModifier) },
+            onError = { state ->
+                if (attempt < 2 && com.java.myapplication.ui.components.isRetryableImageError(state.result.throwable)) {
+                    pendingRetry = true
+                }
+            },
             modifier = imageModifier
                 .onGloballyPositioned { rectRef.value = it.boundsInRoot() }
                 .combinedClickable(

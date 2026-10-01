@@ -250,6 +250,19 @@ fun UserProfilePage(
     }
 
     fun openDetail(t: HupuThread) {
+        // 1.223y: 补写浏览记录 —— 此前只有首页/专区/浏览记录三个宿主会写，
+        // 从「用户主页」进来的帖子不会进历史（老问题，与本次改动无关）。
+        HupuPrefs.addHistory(
+            com.java.myapplication.data.HupuHistoryEntry(
+                tid = t.tid,
+                title = t.title,
+                topicName = t.topic?.name ?: "",
+                lights = t.lights,
+                replies = t.replies,
+                read = t.read,
+                visitedAt = System.currentTimeMillis(),
+            )
+        )
         threadClosing = false
         if (!upThreadEntered) { upThreadEntered = true; SecondaryPage.enter() }
         openedThread = t
@@ -479,7 +492,7 @@ fun UserProfilePage(
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LiquidBackButton(onClick = { closing = true })
@@ -619,12 +632,16 @@ fun UserProfilePage(
                                     is ListItem.Th -> ProfileThreadRow(li.t) {
                                         openDetail(
                                             HupuThread(
-                                                tid = li.t.tid,
-                                                title = li.t.title,
-                                                lights = li.t.recommendNum,
-                                                replies = li.t.replies,
-                                                cover = li.t.cover,
-                                            ),
+                                            tid = li.t.tid,
+                                            title = li.t.title,
+                                            lights = li.t.recommendNum,
+                                            replies = li.t.replies,
+                                            cover = li.t.cover,
+                                            // 1.223w: 带上版块名——否则从用户主页进帖子时 addHistory 会把
+                                            // topicName 写成空，浏览记录里就看不到专区
+                                            topic = li.t.forumName.takeIf { it.isNotBlank() }
+                                                ?.let { n -> com.java.myapplication.data.HupuTopic(name = n) },
+                                        ),
                                         )
                                     }
                                     is ListItem.Rp -> ProfileReplyRow(li.r) {
@@ -686,6 +703,9 @@ fun UserProfilePage(
                                             lights = t.recommendNum,
                                             replies = t.replies,
                                             cover = t.cover,
+                                            // 1.223w: 同理带上版块名（见上）
+                                            topic = t.forumName.takeIf { it.isNotBlank() }
+                                                ?.let { n -> com.java.myapplication.data.HupuTopic(name = n) },
                                         ),
                                     )
                                 }

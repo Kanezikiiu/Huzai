@@ -1,6 +1,7 @@
 package com.java.myapplication.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 
 /**
@@ -39,13 +40,65 @@ class HupuRepository {
         return withContext(Dispatchers.Default) { HupuParser.parseTopicPage(html) }
     }
 
+    /**
+     * 1.223t: 同一 tid 的**在途请求去重**（进程级共享，跨页面实例有效）。
+     * 场景：点开 A（请求在途）→ 没加载完就退出 → 立刻再点 A：`openedThread` 从 null 变回 A
+     * 会让加载 effect 重启，同一个 /A.html 就被发了两次——弱网/限流下雪上加霜。
+     * 复用同一在途请求：少一次网络往返、少一次全局节流排队，也无旧请求覆盖新状态的竞态。
+     */
+    private companion object {
+        val threadScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
+        )
+        val inflightThreads =
+            java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Deferred<HupuThreadDetail?>>()
+    }
+
     /** 帖子详情（第 1 页回复） */
     suspend fun threadDetail(tid: String, refresh: Boolean = false): HupuThreadDetail? {
-        val html = HupuApi.fetchHtml("/$tid.html", forceNetwork = refresh)
+        // 1.223t: 同一 tid 已有在途请求 → 直接复用（不重复发请求）
+        inflightThreads[tid]?.let { return it.await() }
+        val job = threadScope.async { loadThreadDetail(tid, refresh) }
+        inflightThreads[tid] = job
+        // 1.223ac: 等请求**真正结束**再摘表 —— 原先写在 finally 里，调用方被取消（切页/销毁）时会提前
+        // 摘除，那段时间内的重复点击会再发一次相同请求（去重出现缝隙）。
+        job.invokeOnCompletion { inflightThreads.remove(tid, job) }
+        return job.await()
+    }
+
+    private suspend fun loadThreadDetail(tid: String, refresh: Boolean): HupuThreadDetail? {
+        var html = HupuApi.fetchHtml("/$tid.html", forceNetwork = refresh)
+        // 1.223s: 首拉失败自动重试一次（500ms 退避）——真机反馈的「打开帖子经常提示网络错误」
+        // 多为瞬时抖动 / 被限流，重试一次能挡掉大部分假失败；仍失败才进入失败态。
+        if (html == null) {
+            kotlinx.coroutines.delay(500)
+            html = HupuApi.fetchHtml("/$tid.html", forceNetwork = refresh)
+        }
+        val h = html
             // 1.123: 强刷失败降级磁盘缓存（TTL 内）——断网/服务器抖动时详情页仍可打开
             ?: if (refresh) HupuCache.get("/$tid.html") else null
-        if (html == null) return null
-        return withContext(Dispatchers.Default) { HupuParser.parseThreadDetail(html) }
+        if (h == null) return null
+        val det = withContext(Dispatchers.Default) { HupuParser.parseThreadDetail(h) }
+        // 1.223z: 详情加载成功 → 回写浏览记录，用**真实版块名**补齐。
+        // 通知中心/回帖列表等入口首次写入时拿不到版块名，这里在数据到手后自愈。
+        det?.thread?.let { t ->
+            try {
+                HupuPrefs.addHistory(
+                    HupuHistoryEntry(
+                        tid = t.tid.ifBlank { tid },
+                        title = t.title,
+                        topicName = t.topic?.name ?: "",
+                        lights = t.lights,
+                        replies = t.replies,
+                        read = t.read,
+                        visitedAt = System.currentTimeMillis(),
+                    )
+                )
+            } catch (_: Exception) {
+                // 历史写入失败绝不能影响详情加载
+            }
+        }
+        return det
     }
 
     /**

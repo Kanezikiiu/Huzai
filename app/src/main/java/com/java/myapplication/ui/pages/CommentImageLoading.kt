@@ -19,6 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.java.myapplication.ui.components.retryModelOf
 import coil.compose.SubcomposeAsyncImage
 
 /**
@@ -97,12 +98,28 @@ internal fun CommentAsyncImageCompact(
     modifier: Modifier = Modifier,
     corner: Dp = 10.dp,
 ) {
+    // 1.223z: 失败自动重试（最多 2 次，700 / 1400ms 退避）——与正文/回复内嵌图、
+    // 全屏查看器同一套机制（失败多为瞬时网络抖动，重试基本能挡住）。
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val attempt = androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val pendingRetry = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(pendingRetry.value) {
+        if (pendingRetry.value) {
+            kotlinx.coroutines.delay(700L * (attempt.value + 1))
+            attempt.value++
+            pendingRetry.value = false
+        }
+    }
+    val retryModel = retryModelOf(ctx, model, attempt.value)
     SubcomposeAsyncImage(
-        model = model,
+        model = retryModel,
         contentDescription = contentDescription,
         contentScale = contentScale,
         modifier = modifier,
         loading = { ImageLoadingBox(Modifier.commentImageLoadingBox(corner)) },
         error = { ImageErrorBox(Modifier.commentImageLoadingBox(corner)) },
+        onError = { state ->
+            if (attempt.value < 2 && com.java.myapplication.ui.components.isRetryableImageError(state.result.throwable)) pendingRetry.value = true
+        },
     )
 }

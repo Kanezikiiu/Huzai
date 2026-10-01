@@ -292,7 +292,12 @@ private fun MetaRow(thread: HupuThread) {
         MetaCount(HupuIcons.MetaLightFilled, formatCount(thread.lights), tint = META_LIGHT_GOLD)
         Spacer(Modifier.width(12.dp))
         MetaCount(HupuIcons.MetaComment, formatCount(thread.replies))
-        thread.topic?.name?.takeIf { it.isNotBlank() }?.let {
+        // 1.223v: 显示**作者名**（话题流/专区流解析时已带 author，零额外请求）；
+        // 用作者位替换原来的专区名 —— 这类流天然隐含专区，行内信息量更合理。
+        // 作者缺失时（如搜索结果那类没有 author 的流）回退显示专区名，避免出现空档。
+        val who = thread.author?.name?.takeIf { it.isNotBlank() }
+            ?: thread.topic?.name?.takeIf { it.isNotBlank() }
+        who?.let {
             Spacer(Modifier.width(12.dp))
             MetaText(it)
         }

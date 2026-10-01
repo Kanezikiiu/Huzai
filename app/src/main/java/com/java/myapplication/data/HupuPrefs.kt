@@ -165,8 +165,17 @@ object HupuPrefs {
     fun addHistory(e: HupuHistoryEntry) {
         if (e.tid.isBlank()) return
         val cur = loadHistory().toMutableList()
+        // 1.223x: 新版条目缺版块名时，沿用历史里已有的那一条 ——
+        // 消息中心 / 回帖列表等入口本身拿不到版块名，否则会把原本正确的专区名覆写成空，
+        // 浏览记录里就出现「有的帖子不显示专区」。
+        val prev = cur.firstOrNull { it.tid == e.tid }
+        val merged = if (e.topicName.isBlank() && prev != null && prev.topicName.isNotBlank()) {
+            e.copy(topicName = prev.topicName)
+        } else {
+            e
+        }
         cur.removeAll { it.tid == e.tid }
-        cur.add(0, e)
+        cur.add(0, merged)
         while (cur.size > MAX_HISTORY) cur.removeAt(cur.size - 1)
         prefs.edit().putString(KEY_HISTORY, encodeHistoryJson(cur)).apply()
         historyVersion++

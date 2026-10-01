@@ -488,6 +488,9 @@ private fun FeedContent(
                         cover = s.picture,
                         replies = s.replies,
                         lights = s.lights,
+                        // 1.223w: 带上版块名——否则从搜索页进帖子时，历史记录里的专区名会是空的
+                        topic = s.forumName.takeIf { it.isNotBlank() }
+                            ?.let { n -> com.java.myapplication.data.HupuTopic(name = n) },
                     )
                 )
             },
