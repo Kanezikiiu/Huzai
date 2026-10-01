@@ -17,6 +17,16 @@ object HupuMatchApi {
     private const val BASE = "https://match-api.hupu.com"
     private const val SCHEDULE_PATH = "/1/8.2.10/matchallapi/bff/standard/getScheduleListByTagForH5"
 
+    /**
+     * 1.196：国际足球频道的 id。
+     * 该频道的赛程**不走 match-api**——官方「国际足球」聚合赛程没有对应的 businessId（实测 20+ 候选全空），
+     * 需抓 m.hupu.com/soccer/schedule 的 Next.js SSR；点开后的详情仍是同一套评分树。
+     */
+    const val SOCCER_ID = "soccer"
+
+    /** 足球比赛 / 球员的评分树 bizType（详情侧与现有体系完全一致） */
+    const val FOOTBALL_MATCH = "football_match"
+
     private const val UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -36,6 +46,8 @@ object HupuMatchApi {
         "lpl" to "LPL",
         "lck" to "LCK",
         "epl" to "英超",
+        // 1.196：国际足球聚合赛程（赛程走 m.hupu.com/soccer/schedule 的 SSR，详见 SOCCER_ID）
+        SOCCER_ID to "国际足球",
         "worldcup" to "世界杯",
         "cuba" to "CUBA",
         "olympics" to "奥运会",
@@ -435,6 +447,74 @@ object HupuMatchApi {
             if (!isJsonBody(jsonOk)) return@withContext null
             HupuCache.put(cacheKey, jsonOk)
             json
+        }
+    }
+
+    /**
+     * 1.196：国际足球赛程页 HTML（m.hupu.com/soccer/schedule，Next.js SSR）。
+     * 数据全在 `__NEXT_DATA__.props.pageProps.data`；该页**没有分页接口**
+     * （`_next/data` 路由 404、`?day=` 等参数无效），一次返回今天 ±6 天。
+     * 失败返回 null。
+     */
+    suspend fun fetchSoccerScheduleHtml(forceNetwork: Boolean = false): String? {
+        val cacheKey = "soccer-schedule-html"
+        return withContext(Dispatchers.IO) {
+            if (!forceNetwork) {
+                HupuCache.get(cacheKey)?.let { return@withContext it }
+            }
+            val request = Request.Builder()
+                .url("https://m.hupu.com/soccer/schedule")
+                .header("User-Agent", HupuApi.MOBILE_UA)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Referer", "https://m.hupu.com/")
+                .build()
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val html = response.body?.string() ?: return@use null
+                    // 必须含 SSR 数据（否则是被风控/降级的壳页，直接当失败）
+                    if (!html.contains("__NEXT_DATA__")) return@use null
+                    HupuCache.put(cacheKey, html)
+                    html
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    /**
+     * 1.196：足球比赛的评分钥匙（matchId → outBizNo；outBizType 恒为 [FOOTBALL_MATCH]）。
+     * 来源：足球赛程页点击比赛时调用的官方接口，其 result 是一个形如
+     * `.../detail.html?outBizNo=54687&outBizType=football_match` 的 URL。
+     * 赛程列表里拿不到 outBizNo，故按需换取（结果按 matchId 缓存）。失败返回 null。
+     */
+    suspend fun fetchFootballScoreNo(matchId: String, forceNetwork: Boolean = false): String? {
+        if (matchId.isBlank()) return null
+        val cacheKey = "football-score-no-$matchId"
+        return withContext(Dispatchers.IO) {
+            if (!forceNetwork) {
+                HupuCache.get(cacheKey)?.let { return@withContext it }
+            }
+            val url = "https://football-api.hupu.com/3/8.0.73/match/queryMatchDetailScoreUrl?matchId=$matchId"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", UA)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Referer", "https://m.hupu.com/soccer/schedule")
+                .build()
+            val no = try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    Regex("[?&]outBizNo=(\\d+)").find(body)?.groupValues?.get(1)
+                }
+            } catch (e: Exception) {
+                null
+            }
+            val ok = no ?: return@withContext null
+            HupuCache.put(cacheKey, ok)
+            ok
         }
     }
 }

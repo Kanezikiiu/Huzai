@@ -9,6 +9,7 @@ import com.java.myapplication.data.HupuTopicInfo
 import com.java.myapplication.data.decodeFavoriteTopicsJson
 import com.java.myapplication.data.encodeFavoriteTopicsJson
 import com.java.myapplication.data.toggleFavoriteList
+import com.java.myapplication.data.seedMissingScoreGames
 import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.encodeStickersJson
 import com.java.myapplication.data.decodeStickersJson
@@ -210,5 +211,34 @@ class HupuPrefsTest {
         assertEquals(listOf("u1"), toggleFavoriteList(listOf(b, a), b, 50).map { it.url })
         // 上限：新收藏置顶，尾部被挤出
         assertEquals(listOf("u3", "u1"), toggleFavoriteList(listOf(a, b), c, 2).map { it.url })
+    }
+
+    // ---------- 1.196: 新增评分频道「默认开启」的一次性补入 ----------
+
+    @Test
+    fun seedMissingScoreGames_appendsMissingSeedAtEnd() {
+        // 老用户自定义列表缺 soccer → 追加到末尾，保留原有顺序
+        val out = seedMissingScoreGames(
+            current = listOf("lol", "nba"),
+            all = listOf("lol", "nba", "soccer", "epl"),
+            seeds = listOf("soccer"),
+        )
+        assertEquals(listOf("lol", "nba", "soccer"), out)
+    }
+
+    @Test
+    fun seedMissingScoreGames_noChangeWhenAlreadyPresent() {
+        // 已包含 → 原样返回（调用方据此判断无需写盘）
+        val cur = listOf("lol", "soccer")
+        val out = seedMissingScoreGames(cur, listOf("lol", "soccer", "nba"), listOf("soccer"))
+        assertEquals(cur, out)
+    }
+
+    @Test
+    fun seedMissingScoreGames_ignoresUnknownSeed() {
+        // seed 不在全部频道里（下架/笔误）→ 不补
+        val cur = listOf("lol")
+        val out = seedMissingScoreGames(cur, listOf("lol", "nba"), listOf("unknown"))
+        assertEquals(cur, out)
     }
 }

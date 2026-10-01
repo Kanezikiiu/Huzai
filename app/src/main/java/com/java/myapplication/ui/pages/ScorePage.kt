@@ -310,6 +310,25 @@ fun ScorePage(modifier: Modifier = Modifier) {
     val commonTrees = remember { mutableStateMapOf<String, HupuCommonTree>() }
 
     fun openMatch(m: HupuMatch) {
+        // 1.196：国际足球的赛程项没有 outBizNo——先盖章式打开（骨架屏第一帧），
+        // 再后台换取评分钥匙并回填；LaunchedEffect(openedMatch?.scoreBizNo) 会在
+        // scoreBizNo 落地后自动续拉评分树，用户体验与其它赛事一致。
+        if (m.scoreBizType == HupuMatchApi.FOOTBALL_MATCH && m.scoreBizNo == null) {
+            detailClosing = false
+            if (!matchEntered) { matchEntered = true; SecondaryPage.enter() }
+            openedMatch = m
+            detailLoading = true
+            scope.launch {
+                val no = repo.footballScoreNo(m.matchId)
+                if (openedMatch?.matchId != m.matchId) return@launch // 已切到别的比赛，丢弃结果
+                if (no != null) {
+                    openedMatch = m.copy(scoreBizNo = no)
+                } else {
+                    detailLoading = false // 换取失败：交给 overlay 的失败态
+                }
+            }
+            return
+        }
         if (m.scoreBizNo == null) return
         val key = "${m.scoreBizType}-${m.scoreBizNo}"
         detailClosing = false

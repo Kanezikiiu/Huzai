@@ -804,7 +804,13 @@ fun ThreadDetailOverlay(
             replyBoxOpen = false
             return@PredictiveBackHandler
         }
-        if (floorStack.isNotEmpty()) {
+        // 1.196: 用户主页优先于楼中楼面板——从楼中楼打开的主页「盖住」面板，
+        // 返回时须先关主页、再回到面板（此前顺序相反，会在主页仍显示时去关面板）
+        if (userPageStack.isNotEmpty()) {
+            // 用户主页栈非空：返回手势先弹出栈顶主页（页内动画自治）
+            events.collect { }
+            userPageStack.removeAt(userPageStack.lastIndex)
+        } else if (floorStack.isNotEmpty()) {
             events.collect { } // 吞掉进度（sheet 收起动画自反馈）
             val topPid = floorStack.last().pid
             if (topPid !in closingPids) {
@@ -816,10 +822,6 @@ fun ThreadDetailOverlay(
                     closingPids = closingPids + below.pid
                 }
             }
-        } else if (userPageStack.isNotEmpty()) {
-            // \u7528\u6237\u4e3b\u9875\u6808\u975e\u7a7a\uff1a\u8fd4\u56de\u624b\u52bf\u5148\u5f39\u51fa\u6808\u9876\u4e3b\u9875\uff08\u9875\u5185\u52a8\u753b\u81ea\u6cbb\uff09
-            events.collect { }
-            userPageStack.removeAt(userPageStack.lastIndex)
         } else {
             try {
                 events.collect { event ->
@@ -1172,10 +1174,10 @@ item(key = "r-count") {
                 onOpenUser = { pu ->
                     if (pu.isNotEmpty()) {
                         if (HupuAccount.isLoggedIn) {
-                            // 1.131: 从楼中楼进入用户主页时收起楼中楼面板（连同其上各层），
-                            // 避免返回详情页后旧 sheet 仍残留在屏幕上
-                            closingPids = emptySet()
-                            floorStack = emptyList()
+                            // 1.196: 从楼中楼进入用户主页时「盖住」面板，而不是收起它——
+                            // 保留 floorStack（用户关掉主页后仍在原评论位置），用户主页以
+                            // 高于楼层 sheet 的 zIndex（见下方 userPageStack 渲染）盖在其上；
+                            // 全屏 tapGuard 阻断穿透。返回时先关用户主页、再回到面板。
                             userPageStack.add(pu)
                         } else com.java.myapplication.ui.components.HuzaiToast.show("\u8bf7\u5148\u5728\u300c\u6211\u7684\u300d\u9875\u767b\u5f55")
                     }
@@ -1579,10 +1581,14 @@ item(key = "r-count") {
             )
         }
         // 用户主页（盖入式三级页：详情 → 用户主页；返回手势已在上方分流）
+        // 1.196: zIndex 抬到楼层 sheet 之上（FloorSheet = 3f+depth，故取 3f+floorStack.size+si）。
+        // 这样从楼中楼打开的用户主页会「盖住」面板而不必收起它；仍远低于
+        // 回复框（900+）与全屏看图（10）——看图/回复框依旧能盖在用户主页之上。
         userPageStack.forEachIndexed { si, subEuid ->
             androidx.compose.runtime.key(si) {
                 UserProfilePage(
                     euid = subEuid,
+                    zIndex = 3f + floorStack.size + si,
                     onClose = { userPageStack.removeAt(si) },
                 )
             }

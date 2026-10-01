@@ -345,9 +345,21 @@ class HupuRepository {
 
     /** 比赛赛程评分（6 大电竞项目）。businessId 如 lol/kog/val/cs2/pubgmobile/pubg */
     suspend fun matchSchedule(businessId: String, refresh: Boolean = false): List<HupuMatchDay> {
+        // 1.196：国际足球赛程与 match-api **不同源**（无聚合 businessId），走 m.hupu.com/soccer/schedule 的 SSR
+        if (businessId == HupuMatchApi.SOCCER_ID) {
+            val html = HupuMatchApi.fetchSoccerScheduleHtml(forceNetwork = refresh) ?: return emptyList()
+            return withContext(Dispatchers.Default) { HupuMatchParser.parseSoccerSchedule(html) }
+        }
         val json = HupuMatchApi.fetchSchedule(businessId, forceNetwork = refresh) ?: return emptyList()
         return withContext(Dispatchers.Default) { HupuMatchParser.parseSchedule(json) }
     }
+
+    /**
+     * 1.196：国际足球比赛 → 评分钥匙 outBizNo（赛程里没有，按需换取；outBizType 恒为 football_match）。
+     * 失败返回 null。
+     */
+    suspend fun footballScoreNo(matchId: String, refresh: Boolean = false): String? =
+        HupuMatchApi.fetchFootballScoreNo(matchId, forceNetwork = refresh)
 
     /** 评分树：比赛 → 对局[] → 选手[]（一次请求全量，匿名可用）。失败返回 null。 */
     suspend fun scoreTree(bizType: String, bizNo: String, refresh: Boolean = false): HupuScoreTree? {

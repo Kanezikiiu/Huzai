@@ -138,7 +138,9 @@ internal fun ScheduleList(days: List<HupuMatchDay>, resetKey: String, onOpenMatc
 /** 单场比赛卡：队伍比分行 + 选手评分卡（有评分钥匙的已完赛/进行中比赛可点进详情） */
 @Composable
 internal fun MatchCard(m: HupuMatch, onOpen: (HupuMatch) -> Unit) {
-    val openable = m.scoreBizNo != null
+    // 电竞：scoreBizNo 由赛程直接给出；国际足球：赛程无 outBizNo，开赛后（进行中/已结束）
+    // 才挂 football_match 类型，点击时再换取钥匙——两类都视为可点
+    val openable = m.scoreBizNo != null || m.scoreBizType == HupuMatchApi.FOOTBALL_MATCH
     Column(
         Modifier
             .fillMaxWidth()
@@ -198,16 +200,18 @@ internal fun MatchCard(m: HupuMatch, onOpen: (HupuMatch) -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(2.dp))
-                // 状态行并入开始时间（仅取 HH:mm 部分；未开赛的卡中间已显示完整时间，不重复）
+                // 状态行并入开始时间（仅取 HH:mm 部分；未开赛的卡中间已显示 - : -，时间不重复）
                 val timeOnly = m.startTimeText.substringAfter(' ', "")
-                val statusText = if (timeOnly.isNotBlank() && m.status != "NOT_STARTED") "$timeOnly · ${m.statusDesc}" else m.statusDesc
+                val statusText = if (timeOnly.isNotBlank()) "$timeOnly · ${m.statusDesc}" else m.statusDesc
                 Text(
                     statusText,
                     fontSize = 11.sp,
-                    color = when (m.status) {
-                        "IN_PROGRESS" -> MaterialTheme.colorScheme.primary
-                        "COMPLETED" -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> MaterialTheme.colorScheme.tertiary
+                    // 只有「进行中」用主题色标识；未开始 / 已结束 / 取消一律弱化灰，
+                    // 保持「未开始」与「已结束」观感一致
+                    color = if (m.status == "INPROGRESS") {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }

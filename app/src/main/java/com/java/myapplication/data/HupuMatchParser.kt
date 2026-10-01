@@ -368,6 +368,128 @@ object HupuMatchParser {
     private fun formatAvg(v: Double): String =
         if (v <= 0.0) "-" else if (v == v.toLong().toDouble()) v.toLong().toString() else String.format(Locale.CHINA, "%.1f", v)
 
+    // ---------- 1.196：国际足球赛程（m.hupu.com/soccer/schedule 的 Next.js SSR） ----------
+
+    /**
+     * 解析国际足球赛程（整页 HTML，取 `__NEXT_DATA__` 里的 SSR 数据）。
+     * 结构：`props.pageProps.data.games[].data[]`，每场含
+     * `currentMatchId`(matchId) / `title`(轮次，含赛事名) / `home`/`away`{teamId,name,logo} /
+     * `home_score`/`away_score` / `status{id,txt}` / `begin_time`(秒) / `pv`("8829评分")。
+     *
+     * 该页与 match-api 的赛程**不同源**，故单独解析；但映射到同一 [HupuMatchDay]/[HupuMatch]
+     * 模型，使评分页的赛程卡渲染与「点击 → 详情评分树」链路完全复用。
+     * `scoreBizNo` 留空——赛程里拿不到，点击时由 queryMatchDetailScoreUrl 换取。
+     * 失败/无数据返回 emptyList()。
+     */
+    fun parseSoccerSchedule(html: String): List<HupuMatchDay> {
+        return try {
+            val m = Regex(
+                "<script id=\"__NEXT_DATA__\" type=\"application/json\">(.*?)</script>",
+                RegexOption.DOT_MATCHES_ALL,
+            ).find(html) ?: return emptyList()
+            val data = JSONObject(m.groupValues[1])
+                .optJSONObject("props")?.optJSONObject("pageProps")?.optJSONObject("data")
+                ?: return emptyList()
+            val games = data.optJSONArray("games") ?: return emptyList()
+            val out = mutableListOf<HupuMatchDay>()
+            for (i in 0 until games.length()) {
+                val day = games.optJSONObject(i) ?: continue
+                val arr = day.optJSONArray("data") ?: continue
+                val matches = mutableListOf<HupuMatch>()
+                for (j in 0 until arr.length()) {
+                    arr.optJSONObject(j)?.let { soccerMatchFrom(it)?.let { x -> matches += x } }
+                }
+                if (matches.isNotEmpty()) {
+                    out += HupuMatchDay(
+                        dayTime = soccerDay(day.optString("day")),
+                        dateBlock = day.optString("date_block"),
+                        matches = matches,
+                    )
+                }
+            }
+            out
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** `20260925` → `2026-09-25`（与 ScheduleList 判定「今天」所用的 ISO 格式一致） */
+    private fun soccerDay(raw: String): String =
+        if (raw.length == 8 && raw.all { it.isDigit() }) {
+            "${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)}"
+        } else {
+            raw
+        }
+
+    private fun soccerMatchFrom(o: JSONObject): HupuMatch? {
+        val id = hupuClean(o.optString("currentMatchId"))
+        if (id.isEmpty() || id == "0") return null
+        val stTxt = hupuClean(o.optJSONObject("status")?.optString("txt") ?: "")
+        // 状态串对齐 App 既有约定（与 match-api 一致，**无下划线**）：
+        // NOTSTARTED / INPROGRESS / COMPLETED / CANCELED。
+        // 此前误用带下划线的 NOT_STARTED，导致赛程卡的「时间 · 状态」合并与配色分支都不命中。
+        val status = when (stTxt) {
+            "未开始" -> "NOTSTARTED"
+            "已结束" -> "COMPLETED"
+            "取消", "延期" -> "CANCELED"
+            else -> "INPROGRESS" // 进行中 / 中场
+        }
+        // 只有开赛后才显示比分；未开赛/取消用 "-" 占位（与英超等一致：中间显示 - : -）
+        val started = status == "INPROGRESS" || status == "COMPLETED"
+        val hs = if (started) o.optInt("home_score", 0).toString() else "-"
+        val as_ = if (started) o.optInt("away_score", 0).toString() else "-"
+        val home = soccerTeamFrom(o.optJSONObject("home"), hs)
+        val away = soccerTeamFrom(o.optJSONObject("away"), as_)
+        val ts = o.optLong("begin_time", 0L) * 1000L
+        val title = o.optString("title")
+        val winner = if (started) {
+            val h = hs.toIntOrNull()
+            val a = as_.toIntOrNull()
+            when {
+                h == null || a == null -> null
+                h > a -> home?.memberId
+                a > h -> away?.memberId
+                else -> null
+            }
+        } else null
+        return HupuMatch(
+            matchId = id,
+            statusDesc = stTxt,
+            status = status,
+            introduction = title,
+            matchName = title,
+            startTimeText = formatTime(ts),
+            startTimestamp = ts,
+            scoreCountText = hupuClean(o.optString("pv")),
+            home = home,
+            away = away,
+            winnerMemberId = winner,
+            playerScore = null,
+            // 只有开赛后（进行中/已结束）官方才有评分页（未开始/取消的 queryMatchDetailScoreUrl 返回空），
+            // 故仅这两类挂上 football_match 类型 → 卡片可点、openMatch 换取评分钥匙；
+            // 未开始/取消留空 → 卡片不可点，与电竞赛程「有评分才可点」语义一致
+            scoreBizType = if (started) HupuMatchApi.FOOTBALL_MATCH else null,
+            scoreBizNo = null, // 点击时由 queryMatchDetailScoreUrl 换取
+        )
+    }
+
+    private fun soccerTeamFrom(o: JSONObject?, score: String): HupuMatchTeam? {
+        if (o == null) return null
+        val name = hupuClean(o.optString("name"))
+        if (name.isBlank()) return null
+        return HupuMatchTeam(
+            memberId = hupuClean(o.optString("teamId")),
+            name = name,
+            logo = hupuClean(o.optString("logo")).ifEmpty { null },
+            baseScore = score,
+            extraScore = null,
+            bigScore = null,
+        )
+    }
+
+    /** org.json 的 optString 会把 JSON null 变成字面量 "null"，统一清掉 */
+    private fun hupuClean(s: String): String = if (s == "null") "" else s
+
     private fun teamFrom(o: JSONObject): HupuMatchTeam? {
         // 空占位过滤：和平精英/绝地求生等多队赛事的 againstInfo.memberInfos 是
         // 两个全空占位（memberName/memberId/logo 全空）——这不是 1v1 对局，转 null，

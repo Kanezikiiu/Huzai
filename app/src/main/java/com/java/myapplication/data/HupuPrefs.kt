@@ -52,6 +52,28 @@ object HupuPrefs {
     fun init(context: Context) {
         prefs = context.getSharedPreferences("hupu_prefs", Context.MODE_PRIVATE)
         disclaimerAccepted = prefs.getBoolean(KEY_DISCLAIMER_ACCEPTED, false)
+        seedNewScoreChannels()
+    }
+
+    // ---------- 1.196：新增评分频道「默认开启」的一次性补入 ----------
+    /** 已执行过补入的标记（只补一次；用户之后手动移除即保持移除） */
+    private const val KEY_SCORE_SEEDED_196 = "score_games_seeded_196_v1"
+
+    /**
+     * 1.196：国际足球是新增评分频道，需要「默认开启」。
+     * - 未自定义过评分频道的用户：`effectiveScoreGames` 回退**全量** [HupuMatchApi.GAMES]，本就含新频道，无需处理；
+     * - 已自定义过的老用户：其保存列表里不会有新频道 → 这里按官方顺序把缺失的新频道补入末尾，
+     *   既让其「默认开启」，又不打断用户既有的排列偏好。用一次性 flag 保证只补一次。
+     */
+    private fun seedNewScoreChannels() {
+        if (!hasCustomScoreGames()) return
+        if (prefs.getBoolean(KEY_SCORE_SEEDED_196, false)) return
+        // 本版新增、需默认开启的频道（按官方顺序）
+        val seeds = listOf(HupuMatchApi.SOCCER_ID)
+        val cur = loadScoreGames()
+        val next = seedMissingScoreGames(cur, HupuMatchApi.GAMES.map { it.first }, seeds)
+        if (next != cur) saveScoreGames(next) // 内部会 scoreGamesVersion++，评分页即时刷新
+        prefs.edit().putBoolean(KEY_SCORE_SEEDED_196, true).apply()
     }
 
     /**
@@ -941,3 +963,21 @@ internal fun toggleFavoriteList(
 ): List<HupuTopicInfo> =
     if (cur.any { it.url == t.url }) cur.filterNot { it.url == t.url }
     else (listOf(t) + cur).take(max)
+
+/**
+ * 1.196: 把「新增评分频道」按官方顺序补到用户已保存列表末尾（缺失才补，尊重既有排序）。
+ * 抽成纯函数便于单测。`all` 为全部合法频道 id；`seeds` 为本次新增、需默认开启的频道 id。
+ */
+internal fun seedMissingScoreGames(
+    current: List<String>,
+    all: List<String>,
+    seeds: List<String>,
+): List<String> {
+    val cur = current.toMutableList()
+    val valid = all.toHashSet()
+    for (id in seeds) {
+        if (id in cur || id !in valid) continue
+        cur.add(id)
+    }
+    return cur
+}

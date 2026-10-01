@@ -227,12 +227,12 @@ fun PlayerDetailOverlay(
             if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
         }
     }
-    // 1.164: 从楼中楼 sheet 里进主页 → 同时收起楼中楼面板（对齐帖子详情 1.131 的做法），
-    // 否则返回评分详情后旧面板还残留在屏幕上
+    // 1.196: 从楼中楼 sheet 里进主页 → 「盖住」面板而不是收起它（对齐帖子详情做法）。
+    // 用户主页渲染于 zIndex 6f（见下方 userPageStack），本就高于 sheet 的 4f，
+    // 故保留 subSheet、主页盖在其上；全屏 tapGuard 阻断穿透。返回时先关主页、再回到面板。
     val openUserFromSheet: (String) -> Unit = { pu ->
         if (pu.isNotEmpty()) {
             if (HupuAccount.isLoggedIn) {
-                onCloseSubSheet()
                 userPageStack.add(pu)
             } else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录")
         }
@@ -272,14 +272,16 @@ fun PlayerDetailOverlay(
             onReplyCancel()
             return@PredictiveBackHandler
         }
-        if (closing || subSheet != null) {
-            events.collect { } // 吞掉
-            return@PredictiveBackHandler
-        }
+        // 1.196: 用户主页优先——从楼中楼打开的主页「盖住」面板，返回须先关主页、再回到面板
+        // （此前被下方 `subSheet != null` 吞掉手势，主页开着也退不出来）
         if (userPageStack.isNotEmpty()) {
-            // 1.163: 用户主页栈非空 → 返回手势先弹出栈顶主页（页内动画自治）
+            // 用户主页栈非空 → 返回手势先弹出栈顶主页（页内动画自治）
             events.collect { }
             userPageStack.removeAt(userPageStack.lastIndex)
+            return@PredictiveBackHandler
+        }
+        if (closing || subSheet != null) {
+            events.collect { } // 吞掉
             return@PredictiveBackHandler
         }
         try {

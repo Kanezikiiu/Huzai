@@ -201,4 +201,94 @@ class HupuMatchParserTest {
         assertTrue("commentUserId 应映射到 userId", c.userId.isNotBlank())
         assertTrue("userId 应为数字型（可直接当 euid 用）", c.userId.all { it.isDigit() })
     }
+
+    /**
+     * 1.196: 国际足球赛程（m.hupu.com/soccer/schedule 的 Next.js SSR）。
+     * 该页与 match-api 不同源，单独解析；验证：按天分组、状态映射、
+     * 比分只在开赛后出现、只有开赛后挂 football_match 类型（可点）。
+     */
+    @Test
+    fun `soccer schedule parsed from next data with status and score gating`() {
+        val html = """
+            <html><body>
+            <script id="__NEXT_DATA__" type="application/json">
+            {"props":{"pageProps":{"data":{"games":[
+              {"day":"20260925","date_block":"9月25日 周五","data":[
+                {"currentMatchId":"3588547","title":"欧国联第1轮",
+                 "home":{"teamId":7032,"name":"挪威","logo":"https://x/1.png"},
+                 "away":{"teamId":7024,"name":"丹麦","logo":"https://x/2.png"},
+                 "home_score":3,"away_score":2,"begin_time":1790275500,
+                 "status":{"id":4,"txt":"已结束"},"pv":"8829评分"},
+                {"currentMatchId":"3589648","title":"欧国联第2轮",
+                 "home":{"teamId":7032,"name":"挪威","logo":null},
+                 "away":{"teamId":7024,"name":"丹麦","logo":null},
+                 "home_score":0,"away_score":0,"begin_time":1790361900,
+                 "status":{"id":1,"txt":"未开始"},"pv":null},
+                {"currentMatchId":"3921240","title":"欧国联第3轮",
+                 "home":{"teamId":7001,"name":"日本","logo":null},
+                 "away":{"teamId":7002,"name":"厄瓜多尔","logo":null},
+                 "home_score":1,"away_score":1,"begin_time":1790361900,
+                 "status":{"id":2,"txt":"中场"},"pv":null}
+              ]},
+              {"day":"20260926","date_block":"9月26日 周六","data":[]}
+            ]}}}}
+            </script></body></html>
+        """.trimIndent()
+        val days = HupuMatchParser.parseSoccerSchedule(html)
+        assertEquals("空天不应产出分组", 1, days.size)
+        val day = days.first()
+        assertEquals("2026-09-25", day.dayTime) // 与 ScheduleList 判今天格式一致
+        assertEquals("9月25日 周五", day.dateBlock)
+        assertEquals(3, day.matches.size)
+
+        val done = day.matches.first { it.matchId == "3588547" }
+        assertEquals("已结束", done.statusDesc)
+        assertEquals("COMPLETED", done.status)
+        assertEquals("挪威", done.home?.name)
+        assertEquals("丹麦", done.away?.name)
+        assertEquals("3", done.home?.baseScore)
+        assertEquals("2", done.away?.baseScore)
+        assertEquals("1790275500000", done.startTimestamp.toString()) // 秒 → 毫秒
+        assertEquals("8829评分", done.scoreCountText)
+        assertEquals(HupuMatchApi.FOOTBALL_MATCH, done.scoreBizType) // 开赛后 → 可点、换取钥匙
+        assertNull("赛程无 outBizNo", done.scoreBizNo)
+        assertEquals("7032", done.winnerMemberId) // 3:2 → 主队赢
+
+        val upcoming = day.matches.first { it.matchId == "3589648" }
+        assertEquals("未开始", upcoming.statusDesc)
+        assertEquals("NOTSTARTED", upcoming.status) // 与 match-api 同款（无下划线）
+        assertNull("未开始不挂类型 → 卡片不可点", upcoming.scoreBizType)
+        assertEquals("未开赛比分用 - 占位（卡片显示 - : -，与英超一致）", "-", upcoming.home?.baseScore)
+        assertEquals("-", upcoming.away?.baseScore)
+
+        val live = day.matches.first { it.matchId == "3921240" }
+        assertEquals("中场", live.statusDesc)
+        assertEquals("INPROGRESS", live.status) // 进行中/中场 → 主题色标识
+        assertEquals("1", live.home?.baseScore)
+        assertEquals("1", live.away?.baseScore)
+        assertEquals(HupuMatchApi.FOOTBALL_MATCH, live.scoreBizType)
+    }
+
+    /** 1.196: org.json 的 optString 会把 JSON null 变成字面量 "null"，赛程解析须清掉。 */
+    @Test
+    fun `soccer schedule cleans literal null from optString`() {
+        val html = """
+            <script id="__NEXT_DATA__" type="application/json">
+            {"props":{"pageProps":{"data":{"games":[
+              {"day":"20260925","date_block":"9月25日 周五","data":[
+                {"currentMatchId":"1","title":"T",
+                 "home":{"teamId":1,"name":"A","logo":null},
+                 "away":{"teamId":2,"name":"B","logo":null},
+                 "home_score":1,"away_score":0,"begin_time":1790275500,
+                 "status":{"id":4,"txt":"已结束"},"pv":null}
+              ]}
+            ]}}}}
+            </script>
+        """.trimIndent()
+        val days = HupuMatchParser.parseSoccerSchedule(html)
+        assertEquals(1, days.size)
+        val m = days.first().matches.first()
+        assertNull("logo 为 null → 不应出现 \"null\" 字样", m.home?.logo)
+        assertTrue("pv 为 null → 应清成空串", m.scoreCountText.isEmpty())
+    }
 }
