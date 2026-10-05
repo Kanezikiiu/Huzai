@@ -1,8 +1,8 @@
 {
-  "versionCode": 206,
-  "versionName": "1.196",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.196/huzai-1.196-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.196",
-  "changelog": "· 评分页新增「国际足球」频道\n· 楼中楼点击作者头像 / 昵称进入用户主页时楼中楼面板不再自动收起",
+  "versionCode": 207,
+  "versionName": "1.197",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.197/huzai-1.197-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.197",
+  "changelog": "· 视频播放器重做：全屏观看时自动识别视频尺寸切换至横屏 / 竖屏观看，双击 ±15 秒、滑动调整进度、左右半屏调亮度与音量、长按 2 倍速、倍速面板与起播加载动画\n· 新增「局域网数据同步」：同一 WiFi 下互传标题 / 分区 / 评论关键词、黑名单、收藏专区、评分频道、首页频道与默认事项\n· 新增「默认事项」设置：默认启动页，以及专区、帖子回复、评分评论三处默认排序\n· 私信列表改版，页面更加美观；点击私信里的站内链接可直接打开帖子\n· 顶栏标题统一居中\n· 修复：话题流切换时的闪烁与排序条跳动问题\n· 优化：加载策略优化，大幅缩短加载时间\n· 优化：打开战报等嵌入式页面时不再卡顿\n· 其他：消息中心三个入口图标与信息流统一为无填充风格、首页搜索图标重绘，我的页面消息图标重绘，观感更加轻盈",
   "forceUpdate": false
 }

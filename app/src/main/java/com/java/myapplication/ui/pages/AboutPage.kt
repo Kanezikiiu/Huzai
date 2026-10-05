@@ -75,6 +75,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.components.HuzaiToast
@@ -199,22 +200,10 @@ fun AboutPage(onClose: () -> Unit) {
                 .layerBackdrop(backdrop),
         ) {
             // 顶栏
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "关于",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            CenteredTopBar(
+                title = "关于",
+                onBack = { closing = true },
+            )
 
             // 头部：图标（主题色圆环） + 名称 + 版本胶囊 + 简介 + 三枚圆形按钮
             Column(
@@ -527,22 +516,10 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
             .tapGuard(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    kind.title,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            CenteredTopBar(
+                title = kind.title,
+                onBack = { closing = true },
+            )
             Column(
                 Modifier
                     .fillMaxWidth()

@@ -99,6 +99,7 @@ import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.HuzaiToast
 
@@ -486,47 +487,37 @@ fun NewPostPage(
     ) {
         Column(Modifier.fillMaxSize()) {
             // 顶栏：返回 + 标题 + 发布
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (editTid != null) "编辑帖子" else "发帖",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.weight(1f))
-                if (publishing) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    // 1.223: 「发布 / 保存」升级为液态玻璃按钮（同源落影 + 按压形变）
-                    val canPub = title.trim().length >= 4
-                    val dark = isAppDarkTheme()
-                    LiquidButton(
-                        onClick = { publish() },
-                        fill = if (canPub) MaterialTheme.colorScheme.primary else buttonFill(dark),
-                        border = if (canPub) Color.Transparent else buttonBorder(dark),
-                        // 1.223d: 圆角 16 → 20dp（真机反馈「稍微增加一点点」）
-                        shape = RoundedCornerShape(20.dp),
-                        height = 40.dp,
-                        contentPadding = 14.dp,
-                    ) {
-                        Text(
-                            if (editTid != null) "保存" else "发布",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (canPub) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            CenteredTopBar(
+                title = if (editTid != null) "编辑帖子" else "发帖",
+                onBack = { closing = true },
+                actions = {
+                    Spacer(Modifier.weight(1f))
+                    if (publishing) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        // 1.223: 「发布 / 保存」升级为液态玻璃按钮（同源落影 + 按压形变）
+                        val canPub = title.trim().length >= 4
+                        val dark = isAppDarkTheme()
+                        LiquidButton(
+                            onClick = { publish() },
+                            fill = if (canPub) MaterialTheme.colorScheme.primary else buttonFill(dark),
+                            border = if (canPub) Color.Transparent else buttonBorder(dark),
+                            // 1.223d: 圆角 16 → 20dp（真机反馈「稍微增加一点点」）
+                            shape = RoundedCornerShape(20.dp),
+                            height = 40.dp,
+                            contentPadding = 14.dp,
+                        ) {
+                            Text(
+                                if (editTid != null) "保存" else "发布",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (canPub) MaterialTheme.colorScheme.onPrimary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                }
-            }
+                },
+            )
 
             Column(
                 Modifier

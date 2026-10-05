@@ -74,9 +74,10 @@ fun ProfilePage(modifier: Modifier = Modifier) {
     val blacklistCount = remember(HupuPrefs.blacklistVersion) { HupuPrefs.blacklistCount() }
     // 1.134 关于页挂载（epoch 键控，同其他二级页）
     var aboutEpoch by remember { mutableIntStateOf(0) }
-    // 1.182 默认启动页：标准设置行 + iOS 风格选择弹窗（改动下次冷启动生效）
-    var startTabAsk by remember { mutableStateOf(false) }
-    var startTabIdx by remember { mutableIntStateOf(HupuPrefs.loadStartTab()) }
+    // 1.2xx 数据同步（局域网多设备互传设置）
+    var syncEpoch by remember { mutableIntStateOf(0) }
+    // 1.2xx 默认事项（默认启动页 / 默认排序）合并页 epoch 键控
+    var defaultSortEpoch by remember { mutableIntStateOf(0) }
 
     // 登录：登录页 epoch 键控挂载 + 退出确认展开态
     var loginEpoch by remember { mutableIntStateOf(0) }
@@ -94,7 +95,8 @@ fun ProfilePage(modifier: Modifier = Modifier) {
     fun profilePageOpen(): Boolean =
         showPicker || loginEpoch > 0 || postEpoch > 0 || msgEpoch > 0 ||
             historyEpoch > 0 || scorePickerEpoch > 0 || filterBlockEpoch > 0 ||
-            displayEpoch > 0 || aboutEpoch > 0 || userPageStack.isNotEmpty()
+            displayEpoch > 0 || aboutEpoch > 0 || syncEpoch > 0 ||
+            defaultSortEpoch > 0 || userPageStack.isNotEmpty()
     // 1.106: 铃铛未读角标——进入「我的」页拉一次 + 前台每 2 分钟轮询
     LaunchedEffect(Unit) {
         HupuMsgBadge.refresh()
@@ -139,7 +141,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         },
                     ) {
                         LiquidIconButton(
-                            icon = HupuIcons.Bell,
+                            icon = HupuIcons.BellOutlined,
                             contentDescription = "消息",
                             onClick = { if (!profilePageOpen()) msgEpoch++ },
                         )
@@ -226,10 +228,10 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         onClick = { if (!profilePageOpen()) scorePickerEpoch++ },
                     )
                     SettingRow(
-                        icon = Icons.Rounded.Home,
-                        title = "默认启动页",
-                        subtitle = START_TAB_LABELS.getOrNull(startTabIdx) ?: "首页",
-                        onClick = { startTabAsk = true },
+                        icon = HupuIcons.Sort,
+                        title = "默认事项",
+                        subtitle = "默认启动页 · 专区排序 · 回复排序 · 评分排序",
+                        onClick = { if (!profilePageOpen()) defaultSortEpoch++ },
                     )
                 }
                 Spacer(Modifier.height(20.dp))
@@ -265,6 +267,12 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                         onClick = { if (!profilePageOpen()) historyEpoch++ },
                     )
                     SettingRow(
+                        icon = HupuIcons.Sync,
+                        title = "数据同步",
+                        subtitle = "同一 WiFi 下多设备互传关键词 / 黑名单 / 频道设置",
+                        onClick = { if (!profilePageOpen()) syncEpoch++ },
+                    )
+                    SettingRow(
                         icon = HupuIcons.Info,
                         title = "关于",
                         subtitle = aboutVersionLabel() + " · 隐私协议 / 开源许可 / 免责声明",
@@ -282,19 +290,6 @@ fun ProfilePage(modifier: Modifier = Modifier) {
         }
         }
 
-        // 1.182 默认启动页选择弹窗
-        if (startTabAsk) {
-            StartTabDialog(
-                backdrop = backdrop,
-                current = startTabIdx,
-                onPick = { i ->
-                    startTabIdx = i
-                    HupuPrefs.saveStartTab(i)
-                    startTabAsk = false
-                },
-                onDismiss = { startTabAsk = false },
-            )
-        }
         // 1.192: 退出登录改为毛玻璃弹窗确认（不再行内展开）
         if (logoutAsk) {
             LiquidGlassDialog(
@@ -365,6 +360,18 @@ fun ProfilePage(modifier: Modifier = Modifier) {
         if (aboutEpoch > 0) {
             androidx.compose.runtime.key(aboutEpoch) {
                 AboutPage(onClose = { aboutEpoch = 0 })
+            }
+        }
+        // 1.2xx 数据同步：从右盖入、返回滑出（同其他二级页）
+        if (syncEpoch > 0) {
+            androidx.compose.runtime.key(syncEpoch) {
+                SyncPage(onClose = { syncEpoch = 0 })
+            }
+        }
+        // 1.2xx 默认排序：从右盖入、返回滑出（同其他二级页）
+        if (defaultSortEpoch > 0) {
+            androidx.compose.runtime.key(defaultSortEpoch) {
+                DefaultSortPage(onClose = { defaultSortEpoch = 0 })
             }
         }
         // 登录页：从右盖入（epoch 键控，同其他二级页）
@@ -446,69 +453,5 @@ private fun SettingRow(
         )
     }
 }
-/** 1.182: 默认启动页可选项（与底部 Tab 一一对应） */
-private val START_TAB_LABELS = listOf("首页", "专区", "评分", "我的")
-
-/**
- * 1.182: 默认启动页选择弹窗
- * 1.191: 换成 Liquid Glass 毛玻璃卡片（与底部 Tab 栏同源）+ Q 弹出入场。
- */
-@Composable
-private fun StartTabDialog(
-    backdrop: Backdrop,
-    current: Int,
-    onPick: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    LiquidGlassCard(backdrop = backdrop, onDismiss = onDismiss) { close ->
-        val contentColor = MaterialTheme.colorScheme.onSurface
-        Text(
-            "默认启动页",
-            Modifier.padding(24.dp, 24.dp, 24.dp, 8.dp),
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Medium,
-            color = contentColor,
-        )
-        START_TAB_LABELS.forEachIndexed { i, name ->
-            val on = i == current
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { onPick(i); close() }
-                    .padding(horizontal = 24.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    name,
-                    fontSize = 15.sp,
-                    fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                    color = if (on) MaterialTheme.colorScheme.primary else contentColor,
-                    modifier = Modifier.weight(1f),
-                )
-                if (on) {
-                    Icon(
-                        Icons.Rounded.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-        }
-        Row(
-            Modifier
-                .padding(24.dp, 16.dp, 24.dp, 24.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LiquidGlassButton(
-                text = "取消",
-                accent = false,
-                modifier = Modifier.weight(1f),
-                contentColor = contentColor,
-                onClick = close,
-            )
-        }
-    }
-}
+/** 1.182: 默认启动页可选项（已并入「默认事项」页，见 DefaultSortPage） */
 

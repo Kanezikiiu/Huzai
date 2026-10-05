@@ -394,10 +394,19 @@ private fun StickerSearchBody(
     }
 
     Column(Modifier.fillMaxSize()) {
+        // 1.208:搜索行顶端距面板顶边约 18dp（抓手 8dp 留白 + 4dp 高 + 6dp 上间距）。
+        // 大圆角机型上「搜索框 / 取消」按此深度加大左右留白——原先贴边太近（12dp / 6dp），
+        // 曲线会压到它们，看着「格格不入」。
+        val side = rememberSheetSideInset(depth = 18.dp)
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 8.dp),
+                .padding(
+                    start = maxOf(12.dp, side),
+                    end = maxOf(6.dp, side),
+                    top = 6.dp,
+                    bottom = 8.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(

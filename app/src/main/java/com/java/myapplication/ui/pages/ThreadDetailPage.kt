@@ -1,5 +1,6 @@
 package com.java.myapplication.ui.pages
-
+import com.java.myapplication.ui.player.FullscreenVideo
+import com.java.myapplication.ui.player.VideoHost
 import com.java.myapplication.TAB_BUTTON_NAV_MIN
 import com.java.myapplication.TAB_GAP_BUTTON_EXTRA
 import com.java.myapplication.TAB_GAP_GESTURE
@@ -252,7 +253,10 @@ fun ThreadDetailOverlay(
     // 1.220：「只看楼主」已由开关改为分段控件，不再需要它专用的画布背景折射源。
     // 翻页哨兵：注意依赖 detail（canLoadMore 不能被 remember 的闭包 stale 捕获）
     // 1.185: 排序三态 0=默认(正序) 1=最新(倒序) 2=最热(本地按点亮降序)；点击循环（声明上提：可加载性依赖它）
-    var sortMode by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var sortMode by remember {
+        // 1.2xx：初值取「默认排序」设置（0 默认 / 1 最新 / 2 最热）
+        androidx.compose.runtime.mutableIntStateOf(HupuPrefs.loadDefaultReplySort())
+    }
     val sortExpectedDesc = sortMode == 1
     // 切换进行中（数据方向 ≠ 期望方向）时禁止触发翻页，避免旧方向翻页结果与新方向互相覆盖
     val sortPending = detail?.let { it.descReplies != sortExpectedDesc } == true
@@ -271,10 +275,22 @@ fun ThreadDetailOverlay(
     // 视频全屏：host 持有 ExoPlayer 实例（小窗/全屏两个 PlayerView 共享，进度无缝）；
     // videoFullscreen 驱动页面级盖入式全屏 overlay（横屏+沉浸式系统栏）
     val videoHost = remember { VideoHost() }
+    // 1.2xx：播放器的**释放**由页面级负责 —— 主楼滚出视口只会暂停（滚回来从原进度续播），
+    // 只有真正退出详情页才 release，避免「滑下去再滑回来视频从头开始」。
+    DisposableEffect(Unit) {
+        onDispose {
+            videoHost.player?.release()
+            videoHost.player = null
+            videoHost.started = false
+        }
+    }
     // 用户主页（盖入式三级页：详情 → 用户主页）；退场动画由页内 closing 流程自治
     // \u7528\u6237\u4e3b\u9875\u6808\uff1a\u5c42\u5c42\u53e0\u52a0\uff08\u6bcf\u5c42\u72ec\u7acb\u7ec4\u5408\uff0c\u8fd4\u56de\u9010\u5c42\u5f39\u51fa\uff09
     val userPageStack = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var videoFullscreen by remember { mutableStateOf(false) }
+    // 1.2xx：全屏 overlay 在屏幕外完成出画后才"推入可见区"；
+    // 在推入之前，小窗的视频继续留在原地显示 —— 避免这段预热期露出黑占位。
+    var videoFullscreenReady by remember { mutableStateOf(false) }
     // 楼中楼：sheet 栈（逐层递进：根楼层 → 子回复 → 孙回复…，每层一个半屏 sheet）
     // 数据来自父页面 floorStates（以 pid 为 key，全层级共用一套缓存）
     var floorStack by remember { mutableStateOf<List<HupuReply>>(emptyList()) }
@@ -784,6 +800,7 @@ fun ThreadDetailOverlay(
             // 全屏视频打开：返回手势仅退出全屏（不收 sheet、不退页面）
             events.collect { }
             videoFullscreen = false
+            videoFullscreenReady = false
             return@PredictiveBackHandler
         }
         if (stickerClearTarget != null) {
@@ -865,7 +882,15 @@ fun ThreadDetailOverlay(
             .autoHideScroll(autoHideBar),
     ) {
         if (videoFullscreen && videoHost.player != null) {
-            FullscreenVideo(videoHost.player!!) { videoFullscreen = false }
+            FullscreenVideo(
+                player = videoHost.player!!,
+                onExit = {
+                    videoFullscreen = false
+                    videoFullscreenReady = false
+                },
+                // 屏幕外出画完成 → 这时才把 overlay 推入可见区（小窗同步让位）
+                onRevealed = { videoFullscreenReady = true },
+            )
         }
         val state = if (detail != null) "ok" else if (loading) "loading" else "error"
         Crossfade(targetState = state, animationSpec = tween(180), label = "threadDetailSwitch") { s ->
@@ -996,8 +1021,12 @@ fun ThreadDetailOverlay(
                                     MainPost(
                                         d,
                                         host = videoHost,
-                                        isFullscreen = videoFullscreen,
-                                        onToggleFullscreen = { videoFullscreen = it },
+                                        // 推入可见区之前，小窗继续显示视频（避免预热期露黑）
+                                        isFullscreen = videoFullscreen && videoFullscreenReady,
+                                        onToggleFullscreen = { v ->
+                                            videoFullscreen = v
+                                            if (v) videoFullscreenReady = false
+                                        },
                                         onImageClick = openImage,
                                         onOpenUser = { pu -> if (pu.isNotEmpty()) { if (HupuAccount.isLoggedIn) userPageStack.add(pu) else com.java.myapplication.ui.components.HuzaiToast.show("请先在「我的」页登录") } },
                                         onToast = { com.java.myapplication.ui.components.HuzaiToast.show(it) },

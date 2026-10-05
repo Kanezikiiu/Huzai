@@ -95,6 +95,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.components.HuzaiToast
@@ -272,7 +273,7 @@ fun UserProfilePage(
         if (floorStates.containsKey(r.pid)) return
         floorLoading[r.pid] = true
         scope.launch {
-            delay(300)
+            delay(120)
             if (floorStates.containsKey(r.pid)) {
                 floorLoading[r.pid] = false
                 return@launch
@@ -321,7 +322,7 @@ fun UserProfilePage(
                     threadDetails[tid] = repo.mergeThreadDetail(threadDetails[tid], fresh)
                 }
             } else {
-                delay(300)
+                delay(120)
                 if (threadDetails.containsKey(tid)) return@LaunchedEffect
                 val d = repo.threadDetail(tid)
                 if (d != null && mySeq == threadSortSeq) threadDetails[tid] = d
@@ -488,38 +489,24 @@ fun UserProfilePage(
     ) {
         Column(Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
             // \u9876\u680f\uff1a\u8fd4\u56de + \u6635\u79f0\uff08\u907f\u8ba9\u72b6\u6001\u680f\uff09
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    // 1.163: 资料卡已显示昵称，顶栏统一恒显示「用户主页」
-                    "用户主页",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                // 1.222: 顶栏右侧「更多」——打开 Liquid Glass 操作弹窗（按钮纵向排列）。
-                // 只有存在可用操作（非本人主页、且有 id）时才显示，避免弹出空菜单。
-                val canMore = profile?.let {
-                    !it.isSelf && (it.puid.isNotEmpty() || it.euid.isNotEmpty())
-                } == true
-                if (canMore) {
-                    LiquidIconButton(
-                        icon = HupuIcons.MoreHoriz,
-                        contentDescription = "更多",
-                        onClick = { showMore = true },
-                    )
-                }
-            }
+            CenteredTopBar(
+                title = "用户主页",
+                onBack = { closing = true },
+                actions = {
+                    // 1.222: 顶栏右侧「更多」——打开 Liquid Glass 操作弹窗（按钮纵向排列）。
+                    // 只有存在可用操作（非本人主页、且有 id）时才显示，避免弹出空菜单。
+                    val canMore = profile?.let {
+                        !it.isSelf && (it.puid.isNotEmpty() || it.euid.isNotEmpty())
+                    } == true
+                    if (canMore) {
+                        LiquidIconButton(
+                            icon = HupuIcons.MoreHoriz,
+                            contentDescription = "更多",
+                            onClick = { showMore = true },
+                        )
+                    }
+                },
+            )
 
             when {
                 loading -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
@@ -984,7 +971,8 @@ private fun ProfileCard(
                     p.locationStr.takeIf { it.isNotBlank() }?.let { "IP 属地 $it" },
                     p.regTimeStr.takeIf { it.isNotBlank() },
                 ).joinToString(" · ")
-                val repText = if (p.reputation > 0) "声望 ${formatCount(p.reputation)}" else ""
+                // 1.2xx（真机反馈）：声望 ≤ 0 也要显示（此前只显示 >0 的，0 与负声望会整段消失）
+                val repText = "声望 ${formatCount(p.reputation)}"
                 if (infoLine.isNotEmpty() || repText.isNotEmpty()) {
                     Spacer(Modifier.height(5.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {

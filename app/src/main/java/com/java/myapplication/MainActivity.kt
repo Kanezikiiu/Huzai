@@ -87,6 +87,8 @@ class MainActivity : ComponentActivity() {
         HupuPrefs.init(this)
         // 初始化登录会话（cookie 恢复 / 写端点鉴权）
         HupuAccount.init(this)
+        // 1.2xx 局域网数据同步：注入 context（广播发现需 MulticastLock）
+        com.java.myapplication.data.HupuSyncNet.init(this)
         // 1.126 本地关注集合（服务端无关注状态查询，本地维护 + 后台校准）
         com.java.myapplication.data.HupuFollowStore.init(this)
         // 应用用户选择的屏幕刷新率（-1=自动则不动，窗口前台期间强制生效）

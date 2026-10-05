@@ -73,6 +73,7 @@ import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.glass.liquidElevation
@@ -172,7 +173,7 @@ fun HistoryPage(onClose: () -> Unit) {
         if (floorStates.containsKey(r.pid)) return
         floorLoading[r.pid] = true
         scope.launch {
-            delay(300)
+            delay(120)
             if (floorStates.containsKey(r.pid)) {
                 floorLoading[r.pid] = false
                 return@launch
@@ -224,7 +225,7 @@ fun HistoryPage(onClose: () -> Unit) {
                     threadDetails[tid] = repo.mergeThreadDetail(threadDetails[tid], fresh)
                 }
             } else {
-                delay(300)
+                delay(120)
                 if (threadDetails.containsKey(tid)) return@LaunchedEffect
                 val d = repo.threadDetail(tid)
                 if (d != null && mySeq == threadSortSeq) threadDetails[tid] = d
@@ -245,39 +246,28 @@ fun HistoryPage(onClose: () -> Unit) {
         val all = remember(HupuPrefs.historyVersion) { HupuPrefs.loadHistory() }
         Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             // 顶栏：与主页频道自定义页同款——返回 + 标题 + 计数 + 右侧动作按钮
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "浏览记录",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "${all.size}/${HupuPrefs.MAX_HISTORY}",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(4.dp))
-                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
-                LiquidIconButton(
-                    icon = Icons.Rounded.Delete,
-                    contentDescription = "清空记录",
-                    onClick = {
-                        clearDialogCount = HupuPrefs.loadHistory().size
-                        showClearDialog = true
-                    },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            CenteredTopBar(
+                title = "浏览记录",
+                onBack = { closing = true },
+                actions = {
+                    Text(
+                        "${all.size}/${HupuPrefs.MAX_HISTORY}",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                    LiquidIconButton(
+                        icon = Icons.Rounded.Delete,
+                        contentDescription = "清空记录",
+                        onClick = {
+                            clearDialogCount = HupuPrefs.loadHistory().size
+                            showClearDialog = true
+                        },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+            )
 
             OutlinedTextField(
                 colors = huzaiFieldColors(container = false),

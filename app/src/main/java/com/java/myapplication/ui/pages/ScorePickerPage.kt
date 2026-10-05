@@ -63,6 +63,7 @@ import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.FixedChannelRow
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import androidx.compose.foundation.layout.PaddingValues
@@ -185,37 +186,26 @@ fun ScorePickerPage(onClose: () -> Unit) {
     ) {
         Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             // 顶栏：返回 + 标题 + 计数 + 恢复默认（与主页频道自定义同款）
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "自定义评分频道",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "${selected.size}/${HupuPrefs.MAX_SCORE_GAMES}",
-                    fontSize = 14.sp,
-                    color = if (selected.size >= HupuPrefs.MAX_SCORE_GAMES) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(4.dp))
-                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
-                LiquidIconButton(
-                    icon = Icons.Rounded.Refresh,
-                    contentDescription = "重置频道",
-                    onClick = { resetAsk = true },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            CenteredTopBar(
+                title = "自定义评分频道",
+                onBack = { closing = true },
+                actions = {
+                    Text(
+                        "${selected.size}/${HupuPrefs.MAX_SCORE_GAMES}",
+                        fontSize = 14.sp,
+                        color = if (selected.size >= HupuPrefs.MAX_SCORE_GAMES) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                    LiquidIconButton(
+                        icon = Icons.Rounded.Refresh,
+                        contentDescription = "重置频道",
+                        onClick = { resetAsk = true },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+            )
             // 1.192: 「虎扑评分」固定频道开关（不参与排序）
             FixedChannelRow(
                 name = "虎扑评分",

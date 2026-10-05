@@ -55,6 +55,7 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 
 /**
@@ -299,31 +300,11 @@ internal fun CommonDetailOverlay(
 /** 主题详情顶栏：与赛事侧（MatchDetailPage）同构——返回 + 标题 + 「N人评分」 */
 @Composable
 private fun CommonHeader(t: HupuCommonTree, onBack: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LiquidBackButton(onClick = { onBack() })
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                t.name,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${formatCount(t.scorePersonCount)}人评分",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    CenteredTopBar(
+        title = t.name,
+        onBack = { onBack() },
+        subtitle = "${formatCount(t.scorePersonCount)}人评分",
+    )
     if (t.desc.isNotBlank()) {
         Text(
             t.desc,

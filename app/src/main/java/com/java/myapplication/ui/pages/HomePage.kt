@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -56,6 +57,7 @@ import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuUiSignals
 import com.java.myapplication.data.HupuRepository
 import com.java.myapplication.data.HupuTopicInfo
+import com.java.myapplication.data.pickTopicSortKey
 import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.*
 import androidx.compose.foundation.layout.PaddingValues
@@ -129,8 +131,13 @@ private fun FeedContent(
     var selectedSort by remember { mutableStateOf<String?>(null) }
     // 各话题流的累积状态：key = "话题url#排序url"
     val feedStates = remember { mutableStateMapOf<String, TopicFeedState>() }
-    // 各话题的排序 tabs（服务器返回）
-    val topicSorts = remember { mutableStateMapOf<String, List<SortTab>>() }
+    // 各话题的排序 tabs（服务器返回）；1.2xx：用跨会话缓存预热 —— 否则首次进入话题时
+    // 排序条要等列表接口回来才出现，整行消失会让下方卡片上移一下再弹回
+    val topicSorts = remember {
+        mutableStateMapOf<String, List<SortTab>>().apply {
+            putAll(HupuPrefs.loadTopicSortTabs())
+        }
+    }
     // 正在首屏加载的话题 url（null=无）
     var loadingTopic by remember { mutableStateOf<String?>(null) }
     // 强制刷新标记 + 重载触发器
@@ -158,7 +165,7 @@ private fun FeedContent(
         if (floorStates.containsKey(r.pid)) return
         floorLoading[r.pid] = true
         scope.launch {
-            delay(300)
+            delay(120)
             if (floorStates.containsKey(r.pid)) {
                 floorLoading[r.pid] = false
                 return@launch
@@ -236,7 +243,7 @@ private fun FeedContent(
                     threadDetails[tid] = repo.mergeThreadDetail(threadDetails[tid], fresh)
                 }
             } else {
-                delay(300) // 盖入动画 280ms + 余量
+                delay(120) // 盖入动画 280ms + 余量
                 if (threadDetails.containsKey(tid)) return@LaunchedEffect
                 val d = repo.threadDetail(tid)
                 if (d != null && mySeq == threadSortSeq) threadDetails[tid] = d
@@ -266,6 +273,38 @@ private fun FeedContent(
 
     val currentSort = if (selected == "hot") null else selectedSort
     val feedKey = if (selected == "hot") "hot" else "$selected#${currentSort ?: selected}"
+
+    /**
+     * 1.2xx：记录每个话题「离开时」生效的 feed key，供 Crossfade 的**退场层**沿用。
+     * 否则退场层会掉回「默认排序」的 key（`url#url`），于是切话题时会先闪一下
+     * 当前话题的「最新回复」列表再切走（真机反馈）。
+     */
+    val lastKeyOf = remember { mutableStateMapOf<String, String>() }
+
+    /**
+     * 1.2xx：最近一次**真正展示过**的排序条 —— 下一个话题在排序 tab 未知时先「借用」它。
+     * 大部分话题的排序分类是相同的（最新回复 / 最新发布 / 24小时榜），借来的往往就是最终
+     * 要显示的那一套；等真实 tab 到位、若与之相同则**排序条完全不动**（零跳变）。
+     */
+    var lastSortBar by remember { mutableStateOf<List<SortTab>>(emptyList()) }
+    LaunchedEffect(selected, topicSorts[selected]) {
+        val t = topicSorts[selected]
+        if (!t.isNullOrEmpty()) lastSortBar = t
+    }
+    /** 切换话题（首页横滑条 / 左右滑动共用）：记下离开时的 key + 应用默认排序 */
+    fun selectTopic(target: String) {
+        if (target == selected) return
+        if (selected != "hot") lastKeyOf[selected] = feedKey
+        if (target == "hot") {
+            selected = "hot"
+        } else {
+            selected = target
+            selectedSort = pickTopicSortKey(
+                topicSorts[target] ?: emptyList(),
+                HupuPrefs.loadDefaultTopicSortTitle(),
+            )
+        }
+    }
 
     // ---------- 1.222 热帖作者补齐（黑名单在热帖流生效的前提） ----------
     // 为什么需要：首页热帖数据源（/all-gambia 的 pageData.threads）**整页不含 author**
@@ -328,12 +367,28 @@ private fun FeedContent(
         loadingTopic = selected
         val p = repo.topicPage(currentSort ?: selected, refresh = force)
         if (p != null) {
+            // 1.2xx：这次响应让我们发现「有默认排序要用」时，**不落地**这份默认排序的内容 ——
+            // 否则 Crossfade 会拿它当退场层，先闪一下「最新回复」列表再切成目标排序。
+            // 只记下排序 tab 并切过去，让目标排序自己去加载（用户全程只看到骨架）。
+            val want = if (selectedSort == null) {
+                pickTopicSortKey(p.sortTabs, HupuPrefs.loadDefaultTopicSortTitle())
+            } else {
+                null
+            }
+            if (want != null) {
+                topicSorts[selected] = p.sortTabs
+                HupuPrefs.saveTopicSortTabs(selected, p.sortTabs)
+                if (loadingTopic == selected) loadingTopic = null
+                selectedSort = want // 键变化会重新触发本 effect → 加载目标排序
+                return@LaunchedEffect
+            }
             feedStates[feedKey] = TopicFeedState(
                 threads = p.threads,
                 page = p.page,
                 totalPages = p.totalPages,
             )
             topicSorts[selected] = p.sortTabs
+            HupuPrefs.saveTopicSortTabs(selected, p.sortTabs)
             if (force) refreshVersion++
         } else {
             feedStates[feedKey] = TopicFeedState() // 空列表=失败
@@ -378,12 +433,7 @@ private fun FeedContent(
         if (ni !in tabUrls.indices) return
         val target = tabUrls[ni]
         if (target == selected) return
-        if (target == "hot") {
-            selected = "hot"
-        } else {
-            selected = target
-            selectedSort = null
-        }
+        selectTopic(target)
     }
 
     Box(modifier.fillMaxSize()) {
@@ -400,7 +450,7 @@ private fun FeedContent(
             // 与标题的竖直对齐由 PageHeader 统一处理（标题与右侧内容同一竖直中心）。
             // 1.223b：图标放大到 24dp——20dp 时放大镜的「镜圈」偏小，看着像羽毛球拍。
             LiquidIconButton(
-                icon = Icons.Rounded.Search,
+                icon = HupuIcons.SearchOutlined,
                 contentDescription = "搜索",
                 onClick = { searchOpen = true },
                 iconSize = 24.dp,
@@ -410,10 +460,9 @@ private fun FeedContent(
         TopicBar(effectiveTopics, selected, showHot) {
             if (selected == it) {
                 // 1.192: 再点已选 = 回到「热帖」；但热帖被隐藏时该动作无意义 → 保持不动
-                if (showHot) selected = "hot"
+                if (showHot) selectTopic("hot")
             } else {
-                selected = it
-                selectedSort = null
+                selectTopic(it)
             }
         }
         // Tab 重选刷新信号（话题流侧）：已选中时再点首页 Tab → 强刷当前话题流并回顶
@@ -423,8 +472,26 @@ private fun FeedContent(
         }
         // 排序子 Tab（仅话题流显示）
         if (selected != "hot") {
-            val sorts = topicSorts[selected]
-            if (sorts != null) SortBar(sorts, currentSort ?: selected) { selectedSort = it }
+            val realTabs = topicSorts[selected]?.takeIf { it.isNotEmpty() }
+            // 1.2xx：真实 tab 还没回来时**借用上一个话题的排序条** ——
+            // 多数话题的排序分类相同，借来的往往就是最终要显示的那一套；
+            // 等真实 tab 到位若与之相同，则排序条一个像素都不会动。
+            val barTabs = realTabs ?: lastSortBar
+            if (barTabs.isNotEmpty()) {
+                val barSel = if (realTabs != null) {
+                    currentSort ?: selected
+                } else {
+                    // 借用期按与「真实 tab」完全相同的规则推算高亮 → tab 到位时高亮不跳
+                    pickTopicSortKey(barTabs, HupuPrefs.loadDefaultTopicSortTitle())
+                        ?: barTabs.firstOrNull()?.url.orEmpty()
+                }
+                SortBar(barTabs, barSel) { url ->
+                    // 借用期忽略点击：借用 tab 的 url 属于上一个话题，用了会请求错页面
+                    if (realTabs != null) selectedSort = url
+                }
+            } else {
+                Spacer(Modifier.height(SORT_BAR_TOTAL_HEIGHT))
+            }
         }
         val pullState = rememberPullToRefreshState()
         // 已有内容的流刷新时走顶部指示器（内容保持不动）；仅首次加载（无缓存）才显示骨架
@@ -440,8 +507,13 @@ private fun FeedContent(
                 animationSpec = tween(180),
                 label = "feedSwitch",
             ) { sel ->
-                // sel 是本层自己的目标态：淡出中的旧页面内容不会被新选中项污染（解决残留/闪烁）
-                val selSort = if (sel == "hot") null else if (sel == selected) selectedSort else null
+                // 1.2xx：退场层（sel != selected）沿用它「离开时」的 key —— 否则会掉回默认排序的
+                // key，闪一下当前话题的「最新回复」列表再切走（真机反馈）
+                val selKey = when {
+                    sel == "hot" -> "hot"
+                    sel == selected -> "$sel#${selectedSort ?: sel}"
+                    else -> lastKeyOf[sel] ?: "$sel#$sel"
+                }
                 when {
                     // 默认：全站热帖（70 条一次性，无分页）；threads 用补过作者的那份，黑名单才能生效
                     sel == "hot" -> FeedList(
@@ -451,7 +523,6 @@ private fun FeedContent(
                         onOpenThread = { if (sel == selected) openThread(it) },
                     )
                     else -> {
-                        val selKey = "$sel#${selSort ?: sel}"
                         val state = feedStates[selKey]
                         when {
                             // 首次加载（无缓存）

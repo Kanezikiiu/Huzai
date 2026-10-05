@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuAccount
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.HuzaiToast
 
@@ -152,22 +153,10 @@ fun LoginPage(onClose: () -> Unit) {
     ) {
         Column(Modifier.fillMaxSize()) {
             // 顶栏：返回 + 标题（对齐 ThreadHeader 形态）
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(top = 8.dp, bottom = 10.dp, start = 16.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "\u767b\u5f55\u864e\u6251\u8d26\u53f7",
-                    fontSize = 16.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            CenteredTopBar(
+                title = "\u767b\u5f55\u864e\u6251\u8d26\u53f7",
+                onBack = { closing = true },
+            )
             if (webMounted) {
                 HupuLoginWebView(
                     onLoginSuccess = { finishLogin() },

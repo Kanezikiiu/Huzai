@@ -1,6 +1,5 @@
 package com.java.myapplication.ui.pages
 
-import android.text.format.DateUtils
 import kotlin.coroutines.cancellation.CancellationException
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -62,6 +61,7 @@ import com.java.myapplication.data.HupuApi
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
+import com.java.myapplication.ui.components.skeletonBlock
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +69,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.java.myapplication.ui.components.LiquidBackButton
+import com.java.myapplication.ui.theme.isAppDarkTheme
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.liquidElevation
+import androidx.compose.foundation.border
 import com.java.myapplication.ui.components.HuzaiToast
 
 /**
@@ -196,7 +200,7 @@ fun PmListSection(
 
     // 入场动画结束后再加载（同通知列表的卡顿治理）
     LaunchedEffect(Unit) {
-        delay(320)
+        delay(120)
         if (convs.value != null) return@LaunchedEffect
         val body = JSONObject().apply {
             put("unreadList", 0)
@@ -231,14 +235,40 @@ fun PmListSection(
     }
 
     Column {
-        Text(
-            "私信",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Spacer(Modifier.height(4.dp))
+        // 1.2xx: 区块标题行 —— 左侧「私信」+ 右侧未读总数胶囊（无未读时退化为会话数）
+        val headerUnread = convs.value?.sumOf { it.unread } ?: 0
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "私信",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            val headerList = convs.value
+            if (headerUnread > 0) {
+                Text(
+                    "$headerUnread 条未读",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            } else if (!headerList.isNullOrEmpty()) {
+                Text(
+                    "${headerList.size} 个会话",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         // 1.102: 刷新由外层触发（下拉 / 聊天页关闭同步），重拉第一页整体替换
         fun refreshNow() {
             scope.launch {
@@ -262,19 +292,67 @@ fun PmListSection(
         val convList = convs.value
         when {
             convList == null -> {
-                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                // 骨架条（与信息流骨架同款流光），替代原来的转圈
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    repeat(4) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(68.dp)
+                                .skeletonBlock(RoundedCornerShape(14.dp))
+                        )
+                    }
                 }
             }
             convList.isEmpty() -> {
-                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 36.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            HupuIcons.Mail,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
                     Text("暂无私信", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             else -> {
-                Column {
+                // 1.2xx（真机反馈：参考 iOS 26 短信页）——所有会话合成**一张分组卡片**：
+                //   · 首行顶角圆角、末行底角圆角（由整卡 clip 统一给）
+                //   · 行与行之间**没有间隔**、无缝相连
+                //   · 行间只用一条细分割线（从头像右侧开始，与 iOS 一致）
+                //   · 落影打在这张整卡上（保留悬浮感），行本身不再各自成卡
+                val groupShape = RoundedCornerShape(16.dp)
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        // 1.2xx（真机反馈）：卡片颜色看起来比信息流卡片灰——落影会在卡边形成灰晕，
+                        // 去掉落影，与信息流卡片（clip16 + surface）完全一致
+                        .clip(groupShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                ) {
                     convList.forEachIndexed { idx, c ->
                         PmConversationRow(c, onClick = { onOpen(c) })
+                        if (idx != convList.lastIndex) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 68.dp)
+                                    .height(0.6.dp)
+                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
+                            )
+                        }
                         if (idx == convList.lastIndex && hasMore) {
                             LaunchedEffect(convList.size) { loadMore() }
                         }
@@ -290,24 +368,107 @@ fun PmListSection(
     }
 }
 
-/** 会话行 */
+/** 从私信内容里提取虎扑站内帖子链接（如站务组「审核通过」消息里的 huputiyu://bbs/topic/{tid}）。 */
+internal fun pmThreadTid(content: String): String? =
+    Regex("huputiyu://bbs/topic/(\\d+)").find(content)?.groupValues?.get(1)
+        ?: Regex("hupu://bbs/topic/(\\d+)").find(content)?.groupValues?.get(1)
+
+/** 私信预览：把图片消息 / HTML 片段转成可读的一行文本（纯函数，可单测） */
+internal fun pmPreview(raw: String): String {
+    val t = raw.trim()
+    if (t.isEmpty()) return ""
+    val hasImg = t.contains("<img", ignoreCase = true)
+    val plain = t
+        .replace(Regex("<img[^>]*>", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    return when {
+        plain.isNotEmpty() -> plain
+        hasImg -> "[图片]"
+        else -> ""
+    }
+}
+
+private fun sameDay(a: java.util.Calendar, b: java.util.Calendar): Boolean =
+    a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) &&
+        a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR)
+
+/** 私信时间分级（纯函数，可单测）：刚刚 / x分钟前 / HH:mm / 昨天 / 周x / M月d日。
+ *  入参为秒级时间戳（接口口径，与列表其它处一致）。 */
+internal fun formatPmTime(sec: Long, now: Long = System.currentTimeMillis()): String {
+    if (sec <= 0L) return ""
+    val t = sec * 1000L
+    val diff = now - t
+    if (diff < 60_000L) return "刚刚"
+    if (diff < 3_600_000L) return "${diff / 60_000L}分钟前"
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = t }
+    val n = java.util.Calendar.getInstance().apply { timeInMillis = now }
+    if (sameDay(c, n)) {
+        return String.format(
+            "%02d:%02d",
+            c.get(java.util.Calendar.HOUR_OF_DAY),
+            c.get(java.util.Calendar.MINUTE),
+        )
+    }
+    val y = (n.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+    if (sameDay(c, y)) return "昨天"
+    if (diff < 7 * 86_400_000L &&
+        c.get(java.util.Calendar.YEAR) == n.get(java.util.Calendar.YEAR)
+    ) {
+        return "周" + "日一二三四五六"[c.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+    }
+    // 1.2xx（真机反馈）：非今年的私信要**带上年份**，否则只有"5月10日"看不出是哪一年
+    return if (c.get(java.util.Calendar.YEAR) == n.get(java.util.Calendar.YEAR)) {
+        "${c.get(java.util.Calendar.MONTH) + 1}月${c.get(java.util.Calendar.DAY_OF_MONTH)}日"
+    } else {
+        "${c.get(java.util.Calendar.YEAR)}年${c.get(java.util.Calendar.MONTH) + 1}月" +
+            "${c.get(java.util.Calendar.DAY_OF_MONTH)}日"
+    }
+}
+
+/** 会话行：iOS 26 短信风格 —— **行本身不再是卡片**，
+ *  首尾圆角 / 整卡边界 / 行间分隔线都由外层「分组卡片」统一处理。 */
 @Composable
 private fun PmConversationRow(c: PmConversation, onClick: () -> Unit) {
+    val unread = c.unread > 0
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
-            AsyncImage(
-                model = c.avatar,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(44.dp).clip(CircleShape),
-            )
-            if (c.unread > 0) {
+            if (c.isSystem) {
+                // 系统会话（虎扑官方号等）没有头像 → 圆形浅底 + 品牌图标
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        HupuIcons.BellOutlined,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            } else {
+                AsyncImage(
+                    model = c.avatar,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(44.dp).clip(CircleShape),
+                )
+            }
+            if (unread) {
                 androidx.compose.material3.Badge(
                     modifier = Modifier.align(Alignment.TopEnd),
                 ) {
@@ -324,8 +485,10 @@ private fun PmConversationRow(c: PmConversation, onClick: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     c.name,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    // 1.2xx（真机反馈）：名称发灰 → 与上方三个入口的名称同色（onSurface），
+                    // 未读仍然靠字重 + 头像角标区分
+                    fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -334,16 +497,18 @@ private fun PmConversationRow(c: PmConversation, onClick: () -> Unit) {
                 Spacer(Modifier.width(6.dp))
                 if (c.lastTime > 0) {
                     Text(
-                        DateUtils.getRelativeTimeSpanString(c.lastTime * 1000, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString(),
+                        formatPmTime(c.lastTime),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+            Spacer(Modifier.height(3.dp))
             Text(
-                c.lastContent,
+                pmPreview(c.lastContent),
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (unread) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -354,7 +519,13 @@ private fun PmConversationRow(c: PmConversation, onClick: () -> Unit) {
 /** 与某人的聊天页（4级页，盖入）
  *  1.104: 顶栏头像/昵称可点 → 打开对方用户主页（puid 即数字型 euid） */
 @Composable
-fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long) -> Unit)? = null) {
+fun PmChatPage(
+    conv: PmConversation,
+    onClose: () -> Unit,
+    onOpenProfile: ((Long) -> Unit)? = null,
+    /** 1.2xx：点私信里的站内链接（如站务组「审核通过」）→ 打开对应帖子 */
+    onOpenThread: ((String) -> Unit)? = null,
+) {
     val progress = remember { Animatable(0f) }
     DisposableEffect(Unit) {
         SecondaryPage.enter()
@@ -411,7 +582,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
 
     // 首次加载
     LaunchedEffect(conv.puid) {
-        delay(320)
+        delay(120)
         if (messages.value != null) return@LaunchedEffect
         val body = JSONObject().apply {
             put("fromPuid", conv.puid)
@@ -573,7 +744,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(msgList.size) { idx ->
-                                PmBubble(msgList[msgList.size - 1 - idx])
+                                PmBubble(msgList[msgList.size - 1 - idx], onOpenThread)
                             }
                         }
                     }
@@ -632,7 +803,7 @@ fun PmChatPage(conv: PmConversation, onClose: () -> Unit, onOpenProfile: ((Long)
 
 /** 聊天气泡：自己右侧主题色、对方左侧浅灰；内容含 <img> 时渲染图片 */
 @Composable
-private fun PmBubble(m: PmMessage) {
+private fun PmBubble(m: PmMessage, onOpenThread: ((String) -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
@@ -657,11 +828,20 @@ private fun PmBubble(m: PmMessage) {
                     .clip(RoundedCornerShape(12.dp)),
             )
         } else {
+            // 1.2xx：站内链接（站务组「审核通过」等）→ 整体可点，点开对应帖子；
+            // 正文用 pmPreview 剥掉 HTML 标签，只留可读文字
+            val threadTid = pmThreadTid(m.content)
+            val clickable = if (threadTid != null && onOpenThread != null) {
+                Modifier.clickable { onOpenThread(threadTid) }
+            } else {
+                Modifier
+            }
             Text(
-                m.content,
+                pmPreview(m.content),
                 fontSize = 14.sp,
                 color = if (m.fromMe) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
+                    .then(clickable)
                     .widthIn(max = 260.dp)
                     .clip(
                         RoundedCornerShape(

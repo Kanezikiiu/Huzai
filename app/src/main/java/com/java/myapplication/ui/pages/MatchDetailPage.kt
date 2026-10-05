@@ -58,6 +58,7 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.HeroBadgeAvatar
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.chipBarClip
 
@@ -143,33 +144,11 @@ fun MatchDetailOverlay(
     ) {
         Column(Modifier.fillMaxSize()) {
             // 顶栏：返回 + 比赛名 + 总评分人数
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { onBack() })
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        title,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    tree?.let {
-                        Text(
-                            "${formatCount(it.scorePersonCount)}人评分",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+            CenteredTopBar(
+                title = title,
+                onBack = { onBack() },
+                subtitle = tree?.let { "${formatCount(it.scorePersonCount)}人评分" },
+            )
 
             // 内容区：加载中 / 失败重试 / 正常
             val state = if (tree != null) "ok" else if (loading) "loading" else "error"

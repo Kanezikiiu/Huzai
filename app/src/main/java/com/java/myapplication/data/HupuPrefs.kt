@@ -134,12 +134,20 @@ object HupuPrefs {
         favoriteTopicsVersion++
     }
 
-    /** 切换某个专区的收藏状态；返回「切换后是否已收藏」（供提示与图标状态使用） */
-    fun toggleFavoriteTopic(t: HupuTopicInfo): Boolean {
+    /** 1.2xx: 收藏切换结果——区分「已满」，以便如实提示而不是静默挤掉最早的收藏 */
+    enum class FavoriteToggle { ADDED, REMOVED, LIMIT }
+
+    /**
+     * 切换某个专区的收藏状态。
+     * 1.2xx（真机反馈）：**达到上限时拒绝新增**，不再把最早的收藏挤出列表 ——
+     * 收藏是用户主动沉淀的清单，被静默顶掉会让人困惑。
+     */
+    fun toggleFavoriteTopic(t: HupuTopicInfo): FavoriteToggle {
         val cur = loadFavoriteTopics()
         val exists = cur.any { it.url == t.url }
+        if (!exists && cur.size >= MAX_FAVORITE_TOPICS) return FavoriteToggle.LIMIT
         saveFavoriteTopics(toggleFavoriteList(cur, t, MAX_FAVORITE_TOPICS))
-        return !exists
+        return if (exists) FavoriteToggle.REMOVED else FavoriteToggle.ADDED
     }
 
     /** 搜索历史：最多 12 条，新搜索置顶去重 */
@@ -388,6 +396,9 @@ object HupuPrefs {
     /** 1.222：按整条（人）移除 */
     fun removeBlacklistEntry(entry: HupuBlacklistEntry) = removeFromBlacklist(entry.ids)
 
+    /** 1.2xx 数据同步：用「已合并」的结果整体替换黑名单（刷新缓存与版本号，各列表即时刷新） */
+    fun replaceBlacklist(list: List<HupuBlacklistEntry>) = saveBlacklistEntries(list)
+
     fun clearBlacklist() {
         prefs.edit().remove(KEY_BLACKLIST).apply()
         cachedBlacklistEntries = emptyList()
@@ -546,6 +557,70 @@ object HupuPrefs {
 
     fun saveStartTab(index: Int) {
         prefs.edit().putInt(KEY_START_TAB, index.coerceIn(0, 3)).apply()
+    }
+
+    // ---------- 1.2xx 排序 tab 跨会话缓存（话题 url → 服务端排序 tab） ----------
+    private const val KEY_TOPIC_SORT_TABS = "topic_sort_tabs_v1"
+    private var cachedTopicSortTabs: MutableMap<String, List<SortTab>>? = null
+
+    private fun topicSortTabsMutable(): MutableMap<String, List<SortTab>> {
+        cachedTopicSortTabs?.let { return it }
+        val json = prefs.getString(KEY_TOPIC_SORT_TABS, null)
+        val m = if (json.isNullOrEmpty()) {
+            LinkedHashMap()
+        } else {
+            LinkedHashMap(decodeTopicSortTabsJson(json))
+        }
+        cachedTopicSortTabs = m
+        return m
+    }
+
+    /**
+     * 排序 tab 的跨会话缓存：排序 tab 随列表接口一起返回，首次进入话题时没有它
+     * → 排序条会"晚一拍"出现、布局跟着跳一下。把它持久化后，常见话题下次进入即秒出。
+     */
+    fun loadTopicSortTabs(): Map<String, List<SortTab>> = topicSortTabsMutable()
+
+    /** 拉到最新 tab 后覆盖写入（tab 集合稳定，正常只会写一次） */
+    fun saveTopicSortTabs(url: String, tabs: List<SortTab>) {
+        if (url.isEmpty() || tabs.isEmpty()) return
+        val cur = topicSortTabsMutable()
+        if (cur[url] == tabs) return
+        cur[url] = tabs
+        prefs.edit().putString(KEY_TOPIC_SORT_TABS, encodeTopicSortTabsJson(cur)).apply()
+    }
+
+    // ---------- 1.2xx 默认排序（专区 / 帖子回复 / 评分评论） ----------
+    private const val KEY_DEFAULT_TOPIC_SORT = "default_topic_sort_v1"
+    private const val KEY_DEFAULT_REPLY_SORT = "default_reply_sort_v1"
+    private const val KEY_DEFAULT_SCORE_SORT = "default_score_sort_v1"
+
+    /** 帖子回复默认排序：0 默认 / 1 最新 / 2 最热（本地按点亮降序） */
+    fun loadDefaultReplySort(): Int = prefs.getInt(KEY_DEFAULT_REPLY_SORT, 0).coerceIn(0, 2)
+
+    fun saveDefaultReplySort(mode: Int) {
+        prefs.edit().putInt(KEY_DEFAULT_REPLY_SORT, mode.coerceIn(0, 2)).apply()
+    }
+
+    /** 评分评论（含楼中楼）默认排序：brightest / latest / earliest */
+    fun loadDefaultScoreSort(): String =
+        prefs.getString(KEY_DEFAULT_SCORE_SORT, "brightest") ?: "brightest"
+
+    fun saveDefaultScoreSort(key: String) {
+        prefs.edit().putString(KEY_DEFAULT_SCORE_SORT, key).apply()
+    }
+
+    /**
+     * 专区（含首页话题流）默认排序 —— 存**排序 tab 的标题**（如「最新发布」）。
+     * 空串 = 跟随服务器默认。
+     *
+     * 之所以按标题而不是序号：各专区的排序 tab 集合并不相同，序号在不同专区指向不同含义；
+     * 命中不了（该专区没有这个排序）时回退服务器默认。
+     */
+    fun loadDefaultTopicSortTitle(): String = prefs.getString(KEY_DEFAULT_TOPIC_SORT, "") ?: ""
+
+    fun saveDefaultTopicSortTitle(title: String) {
+        prefs.edit().putString(KEY_DEFAULT_TOPIC_SORT, title.trim()).apply()
     }
 
     /** 色彩主题变更版本：设置页点选后整个应用即时重组（无需重启） */
@@ -955,17 +1030,84 @@ internal fun decodeFavoriteTopicsJson(json: String): List<HupuTopicInfo> {
     }.getOrDefault(emptyList())
 }
 
-/** 1.191: 收藏切换的纯函数（便于单测）：已存在则移除，否则置顶插入并按上限截断 */
+/**
+ * 1.191: 收藏切换的纯函数（便于单测）：已存在则移除，否则置顶插入。
+ * 1.2xx（真机反馈）：**已达上限时原样返回**（不挤出最早的收藏），由调用方提示「已满」。
+ */
 internal fun toggleFavoriteList(
     cur: List<HupuTopicInfo>,
     t: HupuTopicInfo,
     max: Int,
 ): List<HupuTopicInfo> =
     if (cur.any { it.url == t.url }) cur.filterNot { it.url == t.url }
-    else (listOf(t) + cur).take(max)
+    else if (cur.size >= max) cur
+    else listOf(t) + cur
+
+/** 1.2xx 排序 tab 纯 JSON 编解码（便于单测）：{"话题url":[{"id":0,"title":"最新回复","url":"…"}]} */
+internal fun encodeTopicSortTabsJson(m: Map<String, List<SortTab>>): String {
+    val o = JSONObject()
+    m.forEach { (url, tabs) ->
+        if (url.isEmpty() || tabs.isEmpty()) return@forEach
+        val a = JSONArray()
+        tabs.forEach { t ->
+            val j = JSONObject()
+            j.put("id", t.id)
+            j.put("title", t.title)
+            j.put("url", t.url)
+            a.put(j)
+        }
+        o.put(url, a)
+    }
+    return o.toString()
+}
+
+internal fun decodeTopicSortTabsJson(json: String): Map<String, List<SortTab>> {
+    return try {
+        val o = JSONObject(json)
+        val out = LinkedHashMap<String, List<SortTab>>()
+        o.keys().forEach { url ->
+            val a = o.optJSONArray(url) ?: return@forEach
+            val list = ArrayList<SortTab>()
+            for (i in 0 until a.length()) {
+                val j = a.optJSONObject(i) ?: continue
+                val u = j.optString("url")
+                if (u.isEmpty()) continue
+                list += SortTab(id = j.optInt("id"), title = j.optString("title"), url = u)
+            }
+            if (list.isNotEmpty()) out[url] = list
+        }
+        out
+    } catch (e: Exception) {
+        emptyMap()
+    }
+}
 
 /**
- * 1.196: 把「新增评分频道」按官方顺序补到用户已保存列表末尾（缺失才补，尊重既有排序）。
+ * 1.2xx 默认排序：按**标题**在服务器返回的排序 tab 里找 —— 找到用它的 url（作为 selected key），
+ * 未配置（空串）或该专区没有这个排序时返回 null（= 沿用服务器默认）。
+ *
+ * 纯函数，便于单测。
+ */
+internal fun pickTopicSortKey(sorts: List<SortTab>, preferredTitle: String): String? {
+    val want = preferredTitle.trim()
+    if (want.isEmpty() || sorts.isEmpty()) return null
+    return sorts.firstOrNull { it.title.trim() == want }?.url
+}
+
+/** 1.2xx 默认排序：设置页可选的专区排序标题（服务器返回的标题通常落在这几个值上） */
+internal val TOPIC_SORT_TITLE_OPTIONS = listOf("最新回复", "最新发布", "24小时榜")
+
+/** 1.2xx 默认排序：帖子回复的可选项（0 默认 / 1 最新 / 2 最热） */
+internal val REPLY_SORT_OPTIONS = listOf(0 to "默认", 1 to "最新", 2 to "最热")
+
+/** 1.2xx 默认排序：评分评论的可选项（官方 queryType） */
+internal val SCORE_SORT_OPTIONS = listOf(
+    "brightest" to "最亮",
+    "latest" to "最晚",
+    "earliest" to "最早",
+)
+
+/**
  * 抽成纯函数便于单测。`all` 为全部合法频道 id；`seeds` 为本次新增、需默认开启的频道 id。
  */
 internal fun seedMissingScoreGames(

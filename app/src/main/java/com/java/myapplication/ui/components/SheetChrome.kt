@@ -90,6 +90,9 @@ internal fun SheetTopBar(
     title: String,
     onClose: () -> Unit,
 ) {
+    // 1.208: 标题行的顶端距面板顶边约 25dp（抓手 10dp 留白 + 5dp 高 + 10dp 上间距）。
+    // 大圆角机型上按此深度加大左右留白，标题 / 关闭按钮始终落在圆角内侧的直边区。
+    val side = rememberSheetSideInset(depth = 25.dp)
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier
@@ -102,7 +105,12 @@ internal fun SheetTopBar(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
+                .padding(
+                    start = maxOf(16.dp, side),
+                    end = maxOf(12.dp, side),
+                    top = 10.dp,
+                    bottom = 8.dp,
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -212,6 +220,30 @@ internal fun rememberScreenCornerRadius(): Dp {
 internal fun sheetTopCornerShape(): Shape {
     val r = rememberScreenCornerRadius()
     return remember(r) { RoundedCornerShape(topStart = r, topEnd = r) }
+}
+
+/**
+ * 1.208（真机反馈）：面板顶部两角是半径 R 的四分之一圆。顶部组件（标题 / 关闭按钮 /
+ * 搜索框 / 取消）原先按固定小留白贴边摆放——圆角适中时没问题，但**大圆角机型**上
+ * 曲线会压到这些组件（右侧「取消」尤甚），看着「格格不入」。
+ *
+ * 这里给出「距面板顶边 [depth] 处」曲线相对侧边的**水平内缩量**，供顶部行据此加大
+ * 左右留白，使组件始终落在圆角内侧的直边区（另加 [extra] 作视觉余量）。
+ * 圆角适中 / 深度已超过半径时结果为 0，即顶部留白保持原样。
+ */
+internal fun sheetCornerInset(radius: Dp, depth: Dp, extra: Dp = 6.dp): Dp {
+    if (radius <= 0.dp || depth >= radius) return 0.dp
+    val r = radius.value
+    val y = depth.value
+    val dx = r - kotlin.math.sqrt((r * r - (r - y) * (r - y)).coerceAtLeast(0f))
+    return (dx + extra.value).dp
+}
+
+/** 便捷：按「屏幕物理圆角」算距面板顶边 [depth] 处所需的侧向留白（0 表示无需额外留白）。 */
+@Composable
+internal fun rememberSheetSideInset(depth: Dp): Dp {
+    val r = rememberScreenCornerRadius()
+    return remember(r, depth) { sheetCornerInset(r, depth) }
 }
 
 /**

@@ -18,7 +18,12 @@ import com.java.myapplication.data.decodeKeywordsJson
 import com.java.myapplication.data.isLocalStickerUrl
 import com.java.myapplication.data.localStickerFile
 import com.java.myapplication.data.stickerContentKey
+import com.java.myapplication.data.SortTab
+import com.java.myapplication.data.pickTopicSortKey
+import com.java.myapplication.data.encodeTopicSortTabsJson
+import com.java.myapplication.data.decodeTopicSortTabsJson
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -209,8 +214,45 @@ class HupuPrefsTest {
         assertEquals(listOf("u2", "u1"), toggleFavoriteList(listOf(a), b, 50).map { it.url })
         // 再点一次 = 取消
         assertEquals(listOf("u1"), toggleFavoriteList(listOf(b, a), b, 50).map { it.url })
-        // 上限：新收藏置顶，尾部被挤出
-        assertEquals(listOf("u3", "u1"), toggleFavoriteList(listOf(a, b), c, 2).map { it.url })
+        // 未满时正常置顶插入
+        assertEquals(listOf("u3", "u1"), toggleFavoriteList(listOf(a), c, 2).map { it.url })
+        // 1.2xx 已达上限：原样返回（不挤出最早的收藏，由调用方提示「已满」）
+        assertEquals(listOf("u1", "u2"), toggleFavoriteList(listOf(a, b), c, 2).map { it.url })
+    }
+
+    @Test
+    fun pickTopicSortKey_byTitle_withFallback() {
+        val tabs = listOf(
+            SortTab(0, "最新回复", "/topic/r"),
+            SortTab(1, "最新发布", "/topic/p"),
+        )
+        // 命中：按标题取到对应 url
+        assertEquals("/topic/p", pickTopicSortKey(tabs, "最新发布"))
+        // 标题两侧空白容错
+        assertEquals("/topic/p", pickTopicSortKey(tabs, " 最新发布 "))
+        // 该专区没有这个排序 → 回退服务器默认（null）
+        assertNull(pickTopicSortKey(tabs, "24小时榜"))
+        // 未配置 → 服务器默认
+        assertNull(pickTopicSortKey(tabs, ""))
+        // 没拿到 tab → 服务器默认
+        assertNull(pickTopicSortKey(emptyList(), "最新发布"))
+    }
+
+    @Test
+    fun topicSortTabs_cacheRoundTrip() {
+        val m = mapOf(
+            "/topic-daily" to listOf(
+                SortTab(0, "最新回复", "/topic-daily"),
+                SortTab(1, "最新发布", "/topic-daily?sort=p"),
+            ),
+        )
+        val back = decodeTopicSortTabsJson(encodeTopicSortTabsJson(m))
+        assertEquals(2, back["/topic-daily"]?.size)
+        assertEquals("最新发布", back["/topic-daily"]?.get(1)?.title)
+        assertEquals("/topic-daily?sort=p", back["/topic-daily"]?.get(1)?.url)
+        // 坏数据 / 空对象 → 空表
+        assertTrue(decodeTopicSortTabsJson("nope").isEmpty())
+        assertTrue(decodeTopicSortTabsJson("{}").isEmpty())
     }
 
     // ---------- 1.196: 新增评分频道「默认开启」的一次性补入 ----------

@@ -138,7 +138,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
     var playerEntered by remember { mutableStateOf(false) }
     // 评论排序（官方 queryType：brightest=最亮 / latest=最晚 / earliest=最早）。
     // 默认最亮（对齐官方客户端）；每位选手打开时重置为默认。
-    var playerSort by remember { mutableStateOf("brightest") }
+    var playerSort by remember { mutableStateOf(HupuPrefs.loadDefaultScoreSort()) }
     // 排序是否处于默认态：仅默认态下「最亮无评论」才自动降级到最晚，
     // 用户手动切到最亮且为空时保持空态（不抢用户的操作）
     var playerSortIsDefault by remember { mutableStateOf(true) }
@@ -146,7 +146,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
     val playerComments = remember { mutableStateMapOf<String, ScoreCommentState>() }
     // 1.59 切排序「留旧显示」：displaySort=数据源索引（新排序数据到位才切换），
     // playerSort=排序条高亮（点击即时反馈）；switching=切换加载中角标
-    var playerDisplaySort by remember { mutableStateOf("brightest") }
+    var playerDisplaySort by remember { mutableStateOf(HupuPrefs.loadDefaultScoreSort()) }
     var playerSwitching by remember { mutableStateOf(false) }
     var playerClosing by remember { mutableStateOf(false) }
     var playerLoading by remember { mutableStateOf(false) }
@@ -158,8 +158,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
     var subSheetLoading by remember { mutableStateOf(false) }
     var subSheetLoadingMore by remember { mutableStateOf(false) }
     var subSheetClosing by remember { mutableStateOf(false) }
-    // 楼中楼内排序（默认最亮，对齐官方 sheet defaultCommentOrderBy:"brightest"）
-    var subSheetSort by remember { mutableStateOf("brightest") }
+    // 楼中楼内排序（1.2xx：跟随「默认排序」设置；官方 sheet 默认 brightest）
+    var subSheetSort by remember { mutableStateOf(HupuPrefs.loadDefaultScoreSort()) }
     // 各母评论的子回复缓存（key="bizType-bizId-parentCommentId-sortKey"，切排序互不干扰）
     val subComments = remember { mutableStateMapOf<String, ScoreCommentState>() }
     // ---------- 1.64 评分 & 点亮（登录态；key 与 PlayerDetailPage 的 litKey 同构） ----------
@@ -348,9 +348,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
         val key = "${p.bizType}-${p.bizId}"
         playerClosing = false
         if (!playerEntered) { playerEntered = true; SecondaryPage.enter() }
-        // 每位选手都从默认「最亮」开始（排序选择不跨选手沿用）
-        playerSort = "brightest"
-        playerDisplaySort = "brightest"
+        // 每位选手都从「默认排序」设置开始（排序选择不跨选手沿用）
+        val defaultSort = HupuPrefs.loadDefaultScoreSort()
+        playerSort = defaultSort
+        playerDisplaySort = defaultSort
         playerSwitching = false
         playerSortIsDefault = true
         openedPlayer = p
@@ -497,7 +498,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
             detailLoading = false
             return@LaunchedEffect
         }
-        delay(300) // 盖入动画 280ms + 余量（首个网络请求前）
+        delay(120) // 盖入动画 280ms + 余量（首个网络请求前）
         val t = matchTrees[key] ?: repo.scoreTree(m.scoreBizType ?: "lol_match", no)?.also { matchTrees[key] = it }
         if (t == null) {
             if (openedMatch?.scoreBizNo == no) detailLoading = false
@@ -521,10 +522,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
             }
             return@LaunchedEffect
         }
-        // 1.60 恢复 delay(300)：盖入动画 280ms + 余量错峰，网络请求不与转场动画争帧
+        // 1.60 恢复 delay(120)：盖入动画 280ms + 余量错峰，网络请求不与转场动画争帧
         // （1.59 误删导致打开即卡——一边加载一边动画，缓存未命中时尤其明显）
         if (!selfDetails.containsKey(key)) {
-            delay(300)
+            delay(120)
         }
         if (!selfDetails.containsKey(key)) {
             val d = repo.scoreSelf(p.bizType, p.bizId)
@@ -556,7 +557,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
         val s = openedCommon ?: return@LaunchedEffect
         val key = "${s.bizType}-${s.bizNo}"
         if (commonTrees.containsKey(key)) return@LaunchedEffect
-        delay(300) // 盖入动画 280ms + 余量
+        delay(120) // 盖入动画 280ms + 余量
         if (commonTrees.containsKey(key)) {
             if (openedCommon?.bizNo == s.bizNo) commonDetailLoading = false
             return@LaunchedEffect
@@ -863,7 +864,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 },
                 subSheet = scoreSubSheet,
                 onOpenSubSheet = { parent ->
-                    subSheetSort = "brightest"
+                    subSheetSort = HupuPrefs.loadDefaultScoreSort()
                     val ck = subCacheKey(op.bizType, op.bizId, parent.commentId, subSheetSort)
                     val cached = subComments[ck]
                     if (cached != null) {
@@ -876,9 +877,9 @@ fun ScorePage(modifier: Modifier = Modifier) {
                         scoreSubSheet = SubCommentSheetData(parent = parent, data = null, sortKey = subSheetSort)
                         val sort0 = subSheetSort
                         scope.launch {
-                            // 1.60 恢复 delay(300)：sheet 弹入 280ms + 余量。骨架屏已同步置位，
+                            // 1.60 恢复 delay(120)：sheet 弹入 280ms + 余量。骨架屏已同步置位，
                             // 但网络解析/重组仍会与弹入动画争帧（1.59 删 delay 后实测打开卡顿）
-                            delay(300)
+                            delay(120)
                             val d = repo.scoreSubComments(op.bizType, op.bizId, parent.commentId, queryType = sort0)
                             if (d != null) subComments[ck] = d
                             // 1.60 三重匹配：sheet 开着、母评论没换、排序没被切——加载途中切排序/切
@@ -941,9 +942,9 @@ fun ScorePage(modifier: Modifier = Modifier) {
                     scoreSubSheet = scoreSubSheet?.copy(sortKey = sort, data = null)
                     subSheetLoading = true
                     scope.launch {
-                        // 1.60 恢复 delay(300)：tab 点击→请求错峰（避免与 tab 切换+列表
+                        // 1.60 恢复 delay(120)：tab 点击→请求错峰（避免与 tab 切换+列表
                         // 重组同帧争抢）；同时对同 pid 并发请求去重
-                        delay(300)
+                        delay(120)
                         val live = subComments[ck]
                         if (live == null) {
                             val d = repo.scoreSubComments(op.bizType, op.bizId, pid, queryType = sort)

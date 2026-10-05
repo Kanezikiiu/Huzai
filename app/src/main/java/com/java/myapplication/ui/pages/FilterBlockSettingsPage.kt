@@ -63,6 +63,7 @@ import com.java.myapplication.data.blacklistProfileId
 import com.java.myapplication.data.formatBlacklistTime
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.huzaiFieldColors
@@ -189,23 +190,10 @@ fun FilterBlockSettingsPage(
             .tapGuard(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "过滤与屏蔽",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            CenteredTopBar(
+                title = "过滤与屏蔽",
+                onBack = { closing = true },
+            )
             // 二级 Tab 条（复用三大页顶部横滑条同款玻璃胶囊 Chip）
             Row(
                 Modifier

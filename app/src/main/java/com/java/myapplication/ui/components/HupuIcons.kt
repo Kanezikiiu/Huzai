@@ -20,6 +20,21 @@ private fun ImageVector.Builder.strokePath(d: String, width: Float = 2f): ImageV
         strokeLineJoin = StrokeJoin.Round,
         pathData = addPathNodes(d),
     )
+/** 播放器控制条图标 path（运行时 addPathNodes 解析，见 HupuIconPathTest 冒烟） */
+private const val REPLAY_PATH =
+    "M12,5V1L7,6l5,5V7c3.31,0,6,2.69,6,6s-2.69,6,-6,6-6,-2.69,-6,-6H4c0,4.42,3.58,8,8,8s8,-3.58,8,-8-3.58,-8,-8,-8z"
+
+/** `REPLAY_PATH` 绕 x=12 镜像（x′ = 24 − x / dx′ = −dx），供「快进」使用。 */
+private const val FORWARD_PATH =
+    "M12,5V1L17,6l-5,5V7c-3.31,0,-6,2.69,-6,6s2.69,6,6,6,6,-2.69,6,-6H20c0,4.42,-3.58,8,-8,8s-8,-3.58,-8,-8,3.58,-8,8,-8z"
+private const val FULLSCREEN_PATH =
+    "M7,14H5v5h5v-2H7V14zM5,10h2V7h3V5H5V10zM17,17h-3v2h5v-5h-2V17zM14,5v2h3v3h2V5H14z"
+private const val FULLSCREEN_EXIT_PATH =
+    "M5,16h3v3h2v-5H5V16zM8,8H5v2h5V5H8V8zM14,19h2v-3h3v-2h-5V19zM16,8V5h-2v5h5V8H16z"
+private const val LOCK_PATH =
+    "M18,8h-1V6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6v2H6c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V10C20,8.9 19.1,8 18,8zM12,17c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2s2,0.9 2,2S13.1,17 12,17zM15.1,8H8.9V6c0,-1.71 1.39,-3.1 3.1,-3.1s3.1,1.39 3.1,3.1V8z"
+private const val LOCK_OPEN_PATH =
+    "M12,17c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM18,8h-1V6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6h1.9c0,-1.71 1.39,-3.1 3.1,-3.1s3.1,1.39 3.1,3.1v2H6c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V10c0,-1.1 -0.9,-2 -2,-2z"
 
 /**
  * 按需 Material 圆角图标：直接嵌入 Google 官方 24px SVG path 数据（addPathNodes 解析）。
@@ -109,9 +124,62 @@ object HupuIcons {
     val Light: ImageVector = materialIcon(name = "HupuIcons.Light") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M1,21h4L5,9L1,9v12zM23,10c0,-1.1 -0.9,-2 -2,-2h-6.31l0.95,-4.57 0.03,-0.32c0,-0.41 -0.17,-0.79 -0.44,-1.06L14.17,1 7.59,7.59C7.22,7.95 7,8.45 7,9v10c0,1.1 0.9,2 2,2h9c0.83,0 1.54,-0.5 1.84,-1.22l3.02,-7.05c0.09,-0.23 0.14,-0.47 0.14,-0.73v-2z"))
     }
+    /** 点亮·描边版（Lucide thumbs-up，ISC 许可）——消息页「亮了/推荐」入口试用不填充形态 */
+    val LightOutlined: ImageVector = materialIcon(name = "HupuIcons.LightOutlined") {
+        strokePath("M7 10v12")
+        strokePath("M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z")
+    }
+    /** 播放器·暂停（Material pause 24px） */
+    val Pause: ImageVector = materialIcon(name = "HupuIcons.Pause") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M6,19h4V5H6V19zM14,5v14h4V5H14z"))
+    }
+    /** 播放器·回退（Material replay 24px）：环形箭头 + 圆心留白（数字「15」叠在中心） */
+    val Replay: ImageVector = materialIcon(name = "HupuIcons.Replay") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes(REPLAY_PATH))
+    }
+    /** 播放器·快进：回退箭头绕画布中心做 x 镜像（逐条指令手写转换，避免运行时 group） */
+    val Forward: ImageVector = materialIcon(name = "HupuIcons.Forward") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes(FORWARD_PATH))
+    }
+    /** 播放器·全屏（Material fullscreen 24px） */
+    val Fullscreen: ImageVector = materialIcon(name = "HupuIcons.Fullscreen") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes(FULLSCREEN_PATH))
+    }
+    /** 播放器·退出全屏（Material fullscreen_exit 24px） */
+    val FullscreenExit: ImageVector = materialIcon(name = "HupuIcons.FullscreenExit") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes(FULLSCREEN_EXIT_PATH))
+    }
+    /** 播放器·锁定（Material lock 24px） */
+    val Lock: ImageVector = materialIcon(name = "HupuIcons.Lock") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes(LOCK_PATH))
+    }
+    /** 播放器·解锁（Material lock_open 24px） */
+    val LockOpen: ImageVector = materialIcon(name = "HupuIcons.LockOpen") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes(LOCK_OPEN_PATH))
+    }
+    /** 播放器·倍速展开指示（Material expand_less 24px，小号低透明度使用） */
+    val ChevronUp: ImageVector = materialIcon(name = "HupuIcons.ChevronUp") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,8l-6,6l1.41,1.41L12,10.83l4.59,4.58L18,14z"))
+    }
+    /**
+     * 搜索·描边放大镜（自绘，Lucide 风格）。
+     *
+     * 1.2xx（真机反馈：「Material 的 Search 看着像球拍」）：那个图标是**实心**的，
+     * 镜面与手柄糊成一块，放大后像羽毛球拍。这里自绘成「细圆环 + 圆头短柄」，
+     * 与项目里其它 Lucide 图标（MetaLight / MetaComment）同源，清楚是放大镜。
+     */
+    val SearchOutlined: ImageVector = materialIcon(name = "HupuIcons.SearchOutlined") {
+        strokePath("M19 11a8 8 0 1 1 -16 0a8 8 0 1 1 16 0")
+        strokePath("M21 21l-4.35 -4.35")
+    }
     /** 消息铃铛（Material notifications 24px） */
     val Bell: ImageVector = materialIcon(name = "HupuIcons.Bell") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32L13.5,4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.64,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"))
+    }
+    /** 消息铃铛·描边版（Lucide bell，ISC 许可）——「我的」页消息入口试用不填充形态 */
+    val BellOutlined: ImageVector = materialIcon(name = "HupuIcons.BellOutlined") {
+        strokePath("M10.268 21a2 2 0 0 0 3.464 0")
+        strokePath("M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326")
     }
     /** 发帖（Material edit 24px 铅笔） */
     val Edit: ImageVector = materialIcon(name = "HupuIcons.Edit") {
@@ -141,9 +209,17 @@ object HupuIcons {
     val Mail: ImageVector = materialIcon(name = "HupuIcons.Mail") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M20,4H4C2.9,4 2.01,4.9 2.01,6L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V6C22,4.9 21.1,4 20,4zM20,8l-8,5l-8,-5V6l8,5l8,-5V8z"))
     }
+    /** 1.2xx 默认排序（Material sort 24px，从长到短的横线） */
+    val Sort: ImageVector = materialIcon(name = "HupuIcons.Sort") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M3,18h6v-2H3V18zM3,6v2h18V6H3zM3,13h12v-2H3V13z"))
+    }
     /** 1.134 关于（Material info 24px） */
     val Info: ImageVector = materialIcon(name = "HupuIcons.Info") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM13,17h-2v-6h2v6zM13,9h-2V7h2v2z"))
+    }
+    /** 1.2xx 数据同步（Material sync 24px，双箭头循环） */
+    val Sync: ImageVector = materialIcon(name = "HupuIcons.Sync") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M12,4V1L8,5l4,4V6c3.31,0 6,2.69 6,6 0,1.01 -0.25,1.97 -0.7,2.8l1.46,1.46C19.54,15.03 20,13.57 20,12c0,-4.42 -3.58,-8 -8,-8zM12,18c-3.31,0 -6,-2.69 -6,-6 0,-1.01 0.25,-1.97 0.7,-2.8L5.24,7.74C4.46,8.97 4,10.43 4,12c0,4.42 3.58,8 8,8v3l4,-4 -4,-4v3z"))
     }
     /** 1.134 官网（Material public 24px，地球） */
     val Globe: ImageVector = materialIcon(name = "HupuIcons.Globe") {

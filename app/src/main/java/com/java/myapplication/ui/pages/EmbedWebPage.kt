@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +52,8 @@ import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.delay
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 
 /**
@@ -73,6 +76,14 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
         onDispose { SecondaryPage.exit() }
     }
     var closing by remember { mutableStateOf(false) }
+    // 1.2xx（真机反馈「点战报要等一会儿才打开」）：外层外壳先渲染，WebView 延后挂载
+    var mountWeb by remember { mutableStateOf(false) }
+    var webLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        // 入场动画 280ms；WebView 首次实例化会阻塞主线程，放到动画之后再挂
+        delay(300)
+        mountWeb = true
+    }
     LaunchedEffect(closing) {
         if (closing) {
             progress.animateTo(0f, tween(280))
@@ -113,41 +124,46 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
     ) {
         Column(Modifier.fillMaxSize()) {
             // 顶栏：返回 + 标题 + 浏览器打开
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    embed.title,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+            CenteredTopBar(
+                title = embed.title,
+                onBack = { closing = true },
+                actions = {
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .clickable { openInBrowser() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            HupuIcons.Globe,
+                            contentDescription = "浏览器打开",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                },
+            )
+            // 1.2xx（真机反馈「点战报要等一会儿才打开」）：WebView 的**首次实例化会阻塞主线程**
+//（几百毫秒），若在页面第一帧就创建，入场动画会被卡住 → 表现成"点了没反应，过一会儿才出现"。
+// 做法：页面外壳（顶栏 + 转圈）**第一帧就显示**，WebView 等入场动画播完再挂载。
+            if (mountWeb) {
+                EmbedWebView(
+                    url = embed.url,
+                    onLoaded = { webLoaded = true },
+                    modifier = Modifier.fillMaxSize(),
                 )
-                Spacer(Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { openInBrowser() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        HupuIcons.Globe,
-                        contentDescription = "浏览器打开",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(20.dp),
+            }
+            if (!webLoaded) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(26.dp),
+                        strokeWidth = 2.5.dp,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
-            EmbedWebView(
-                url = embed.url,
-                modifier = Modifier.fillMaxSize(),
-            )
         }
     }
 }
@@ -204,7 +220,7 @@ internal fun EmbedCard(embed: HupuEmbed, onClick: () -> Unit) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun EmbedWebView(url: String, modifier: Modifier) {
+private fun EmbedWebView(url: String, onLoaded: () -> Unit, modifier: Modifier) {
     AndroidView(
         modifier = modifier.background(MaterialTheme.colorScheme.background),
         factory = { ctx ->
@@ -216,7 +232,11 @@ private fun EmbedWebView(url: String, modifier: Modifier) {
                 // 背景透明 + 硬件层：避免加载间隙白闪（同登录页 WebView 的处理）
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 setLayerType(android.webkit.WebView.LAYER_TYPE_HARDWARE, null)
-                webViewClient = WebViewClient()
+                webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        onLoaded()
+                    }
+                }
                 loadUrl(url)
             }
         },

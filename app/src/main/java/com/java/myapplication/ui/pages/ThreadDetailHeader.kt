@@ -1,5 +1,6 @@
 package com.java.myapplication.ui.pages
-
+import com.java.myapplication.ui.player.VideoHost
+import com.java.myapplication.ui.player.VideoPlayer
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.BackEventCompat
 import kotlin.coroutines.cancellation.CancellationException

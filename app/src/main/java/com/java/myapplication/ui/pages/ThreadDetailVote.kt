@@ -123,6 +123,10 @@ import com.java.myapplication.data.HupuThreadDetail
 import com.java.myapplication.data.HupuVote
 import com.java.myapplication.data.HupuVoteApi
 import com.java.myapplication.data.HupuVoteOption
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.java.myapplication.data.HupuVoteResult
 import com.java.myapplication.data.HupuParser
 import androidx.compose.foundation.text.appendInlineContent
@@ -176,6 +180,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
     val scope = rememberCoroutineScope()
+    val dark = isAppDarkTheme()
     // 1.124: 首帧直接吃会话缓存（终态票数条，零 loading 跳变）；无缓存才走 loading 骨架
     var result by remember(vote.voteId) {
         mutableStateOf(HupuVoteApi.cachedVoteInfo(vote.voteId))
@@ -234,49 +239,68 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
             .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                HupuIcons.Poll,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (vote.isMulti) "多选投票" else "单选投票",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            if (vote.isMulti) {
+        // 1.2xx：头部改为「图标圆底 + 标题 + 类型/上限」两行结构（信息层次更清楚）
+        Row(verticalAlignment = Alignment.Top) {
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    HupuIcons.Poll,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    "最多可选 $limitVal 项",
+                    vote.title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 21.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    buildString {
+                        append(if (vote.isMulti) "多选投票" else "单选投票")
+                        if (vote.isMulti) append(" · 最多可选 $limitVal 项")
+                    },
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        Text(
-            vote.title,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
 
         options.forEach { opt ->
             val isPicked = picked.contains(opt.sort)
             val isMine = result?.myChoices?.contains(opt.sort) == true
             val highlight = isPicked || isMine
             val frac = if (total > 0f) (opt.voteCount / total).coerceIn(0f, 1f) else 0f
+            val shape = RoundedCornerShape(12.dp)
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(shape)
+                    .background(
+                        if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                        else MaterialTheme.colorScheme.surface,
+                    )
+                    .border(
+                        1.dp,
+                        if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        shape,
+                    )
                     .then(
                         if (canPick) Modifier.clickable {
                             picked = if (vote.isMulti) {
@@ -299,7 +323,7 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                                 .fillMaxWidth(frac)
                                 .fillMaxHeight()
                                 .padding(vertical = 1.dp)
-                                .clip(RoundedCornerShape(6.dp))
+                                .clip(RoundedCornerShape(11.dp))
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)),
                         )
                     }
@@ -307,13 +331,13 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val indShape = if (vote.isMulti) RoundedCornerShape(4.dp) else CircleShape
+                    val indShape = if (vote.isMulti) RoundedCornerShape(6.dp) else CircleShape
                     Box(
                         Modifier
-                            .size(16.dp)
+                            .size(18.dp)
                             .clip(indShape)
                             .background(
                                 if (highlight) MaterialTheme.colorScheme.primary else Color.Transparent,
@@ -331,11 +355,11 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                                 Icons.Rounded.Check,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(11.dp),
+                                modifier = Modifier.size(12.dp),
                             )
                         }
                     }
-                    Spacer(Modifier.width(9.dp))
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         opt.content,
                         fontSize = 14.sp,
@@ -345,7 +369,7 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                     if (reveal) {
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "${opt.voteCount}票 ${(frac * 100).roundToInt()}%",
+                            "${opt.voteCount}票 · ${(frac * 100).roundToInt()}%",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -361,22 +385,29 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                 when {
                     loading -> "加载中…"
                     res == null -> "投票数据加载失败"
+                    canPick && picked.isNotEmpty() -> "已选 ${picked.size} 项"
                     else -> "共 ${res.userCount} 人参与 · ${res.totalVotes} 票"
                 },
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
             when {
                 loading -> {}
                 res == null -> {
                     Box(
                         Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
                             .clickable { tick++ }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
                     ) {
-                        Text("重试", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "重试",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
                 res.ended -> Text(
@@ -386,20 +417,28 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                 )
                 res.canVote -> {
                     val canSubmit = picked.isNotEmpty() && !submitting
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (canSubmit) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-                            )
-                            .clickable(enabled = canSubmit) { submit() }
-                            .padding(horizontal = 18.dp, vertical = 6.dp),
+                    // 1.2xx（真机反馈）：与用户主页「私信」按钮同款（液态玻璃底 + 描边 + 落影）
+                    LiquidButton(
+                        onClick = { if (canSubmit) submit() },
+                        fill = buttonFill(dark),
+                        border = buttonBorder(dark),
+                        isInteractive = canSubmit,
+                        height = 36.dp,
+                        contentPadding = 14.dp,
+                        arrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                     ) {
+                        if (submitting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Text(
-                            if (submitting) "提交中…" else "提交",
+                            if (submitting) "提交中…" else "提交投票",
                             fontSize = 13.sp,
-                            color = if (canSubmit) MaterialTheme.colorScheme.onPrimary
+                            fontWeight = FontWeight.Medium,
+                            color = if (canSubmit) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -407,6 +446,7 @@ internal fun VoteCard(vote: HupuVote, onToast: (String) -> Unit) {
                 else -> Text(
                     "已投票",
                     fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }

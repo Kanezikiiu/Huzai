@@ -82,6 +82,7 @@ import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.glass.liquidElevation
@@ -256,37 +257,26 @@ fun TopicPickerPage(onClose: () -> Unit) {
     ) {
         Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             // 顶栏：返回 + 标题 + 计数 + 恢复默认
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "自定义首页频道",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "${selected.size}/${HupuPrefs.MAX_HOME_TOPICS}",
-                    fontSize = 14.sp,
-                    color = if (selected.size >= HupuPrefs.MAX_HOME_TOPICS) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(4.dp))
-                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
-                LiquidIconButton(
-                    icon = Icons.Rounded.Refresh,
-                    contentDescription = "重置频道",
-                    onClick = { resetAsk = true },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            CenteredTopBar(
+                title = "自定义首页频道",
+                onBack = { closing = true },
+                actions = {
+                    Text(
+                        "${selected.size}/${HupuPrefs.MAX_HOME_TOPICS}",
+                        fontSize = 14.sp,
+                        color = if (selected.size >= HupuPrefs.MAX_HOME_TOPICS) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
+                    LiquidIconButton(
+                        icon = Icons.Rounded.Refresh,
+                        contentDescription = "重置频道",
+                        onClick = { resetAsk = true },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+            )
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()

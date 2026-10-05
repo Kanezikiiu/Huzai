@@ -69,6 +69,7 @@ import com.java.myapplication.data.HupuThread
 import com.java.myapplication.data.HupuThreadDetail
 import com.java.myapplication.data.HupuRepository
 import com.java.myapplication.data.HupuTopicInfo
+import com.java.myapplication.data.pickTopicSortKey
 import com.java.myapplication.data.SortTab
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.ErrorRetry
@@ -77,11 +78,13 @@ import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.PageHeader
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SortBar
+import com.java.myapplication.ui.components.SORT_BAR_TOTAL_HEIGHT
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.TopicFeedState
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tabSwipeSwitch
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.components.chipBarClip
@@ -113,8 +116,22 @@ fun ZonePage(modifier: Modifier = Modifier) {
     var topicEntered by remember { mutableStateOf(false) }
     var overlayClosing by remember { mutableStateOf(false) }
     val feedStates = remember { mutableStateMapOf<String, TopicFeedState>() }
-    val topicSorts = remember { mutableStateMapOf<String, List<SortTab>>() }
+    // 各专区的排序 tabs（服务器返回）；1.2xx：用跨会话缓存预热，避免排序条"晚一拍"出现
+    val topicSorts = remember {
+        mutableStateMapOf<String, List<SortTab>>().apply {
+            putAll(HupuPrefs.loadTopicSortTabs())
+        }
+    }
     var loadingTopicKey by remember { mutableStateOf<String?>(null) }
+    /**
+     * 1.2xx：最近一次真正展示过的排序条 —— 新话题 tab 未知时先借用它。
+     * 多数话题排序分类相同，借来的往往就是最终那一套；真实 tab 到位若相同则排序条不动。
+     */
+    var lastSortBar by remember { mutableStateOf<List<SortTab>>(emptyList()) }
+    LaunchedEffect(openedTopic?.url, openedTopic?.url?.let { topicSorts[it] }) {
+        val t = openedTopic?.url?.let { topicSorts[it] }
+        if (!t.isNullOrEmpty()) lastSortBar = t
+    }
     var refreshVersion by remember { mutableIntStateOf(0) }
     var selectedSort by remember { mutableStateOf<String?>(null) }
 
@@ -142,7 +159,11 @@ fun ZonePage(modifier: Modifier = Modifier) {
     }
 
     fun openTopic(t: HupuTopicInfo) {
-        selectedSort = null
+        // 1.2xx：应用「专区默认排序」（按标题匹配已缓存的排序 tab；未配置/未命中 → 服务器默认）
+        selectedSort = pickTopicSortKey(
+            topicSorts[t.url] ?: emptyList(),
+            HupuPrefs.loadDefaultTopicSortTitle(),
+        )
         overlayClosing = false
         if (!topicEntered) { topicEntered = true; SecondaryPage.enter() }
         openedTopic = t
@@ -342,12 +363,20 @@ fun ZonePage(modifier: Modifier = Modifier) {
                 topic = opened,
                 isFavorite = favTopics.any { it.url == opened.url },
                 onToggleFavorite = {
-                    val nowFav = HupuPrefs.toggleFavoriteTopic(opened)
-                    com.java.myapplication.ui.components.HuzaiToast.show(if (nowFav) "已收藏「${opened.name}」" else "已取消收藏")
+                    val r = HupuPrefs.toggleFavoriteTopic(opened)
+                    com.java.myapplication.ui.components.HuzaiToast.show(
+                        when (r) {
+                            HupuPrefs.FavoriteToggle.ADDED -> "已收藏「${opened.name}」"
+                            HupuPrefs.FavoriteToggle.REMOVED -> "已取消收藏"
+                            HupuPrefs.FavoriteToggle.LIMIT ->
+                                "收藏专区已达上限（${HupuPrefs.MAX_FAVORITE_TOPICS}）"
+                        }
+                    )
                 },
                 closing = overlayClosing,
                 feedStates = feedStates,
                 topicSorts = topicSorts,
+                fallbackSorts = lastSortBar,
                 loadingTopicKey = loadingTopicKey,
                 refreshVersion = refreshVersion,
                 selectedSort = selectedSort,
@@ -367,12 +396,27 @@ fun ZonePage(modifier: Modifier = Modifier) {
                         loadingTopicKey = key
                         val p = repo.topicPage(sort ?: url)
                         if (p != null) {
+                            // 1.2xx：发现「有默认排序要用」时**不落地**这份默认排序的内容 ——
+                            // 否则 Crossfade 会拿它当退场层，先闪一下「最新回复」列表再切成目标排序。
+                            val want = if (selectedSort == null) {
+                                pickTopicSortKey(p.sortTabs, HupuPrefs.loadDefaultTopicSortTitle())
+                            } else {
+                                null
+                            }
+                            if (want != null) {
+                                topicSorts[url] = p.sortTabs
+                                HupuPrefs.saveTopicSortTabs(url, p.sortTabs)
+                                loadingTopicKey = null
+                                selectedSort = want // 键变化 → 触发目标排序自己加载
+                                return@launch
+                            }
                             feedStates[key] = TopicFeedState(
                                 threads = p.threads,
                                 page = p.page,
                                 totalPages = p.totalPages,
                             )
                             topicSorts[url] = p.sortTabs
+                            HupuPrefs.saveTopicSortTabs(url, p.sortTabs)
                         } else {
                             feedStates[key] = TopicFeedState() // 空=失败
                         }
@@ -503,6 +547,8 @@ private fun TopicFeedOverlay(
     closing: Boolean,
     feedStates: Map<String, TopicFeedState>,
     topicSorts: Map<String, List<SortTab>>,
+    /** 1.2xx：本话题排序 tab 未知时借用的「上一个话题的排序条」（多数话题分类相同） */
+    fallbackSorts: List<SortTab>,
     loadingTopicKey: String?,
     refreshVersion: Int,
     selectedSort: String?,
@@ -571,45 +617,38 @@ private fun TopicFeedOverlay(
     ) {
         Column(Modifier.fillMaxSize()) {
             // 顶栏：返回 + 版块名 + 热度
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { onBack() })
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        topic.name,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurface,
+            CenteredTopBar(
+                title = topic.name,
+                onBack = { onBack() },
+                // 副标题随热度有无变化；没有热度时传 null（组件会自动省略副标题）
+                subtitle = if (topic.hotText.isNotBlank()) "${topic.hotText}热度" else null,
+                actions = {
+                    // 1.191: 收藏该专区
+                    LiquidIconButton(
+                        icon = HupuIcons.StarRate,
+                        contentDescription = if (isFavorite) "取消收藏" else "收藏专区",
+                        onClick = { onToggleFavorite() },
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (topic.hotText.isNotBlank()) {
-                        Text(
-                            "${topic.hotText} 热度",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                // 1.191: 收藏该专区（原「刷新」按钮——刷新已由下拉刷新覆盖）
-                // 1.223: 升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
-                LiquidIconButton(
-                    icon = HupuIcons.StarRate,
-                    contentDescription = if (isFavorite) "取消收藏" else "收藏专区",
-                    onClick = { onToggleFavorite() },
-                    tint = if (isFavorite) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+                },
+            )
             // 排序子 Tab（服务器返回）
-            if (sorts != null && sorts.isNotEmpty()) {
-                SortBar(sorts, selectedSort ?: topic.url) { onSelectSort(it) }
+            // 1.2xx：真实 tab 未知时先借用上一个话题的排序条（多数话题分类相同 → 几乎零跳变）；
+            // 借用期忽略点击（借来的 url 属于上一个话题，用了会请求错页面）
+            val realTabs = sorts?.takeIf { it.isNotEmpty() }
+            val barTabs = realTabs ?: fallbackSorts
+            if (barTabs.isNotEmpty()) {
+                val barSel = if (realTabs != null) {
+                    selectedSort ?: topic.url
+                } else {
+                    pickTopicSortKey(barTabs, HupuPrefs.loadDefaultTopicSortTitle())
+                        ?: barTabs.firstOrNull()?.url.orEmpty()
+                }
+                SortBar(barTabs, barSel) { if (realTabs != null) onSelectSort(it) }
+            } else {
+                // 无任何可借用的排序条 → 占位同高，避免整行消失导致列表上移再弹回
+                Spacer(Modifier.height(SORT_BAR_TOTAL_HEIGHT))
             }
             // 列表区：排序切换用 Crossfade 防闪（每层用自己的目标态，不被污染）
             androidx.compose.animation.Crossfade(

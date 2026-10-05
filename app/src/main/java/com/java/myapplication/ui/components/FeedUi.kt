@@ -28,8 +28,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -42,9 +48,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import com.java.myapplication.ui.theme.isAppDarkTheme
@@ -65,6 +71,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -412,6 +419,12 @@ internal fun FeedList(
         }
     }
 }
+
+/**
+ * 1.2xx：排序条（非紧凑模式）的**总高度** = 40dp 条高 + 6dp 底部呼吸。
+ * 用于「排序 tab 还没返回」时占位 —— 否则整行消失会让下方列表上移，tab 到位后再弹回来。
+ */
+internal val SORT_BAR_TOTAL_HEIGHT = 46.dp
 
 /**
  * 排序子 Tab（最新回复 / 最新发布 / 24小时榜）
@@ -787,7 +800,19 @@ internal fun PageHeader(
     }
 }
 
-/** 信息流骨架屏（chips 条 + 卡片块） */
+/** 骨架块：**静态**（1.2xx 真机反馈最终定稿）。
+ *
+ * 演进：扫光（油腻）→ 同相位呼吸（看不出）→ 错峰呼吸（仍不理想）→ **静态**。
+ * 结论：骨架屏不需要动效，靠「块本身」传达"内容在路上"即可；
+ * 真正让加载态显得精致的是**形状贴近真实内容**与**颜色层次**，而不是动画。
+ * 保留这个 Modifier 便于以后统一改（当前就是一块 surfaceVariant 圆角色块）。 */
+@Composable
+internal fun Modifier.skeletonBlock(shape: Shape = RoundedCornerShape(20.dp)): Modifier =
+    this
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.surfaceVariant)
+
+/** 信息流骨架屏（chips 条 + 卡片块）——静态骨架 + 正中的弹跳篮球 */
 @Composable
 internal fun SkeletonHome(modifier: Modifier = Modifier) {
     Column(
@@ -801,8 +826,7 @@ internal fun SkeletonHome(modifier: Modifier = Modifier) {
                 Box(
                     Modifier
                         .size(width = 88.dp, height = 34.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .skeletonBlock(RoundedCornerShape(50))
                 )
             }
         }
@@ -811,8 +835,7 @@ internal fun SkeletonHome(modifier: Modifier = Modifier) {
                 Modifier
                     .fillMaxWidth()
                     .height(if (it % 2 == 0) 120.dp else 84.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .skeletonBlock(RoundedCornerShape(20.dp))
             )
         }
     }

@@ -65,6 +65,7 @@ import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -237,22 +238,10 @@ fun MessageCenterPage(onClose: () -> Unit) {
         // 1.101: 改 LazyColumn 使内容可滚动（原 Column 内容超高即被裁切）
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LiquidBackButton(onClick = { closing = true })
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "消息",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+                CenteredTopBar(
+                    title = "消息",
+                    onBack = { closing = true },
+                )
             }
 
             // 三个圆形入口：提到我的 / 评论 / 亮了-推荐
@@ -269,12 +258,12 @@ fun MessageCenterPage(onClose: () -> Unit) {
                         badge = HupuMsgBadge.mention,
                     ) { openedKind = NOTICE_MENTION; listEpoch++ }
                     NoticeEntry(
-                        icon = HupuIcons.Comment, iconSize = 24.dp,
+                        icon = HupuIcons.MetaComment, iconSize = 24.dp,
                         label = "评论", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.reply,
                     ) { openedKind = NOTICE_REPLY; listEpoch++ }
                     NoticeEntry(
-                        icon = HupuIcons.Light, iconSize = 26.dp,
+                        icon = HupuIcons.LightOutlined, iconSize = 24.dp,
                         label = "亮了/推荐", modifier = Modifier.weight(1f),
                         badge = HupuMsgBadge.light,
                     ) { openedKind = NOTICE_LIGHT; listEpoch++ }
@@ -283,7 +272,7 @@ fun MessageCenterPage(onClose: () -> Unit) {
 
             // 私信会话列表（1.99：三按钮下方区域）
             item {
-                Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
                     PmListSection(
                         onOpen = { conv ->
                             openedConv = conv
@@ -298,11 +287,13 @@ fun MessageCenterPage(onClose: () -> Unit) {
     }
     } // PullToRefreshBox
 
+    // 1.2xx：私信站内链接要打开的帖子 tid（在聊天页打开前先声明）
+    var pmThreadTid by remember { mutableStateOf<String?>(null) }
     // 聊天页（4级，盖入）+ 用户主页（5级，puid 即数字型 euid）
     openedConv?.let { conv ->
         if (chatEpoch > 0) {
             androidx.compose.runtime.key(chatEpoch) {
-                PmChatPage(conv = conv, onClose = {
+                PmChatPage(conv = conv, onOpenThread = { tid -> pmThreadTid = tid }, onClose = {
                     chatEpoch = 0
                     openedConv = null
                     pmRefreshing = true
@@ -323,6 +314,8 @@ fun MessageCenterPage(onClose: () -> Unit) {
             }
         }
     }
+
+    pmThreadTid?.let { tid -> PmThreadViewer(tid) { pmThreadTid = null } }
 
     // 子列表页（盖在消息中心之上）
     if (openedKind != 0) {
@@ -421,7 +414,7 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
     // 入场动画（280ms）结束后再发——避免「一边滑入一边建网络/解析」造成的掉帧卡顿
     LaunchedEffect(kind) {
         if (notices.value == null) {
-            kotlinx.coroutines.delay(320)
+            kotlinx.coroutines.delay(120)
             if (notices.value != null) return@LaunchedEffect
             val json = HupuApi.fetchSpaceApi(noticeEndpoint(kind))
             val parsed = json?.let { parseNoticePage(it, kind) }
@@ -484,7 +477,7 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
         if (floorStates.containsKey(r.pid)) return
         floorLoading[r.pid] = true
         scope.launch {
-            delay(300)
+            delay(120)
             if (floorStates.containsKey(r.pid)) {
                 floorLoading[r.pid] = false
                 return@launch
@@ -532,7 +525,7 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
                     threadDetails[tid] = repo.mergeThreadDetail(threadDetails[tid], fresh)
                 }
             } else {
-                delay(300)
+                delay(120)
                 if (threadDetails.containsKey(tid)) return@LaunchedEffect
                 val d = repo.threadDetail(tid)
                 if (d != null && mySeq == threadSortSeq) threadDetails[tid] = d
@@ -550,22 +543,10 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
             .tapGuard(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidBackButton(onClick = { closing = true })
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            CenteredTopBar(
+                title = title,
+                onBack = { closing = true },
+            )
 
             val cur = notices.value
             when {

@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 1.2xx 数据同步：局域网广播发现。部分 ROM（如 ColorOS）会过滤入站广播包，
+         需持有 MulticastLock 才能收到对方的探测广播（普通权限，无需运行时申请）。 -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".HupuApp"
