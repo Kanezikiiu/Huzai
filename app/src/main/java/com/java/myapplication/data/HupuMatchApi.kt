@@ -31,29 +31,45 @@ object HupuMatchApi {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-    /** 6 大电竞项目（businessId 与官方 H5 评分页一致，全部实测匿名可用） */
+    /**
+     * 1.199：「通用热门体育」聚合标签 —— F1 / 斯诺克 / 网球 / 乒乓球 / 排球 / 亚运电竞 等混装。
+     * 无专属 businessId 的项目只能走这里（实测 businessId=snooker → 0 场；
+     * 而本标签一次返回 26 天 / 119 场，含斯诺克 9 场、F1 18 场）。
+     */
+    const val COMMON_HOT_SPORTS_ID = "commonhotsports"
+
+    /**
+     * 全部评分频道（**顺序 = 新用户的默认 tab 顺序**）。
+     *
+     * 1.199：按「虎扑热度 × 赛事时效性」重排，共 **20 个**（正好占满 [HupuPrefs.MAX_SCORE_GAMES] 上限）：
+     *   · 首位「热门赛事」——跨项目高频入口（F1/斯诺克/网球/乒乓球/排球/亚运电竞…），故排第一；
+     *   · 其后按热度：电竞顶流（英雄联盟）→ 传统两大（NBA、英超）→ 国内赛事（王者荣耀、CBA、国际足球/LPL）
+     *     → 其余电竞（CS2、无畏契约、绝地求生、和平精英、LCK）→ 周期赛事（世界杯、奥运会）
+     *     → 长尾专项（网球、乒乓球、羽毛球）；冷门联赛（WNBA、CUBA）垫底。
+     *   · 用户一旦自定义过顺序，本表**只影响新增频道的落位**，不会打断其既有排列。
+     */
     val GAMES = listOf(
+        COMMON_HOT_SPORTS_ID to "热门赛事",
         "lol" to "英雄联盟",
-        "kog" to "王者荣耀",
-        "val" to "无畏契约",
-        "cs2" to "CS2",
-        "pubgmobile" to "和平精英",
-        "pubg" to "绝地求生",
-        // 扩展赛事（同端点换 businessId，2026-09 批量探测确认；下钻 outBizType 各异，parser 透传通用）
         "nba" to "NBA",
-        "cba" to "CBA",
-        "wnba" to "WNBA",
-        "lpl" to "LPL",
-        "lck" to "LCK",
         "epl" to "英超",
+        "kog" to "王者荣耀",
+        "cba" to "CBA",
         // 1.196：国际足球聚合赛程（赛程走 m.hupu.com/soccer/schedule 的 SSR，详见 SOCCER_ID）
         SOCCER_ID to "国际足球",
+        "cs2" to "CS2",
+        "val" to "无畏契约",
+        "lpl" to "LPL",
+        "pubg" to "绝地求生",
+        "pubgmobile" to "和平精英",
+        "lck" to "LCK",
         "worldcup" to "世界杯",
-        "cuba" to "CUBA",
-        "olympics" to "奥运会",
-        "tabletennis" to "乒乓球",
         "tennis" to "网球",
+        "tabletennis" to "乒乓球",
         "badminton" to "羽毛球",
+        "olympics" to "奥运会",
+        "wnba" to "WNBA",
+        "cuba" to "CUBA",
     )
 
     // 1.169: 共享 client（HupuHttp）——连接池/线程池复用

@@ -51,6 +51,7 @@ object HupuMatchParser {
             matchId = matchId,
             statusDesc = o.optString("matchStatusDesc"),
             status = o.optString("matchStatus"),
+            matchType = o.optString("matchType"),
             introduction = o.optString("matchIntroduction"),
             matchName = o.optString("matchName"),
             startTimeText = formatTime(ts),
@@ -456,6 +457,7 @@ object HupuMatchParser {
             matchId = id,
             statusDesc = stTxt,
             status = status,
+            matchType = "against", // 足球赛程天然是两方对抗
             introduction = title,
             matchName = title,
             startTimeText = formatTime(ts),

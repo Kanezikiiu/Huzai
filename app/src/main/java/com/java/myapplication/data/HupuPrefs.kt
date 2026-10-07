@@ -56,24 +56,34 @@ object HupuPrefs {
     }
 
     // ---------- 1.196：新增评分频道「默认开启」的一次性补入 ----------
-    /** 已执行过补入的标记（只补一次；用户之后手动移除即保持移除） */
+    /** 已执行过补入的标记（每个新增频道一个旗标；只补一次，用户之后手动移除即保持移除） */
     private const val KEY_SCORE_SEEDED_196 = "score_games_seeded_196_v1"
+    private const val KEY_SCORE_SEEDED_199 = "score_games_seeded_199_v1"
 
     /**
-     * 1.196：国际足球是新增评分频道，需要「默认开启」。
+     * 新增评分频道的「默认开启」一次性补入。
+     *
      * - 未自定义过评分频道的用户：`effectiveScoreGames` 回退**全量** [HupuMatchApi.GAMES]，本就含新频道，无需处理；
      * - 已自定义过的老用户：其保存列表里不会有新频道 → 这里按官方顺序把缺失的新频道补入末尾，
-     *   既让其「默认开启」，又不打断用户既有的排列偏好。用一次性 flag 保证只补一次。
+     *   既让其「默认开启」，又不打断用户既有的排列偏好。每个频道一个一次性 flag。
+     *
+     * 1.196：国际足球。
+     * 1.199：热门赛事（通用热门体育聚合）—— **上一版漏了这一步**：只加进了目录，
+     * 而老用户的补种 flag 早在 1.196 就置位了，于是横滑条上根本看不到它（真机反馈）。
      */
     private fun seedNewScoreChannels() {
         if (!hasCustomScoreGames()) return
-        if (prefs.getBoolean(KEY_SCORE_SEEDED_196, false)) return
-        // 本版新增、需默认开启的频道（按官方顺序）
-        val seeds = listOf(HupuMatchApi.SOCCER_ID)
+        seedScoreChannelOnce(listOf(HupuMatchApi.SOCCER_ID), KEY_SCORE_SEEDED_196)
+        seedScoreChannelOnce(listOf(HupuMatchApi.COMMON_HOT_SPORTS_ID), KEY_SCORE_SEEDED_199)
+    }
+
+    /** 按官方顺序把 [seeds] 中缺失的频道补到用户列表末尾，并置位一次性旗标 */
+    private fun seedScoreChannelOnce(seeds: List<String>, flagKey: String) {
+        if (prefs.getBoolean(flagKey, false)) return
         val cur = loadScoreGames()
         val next = seedMissingScoreGames(cur, HupuMatchApi.GAMES.map { it.first }, seeds)
         if (next != cur) saveScoreGames(next) // 内部会 scoreGamesVersion++，评分页即时刷新
-        prefs.edit().putBoolean(KEY_SCORE_SEEDED_196, true).apply()
+        prefs.edit().putBoolean(flagKey, true).apply()
     }
 
     /**

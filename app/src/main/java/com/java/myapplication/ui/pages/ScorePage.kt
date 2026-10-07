@@ -1,6 +1,19 @@
 package com.java.myapplication.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.DisposableEffect
+import com.java.myapplication.ui.components.SheetGrabber
+import com.java.myapplication.ui.components.rememberSheetSideInset
+import com.java.myapplication.ui.components.sheetTopCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,7 +69,11 @@ import com.java.myapplication.data.HupuCommonTree
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.data.HupuMatch
 import com.java.myapplication.data.HupuMatchApi
+import com.java.myapplication.data.HotSport
 import com.java.myapplication.data.HupuPrefs
+import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.glass.LiquidButton
 import com.java.myapplication.data.isLocalStickerUrl
 import com.java.myapplication.data.HupuMatchDay
 import com.java.myapplication.data.HupuMatchTeam
@@ -621,6 +638,13 @@ fun ScorePage(modifier: Modifier = Modifier) {
 
     Box(modifier.fillMaxSize()) {
         // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原形态）
+        // 1.199：热门赛事的「项目筛选」—— **不持久化**（用户要求"不记"）：
+        // 只在本次会话内有效（切 tab / 切页都保留），重启 App 后恢复「全部显示」。
+        var hotExcluded by remember { mutableStateOf(emptySet<String>()) }
+        var hotFilterOpen by remember { mutableStateOf(false) }
+        // 注意：切到「虎扑评分」（commonOpen）时 selectedGame 仍停留在上一个频道，
+        // 所以要同时排除 commonOpen，否则评分 tab 上也会冒出筛选按钮。
+        val isHotChannel = !commonOpen && selectedGame == HupuMatchApi.COMMON_HOT_SPORTS_ID
         FrostedHeaderLayout(
             modifier = Modifier
                 .fillMaxSize()
@@ -629,7 +653,21 @@ fun ScorePage(modifier: Modifier = Modifier) {
                     onNext = { swipeScoreTab(1) },
                 ),
             header = {
-            PageHeader(title = "评分")
+            PageHeader(title = "评分") {
+                // 1.199：热门赛事是混装聚合 → 右上角给「筛选项目」入口
+                //     （组件与首页搜索键同源：LiquidIconButton 液态玻璃圆钮，24dp 图标）
+                //     过滤生效时图标转主题色，避免「明明有比赛却看不到」的困惑
+                if (isHotChannel) {
+                    LiquidIconButton(
+                        icon = HupuIcons.FilterAlt,
+                        contentDescription = "筛选项目",
+                        onClick = { hotFilterOpen = true },
+                        iconSize = 24.dp,
+                        tint = if (hotExcluded.isEmpty()) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
         // 项目横滑条（与首页/专区同款裁剪）——首项为通用评分（虎扑评分，非赛事体系）
         val barState = rememberLazyListState()
         // 1.192: 虎扑评分被隐藏时，赛事 chip 的下标整体前移 1
@@ -712,6 +750,11 @@ fun ScorePage(modifier: Modifier = Modifier) {
             }
         } else {
         val days = schedules[selectedGame]
+        // 1.199：只在「热门赛事」下按项目过滤；被排除项目的比赛整条不显示，
+        // 过滤后为空的**日期块会被丢掉** —— 这样列表的「定位到最近比赛日」不会落到空日子上。
+        val shownDays = remember(days, hotExcluded, isHotChannel) {
+            if (isHotChannel) HotSport.filterDays(days.orEmpty(), hotExcluded) else days.orEmpty()
+        }
         val pullState = rememberPullToRefreshState()
         val refreshing = loadingGame == selectedGame
         PullToRefreshBox(
@@ -744,8 +787,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 days == null && refreshing -> SkeletonHome(Modifier.padding(top = topInset))
                 days == null -> ErrorRetry { refreshTick++ }
                 days.isEmpty() -> EmptySchedule()
+                // 1.199：筛选把比赛全筛掉了 → 给一条「清除筛选」的出路，而不是白屏
+                shownDays.isEmpty() -> HotFilterEmpty { hotExcluded = emptySet() }
                 else -> ScheduleList(
-                    days,
+                    shownDays,
                     resetKey = "$selectedGame-$refreshVersion",
                     topInset = topInset,
                     onOpenMatch = { openMatch(it) },
@@ -754,6 +799,25 @@ fun ScorePage(modifier: Modifier = Modifier) {
         }
         }
         }
+        }
+
+        // ---------- 1.199：热门赛事「项目筛选」底部 sheet ----------
+        if (hotFilterOpen) {
+            // 类别与场次随当前数据动态生成（只列此刻真实出现的项目）
+            val hotCounts = HotSport.counts(schedules[HupuMatchApi.COMMON_HOT_SPORTS_ID].orEmpty())
+            HotSportFilterSheet(
+                counts = hotCounts,
+                excluded = hotExcluded,
+                onToggle = { name ->
+                    hotExcluded = if (name in hotExcluded) hotExcluded - name else hotExcluded + name
+                },
+                // 全选 ⇄ 全不选：全部勾选时点一下 = 全部取消，否则 = 全部勾选
+                onToggleAll = {
+                    hotExcluded = if (hotExcluded.isEmpty()) hotCounts.map { it.first }.toSet()
+                    else emptySet()
+                },
+                onDismiss = { hotFilterOpen = false },
+            )
         }
 
         // ---------- 比赛详情二级页：盖入式转场 ----------
@@ -771,6 +835,12 @@ fun ScorePage(modifier: Modifier = Modifier) {
             val liveMatch = om.status.equals("INPROGRESS", true) ||
                 om.status.equals("IN_PROGRESS", true) ||
                 om.statusDesc.contains("进行") || om.statusDesc.contains("中场")
+            // 1.199：**只有一对一对抗才显示记分板与轮询**。
+            // match-api 的 matchType: against = 对抗、not_against = 多人/非对抗；
+            // 后者的 memberName / memberBaseScore 全为 null（实测 pubg 100/100 not_against），
+            // 记分板画出来只有空白 —— 这类比赛（绝地求生、和平精英小组赛、举重、F1 练习赛…）直接不显示。
+            val isVersus = om.matchType.equals("against", true) &&
+                !om.home?.name.isNullOrBlank() && !om.away?.name.isNullOrBlank()
             val key = "${om.scoreBizType}-${om.scoreBizNo}"
             MatchDetailOverlay(
                 title = om.introduction.ifBlank { om.matchName.ifBlank { om.startTimeText } },
@@ -784,10 +854,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 groups = matchGroups[key] ?: emptyList(),
                 groupMembers = groupMembers,
                 // 1.198：顶部记分板（数据全部来自赛程卡，无需新接口）
-                scoreboard = MatchScoreboard(
+                scoreboard = if (isVersus) MatchScoreboard(
                     stage = om.introduction.ifBlank { om.matchName },
                     statusDesc = om.statusDesc,
-                    live = liveMatch,
+                    live = liveMatch && isVersus,
                     bestOf = om.home?.bigScore?.takeIf { it.isNotBlank() },
                     homeName = om.home?.name.orEmpty(),
                     homeLogo = om.home?.logo,
@@ -798,7 +868,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                     homeWon = om.winnerMemberId != null && om.winnerMemberId == om.home?.memberId,
                     awayWon = om.winnerMemberId != null && om.winnerMemberId == om.away?.memberId,
                     timeText = om.startTimeText,
-                ),
+                ) else null,
                 live = liveMatch,
                 onLiveTick = {
                     // 1.198：实时记分板 —— 静默刷新（**不动 detailLoading**，否则会闪骨架）
@@ -1430,6 +1500,182 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 },
                 onDismiss = { scoreStickerToDelete = null },
             )
+        }
+    }
+}
+
+/**
+ * 1.199：热门赛事的「项目筛选」底部 sheet。
+ *
+ * · 多选 = 勾选要显示的项目（默认全勾）；每个项目后面带**当前场次数**，方便取舍；
+ * · 「全选」一键恢复；点遮罩或「完成」关闭；
+ * · 不持久化（用户要求"不记"）：状态由调用方 remember 持有，重启即恢复全选；
+ * · 类别列表由 [com.java.myapplication.data.HotSport.counts] **按当前数据动态生成**，
+ *   只列出此刻真实出现的项目（避免出现永远为空的类别）。
+ */
+/**
+ * 1.199：热门赛事的「项目筛选」底部 sheet。
+ *
+ * chrome（抓手条 / 左标题 / 右侧动作）**与楼中楼面板同源** —— 直接复用
+ * [SheetGrabber] 与 [sheetTopCornerShape]，标题字号 15sp SemiBold、行留白
+ * （start 16dp / end 12dp / top 10dp / bottom 8dp）与 [SheetTopBar] 一致；
+ * 大圆角机型用 [rememberSheetSideInset] 让标题与右侧按钮落进圆角内侧直边区。
+ *
+ * · 多选 = 勾选要显示的项目（默认全勾）；每个项目后面带**当前场次数**；
+ * · 右上角一键「全不选 / 全选」：全部选中时显示「全不选」，否则显示「全选」；
+ * · 打开期间让底部悬浮 Tab 栏神隐（[SecondaryPage]），否则面板会被它盖住；
+ * · 不持久化（用户要求"不记"）：状态由调用方 remember 持有，重启即恢复全选。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HotSportFilterSheet(
+    counts: List<Pair<String, Int>>,
+    excluded: Set<String>,
+    onToggle: (String) -> Unit,
+    onToggleAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // 打开期间隐藏底部悬浮 Tab 栏（与二级页/其它半屏面板同源做法），关闭后 Q 弹回来
+    DisposableEffect(Unit) {
+        SecondaryPage.enter()
+        onDispose { SecondaryPage.exit() }
+    }
+    // 1.199b（真机反馈）：面板必须自己接管返回 —— 之前按返回直接退出了 App
+    // （ScorePage 是主页，面板只是覆盖层，没接管就会一路冒泡到 Activity.finish）。
+    BackHandler { onDismiss() }
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { progress.animateTo(1f, tween(220)) }
+    val scrimSource = remember { MutableInteractionSource() }
+    val panelSource = remember { MutableInteractionSource() }
+    val side = rememberSheetSideInset(depth = 25.dp)
+    val allSelected = excluded.isEmpty()
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .zIndex(4f)
+            .background(Color.Black.copy(alpha = 0.25f * progress.value))
+            .clickable(indication = null, interactionSource = scrimSource) { onDismiss() },
+    ) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .graphicsLayer { translationY = (1f - progress.value) * size.height }
+                // 顶部圆角跟随屏幕物理圆角（与楼中楼面板同一套）
+                .clip(sheetTopCornerShape())
+                .background(MaterialTheme.colorScheme.background)
+                // 面板内点击不穿透到遮罩
+                .clickable(indication = null, interactionSource = panelSource) {}
+                .navigationBarsPadding(),
+        ) {
+            // 抓手条：与楼中楼面板完全同款
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                SheetGrabber()
+            }
+            // 标题行：左标题 + 右「全选 / 全不选」（留白与 SheetTopBar 一致）
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = maxOf(16.dp, side),
+                        end = maxOf(12.dp, side),
+                        top = 10.dp,
+                        bottom = 6.dp,
+                    ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "筛选项目",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    if (allSelected) "全不选" else "全选",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onToggleAll() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                )
+            }
+            // 内容：类别 chips + 完成
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "只显示勾选的项目 · 共 ${counts.sumOf { it.second }} 场比赛",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    counts.forEach { (name, count) ->
+                        Chip(text = "$name $count", selected = name !in excluded) { onToggle(name) }
+                    }
+                }
+                LiquidButton(
+                    onClick = onDismiss,
+                    fill = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    height = 44.dp,
+                ) {
+                    Text(
+                        "完成",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 1.199：筛选后没有任何比赛时的兜底（给「清除筛选」的出路，而不是白屏） */
+@Composable
+private fun HotFilterEmpty(onClear: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "没有符合当前筛选的比赛",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // 1.199b（真机反馈）：改用 kyant 液态玻璃按钮（与「关注/发布」同源），
+            // 不再自绘文字胶囊
+            LiquidButton(
+                onClick = onClear,
+                fill = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(50),
+                height = 40.dp,
+                contentPadding = 18.dp,
+            ) {
+                Text(
+                    "清除筛选",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
         }
     }
 }

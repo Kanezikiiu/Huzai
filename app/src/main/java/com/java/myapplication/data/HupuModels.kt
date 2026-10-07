@@ -254,6 +254,13 @@ data class HupuMatch(
     val matchId: String,
     val statusDesc: String,          // 已结束 / 进行中 / 未开始
     val status: String,             // NOTSTARTED / INPROGRESS / COMPLETED / CANCELED（**无下划线**，见 HupuMatchParser）
+    /**
+     * 1.199：match-api 的 matchType：
+     * · `against` = 一对一对抗（NBA / 足球 / 电竞 / 斯诺克 / 摔跤…）→ 有记分板
+     * · `not_against` = 多人或非对抗（绝地求生决赛、和平精英小组赛、举重、F1 练习赛…）→ 不显示记分板
+     * 实测：pubg 100/100、pubgmobile 85% 为 not_against，且其 memberName/memberBaseScore 全为 null。
+     */
+    val matchType: String = "",
     val introduction: String,       // LPL第三赛段组内赛
     val matchName: String,          // 电竞第三赛段组内赛
     val startTimeText: String,      // "7月30日 20:00" 之类（由时间戳格式化）
