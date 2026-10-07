@@ -1,8 +1,8 @@
 {
-  "versionCode": 207,
-  "versionName": "1.197",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.197/huzai-1.197-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.197",
-  "changelog": "· 视频播放器重做：全屏观看时自动识别视频尺寸切换至横屏 / 竖屏观看，双击 ±15 秒、滑动调整进度、左右半屏调亮度与音量、长按 2 倍速、倍速面板与起播加载动画\n· 新增「局域网数据同步」：同一 WiFi 下互传标题 / 分区 / 评论关键词、黑名单、收藏专区、评分频道、首页频道与默认事项\n· 新增「默认事项」设置：默认启动页，以及专区、帖子回复、评分评论三处默认排序\n· 私信列表改版，页面更加美观；点击私信里的站内链接可直接打开帖子\n· 顶栏标题统一居中\n· 修复：话题流切换时的闪烁与排序条跳动问题\n· 优化：加载策略优化，大幅缩短加载时间\n· 优化：打开战报等嵌入式页面时不再卡顿\n· 其他：消息中心三个入口图标与信息流统一为无填充风格、首页搜索图标重绘，我的页面消息图标重绘，观感更加轻盈",
+  "versionCode": 208,
+  "versionName": "1.198",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.198/huzai-1.198-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.198",
+  "changelog": "· 新增「顶栏渐进模糊」（显示与阅读 → 外观 → 顶栏，默认关闭）：开启后顶栏浮在内容之上，条目滚动到栏下会逐渐模糊淡出\n· 评分二级页面新增记分板：赛制、状态、两队队徽与比分、日期时间，进行中的比赛每 30 秒自动刷新比分与评分\n· 聊天页升级：按日期分隔、气泡样式重做、浮动输入条",
   "forceUpdate": false
 }
