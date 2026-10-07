@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -85,7 +86,13 @@ import kotlinx.coroutines.withTimeoutOrNull
  *  当天无比赛显示最近的过往比赛日（更早才全部是未来赛程时取第一天）；
  *  上滑自然查看过往、下滑查看未来。刷新后重新定位。 */
 @Composable
-internal fun ScheduleList(days: List<HupuMatchDay>, resetKey: String, onOpenMatch: (HupuMatch) -> Unit) {
+internal fun ScheduleList(
+    days: List<HupuMatchDay>,
+    resetKey: String,
+    /** 1.198：浮空顶栏时的顶部内边距（关闭该效果时为 0，布局与原来完全一致） */
+    topInset: Dp = 0.dp,
+    onOpenMatch: (HupuMatch) -> Unit,
+) {
     val today = remember { java.time.LocalDate.now().toString() }
     // 目标定位项索引：日期头 + 当日比赛卡的累计偏移
     fun targetItemIndex(): Int {
@@ -111,7 +118,7 @@ internal fun ScheduleList(days: List<HupuMatchDay>, resetKey: String, onOpenMatc
     }
     LazyColumn(
         state = listState,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 140.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + topInset, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {

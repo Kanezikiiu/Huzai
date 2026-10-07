@@ -64,6 +64,7 @@ import com.java.myapplication.data.formatBlacklistTime
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.huzaiFieldColors
@@ -189,7 +190,11 @@ fun FilterBlockSettingsPage(
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             CenteredTopBar(
                 title = "过滤与屏蔽",
                 onBack = { closing = true },
@@ -204,6 +209,9 @@ fun FilterBlockSettingsPage(
                 Chip(text = "关键词过滤", selected = tab == 0, onClick = { tab = 0 })
                 Chip(text = "黑名单", selected = tab == 1, onClick = { tab = 1 })
             }
+            },
+        ) { topInset ->
+        Column(Modifier.fillMaxSize()) {
             // 内容区：左右滑动切换 Tab（与三大页同款 tabSwipeSwitch）
             Box(
                 Modifier
@@ -218,7 +226,8 @@ fun FilterBlockSettingsPage(
                     // ① 关键词过滤
                     LazyColumn(
                         modifier = Modifier.fillMaxSize().imePadding(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
+                        // 1.198：浮空顶栏时首项从栏下开始（关闭该效果时为 0，位置不变）
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp + topInset, bottom = 140.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item(key = "filter-intro") {
@@ -237,7 +246,8 @@ fun FilterBlockSettingsPage(
                     // ② 黑名单
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
+                        // 1.198：浮空顶栏时首项从栏下开始（关闭该效果时为 0，位置不变）
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp + topInset, bottom = 140.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item(key = "bl-intro") {
@@ -301,6 +311,7 @@ fun FilterBlockSettingsPage(
                     }
                 }
             }
+        }
         }
         // 顶部提示（未登录 / 已移除）
     }

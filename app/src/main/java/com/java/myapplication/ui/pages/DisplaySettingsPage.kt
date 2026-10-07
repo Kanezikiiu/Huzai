@@ -56,6 +56,8 @@ import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuRefresh
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
+import com.java.myapplication.ui.glass.GlassSwitch
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tabSwipeSwitch
@@ -123,7 +125,11 @@ fun DisplaySettingsPage(onClose: () -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198 header
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             CenteredTopBar(
                 title = "显示与阅读",
                 onBack = { closing = true },
@@ -139,6 +145,9 @@ fun DisplaySettingsPage(onClose: () -> Unit) {
                 Chip(text = "阅读字号", selected = tab == 1, onClick = { tab = 1 })
                 Chip(text = "屏幕刷新率", selected = tab == 2, onClick = { tab = 2 })
             }
+            },
+        ) { topInset ->
+        Column(Modifier.fillMaxSize()) {
             // 内容区：左右滑动切换 Tab（与三大页同款 tabSwipeSwitch）
             Box(
                 Modifier
@@ -158,6 +167,8 @@ fun DisplaySettingsPage(onClose: () -> Unit) {
                             .padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        // 1.198：浮空顶栏时首块内容从栏下开始
+                        Spacer(Modifier.height(topInset))
                         AppearanceSection()
                         Spacer(Modifier.height(24.dp))
                     }
@@ -169,6 +180,8 @@ fun DisplaySettingsPage(onClose: () -> Unit) {
                             .padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        // 1.198：同上
+                        Spacer(Modifier.height(topInset))
                         TextSizeSection()
                         Spacer(Modifier.height(24.dp))
                     }
@@ -180,11 +193,14 @@ fun DisplaySettingsPage(onClose: () -> Unit) {
                             .padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        // 1.198：同上
+                        Spacer(Modifier.height(topInset))
                         RefreshRateSection()
                         Spacer(Modifier.height(24.dp))
                     }
                 }
             }
+        }
         }
     }
 }
@@ -291,6 +307,51 @@ private fun AppearanceSection() {
             }
         }
         Spacer(Modifier.height(12.dp))
+        GroupLabel("顶栏")
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            // 1.198：顶栏渐进模糊（**默认关**）—— 开启后顶栏浮在内容之上并做 progressive blur；
+            // 关闭 = 原有形态（顶栏在页面流里），低端机保持零额外开销
+            var progressiveHeader by remember { mutableStateOf(HupuPrefs.loadProgressiveHeader()) }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        progressiveHeader = !progressiveHeader
+                        HupuPrefs.saveProgressiveHeader(progressiveHeader)
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "顶栏渐进模糊",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "顶栏浮在内容之上，条目滚到栏下会逐渐模糊淡出。手机性能较弱时建议关闭",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                GlassSwitch(
+                    checked = progressiveHeader,
+                    onCheckedChange = {
+                        progressiveHeader = it
+                        HupuPrefs.saveProgressiveHeader(it)
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         GroupLabel("底栏")
         Column(
             Modifier
@@ -324,7 +385,7 @@ private fun AppearanceSection() {
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Switch(
+                GlassSwitch(
                     checked = autoHideBar,
                     onCheckedChange = {
                         autoHideBar = it

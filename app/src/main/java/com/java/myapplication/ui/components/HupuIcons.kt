@@ -101,6 +101,10 @@ object HupuIcons {
     val ImageIcon: ImageVector = materialIcon(name = "HupuIcons.ImageIcon") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M21,19V5c0,-1.1 -0.9,-2 -2,-2H5c-1.1,0 -2,0.9 -2,2v14c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2zM8.5,13.5l2.5,3.01L14.5,12l4.5,6H5l3.5,-4.5z"))
     }
+    /** 1.198 发送箭头（Material arrow_upward 24px，自绘；私信输入条的圆形发送按钮用） */
+    val SendArrow: ImageVector = materialIcon(name = "HupuIcons.SendArrow") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M4,12l1.41,1.41L11,7.83V20h2V7.83l5.58,5.59L20,12l-8,-8 -8,8z"))
+    }
     /** 分享箭头：弧线向右拐（Material reply 水平镜像，无方框，官方 24px path 变换） */
     val IosShare: ImageVector = materialIcon(name = "HupuIcons.IosShare") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M14,9L14,5l7,7l-7,7v-4.1c-5,0,-8.5,1.6,-11,5.1C4,15,7,10,14,9z"))

@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.java.myapplication.ui.components.animateChipCenterTo
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -92,6 +93,8 @@ import com.java.myapplication.data.HupuSearchItem
 import com.java.myapplication.data.HupuTopicInfo
 import com.java.myapplication.data.SEARCH_SORTS
 import com.java.myapplication.ui.components.Chip
+import com.java.myapplication.ui.components.chipGlassFill
+import com.java.myapplication.ui.components.chipGlassBorder
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
@@ -270,7 +273,11 @@ fun SearchPage(
             // 穿透守卫：排序条空隙/空白点击不落穿到下层页面
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             SearchHeader(query, query.isNotBlank(), { query = it }, { submit(query); keyboard?.hide() }, { closing = true })
 
             // 筛选条：专区按钮 + 排序条（已搜索才显示）
@@ -312,22 +319,9 @@ fun SearchPage(
                         Modifier
                             .clip(RoundedCornerShape(50))
                             // 1.192c: 材质升级为与顶部玻璃胶囊同源（扁平半透明 + 极淡描边）
-                            .background(
-                                if (forumActive) {
-                                    if (dark) Color(0xFF2E2E30).copy(0.94f) else Color.White.copy(0.92f)
-                                } else {
-                                    if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f)
-                                }
-                            )
-                            .border(
-                                0.6.dp,
-                                if (forumActive) {
-                                    if (dark) Color.White.copy(0.10f) else Color.Black.copy(0.05f)
-                                } else {
-                                    if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f)
-                                },
-                                RoundedCornerShape(50),
-                            )
+                            // 1.198g：与横滑条同源 —— 开启渐进模糊时用「底色上合成的不透明色」
+                            .background(chipGlassFill(dark, forumActive))
+                            .border(0.6.dp, chipGlassBorder(dark, forumActive), RoundedCornerShape(50))
                             .clickable { forumPickerOpen = true }
                             .padding(horizontal = 12.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -354,6 +348,9 @@ fun SearchPage(
                 }
             }
 
+            },
+        ) { topInset ->
+                Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val state = when {
                 activeQuery == null -> "history"
                 loading -> "loading"
@@ -368,7 +365,8 @@ fun SearchPage(
                         clearHistoryCount = HupuPrefs.loadSearchHistory().size
                         clearHistoryAsk = true
                     },
-                    modifier = Modifier.fillMaxSize(),
+                    // 1.198：浮空顶栏时从栏下开始
+                    modifier = Modifier.fillMaxSize().padding(top = topInset),
                 )
                 "loading" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -377,8 +375,9 @@ fun SearchPage(
                 "empty" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("没有找到相关帖子", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                else -> SearchResults(results, page < totalPages, loadingMore, ::loadMore) { onOpenThread(it) }
+                else -> SearchResults(results, page < totalPages, loadingMore, ::loadMore, topInset) { onOpenThread(it) }
             }
+        }
         }
 
         // 专区筛选：半屏弹出菜单（可上拉全屏）
@@ -568,6 +567,8 @@ private fun SearchResults(
     canLoadMore: Boolean,
     loadingMore: Boolean,
     onLoadMore: () -> Unit,
+    /** 1.198：浮空顶栏时的顶部内边距（关闭该效果时为 0，布局不变） */
+    topInset: androidx.compose.ui.unit.Dp = 0.dp,
     onOpen: (HupuSearchItem) -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -588,7 +589,7 @@ private fun SearchResults(
     }
     LazyColumn(
         state = listState,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp + topInset, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {

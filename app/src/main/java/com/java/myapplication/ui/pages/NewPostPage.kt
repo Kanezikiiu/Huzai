@@ -100,6 +100,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.HuzaiToast
 
@@ -485,7 +486,11 @@ fun NewPostPage(
             .tapGuard()
             .imePadding(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             // 顶栏：返回 + 标题 + 发布
             CenteredTopBar(
                 title = if (editTid != null) "编辑帖子" else "发帖",
@@ -518,6 +523,9 @@ fun NewPostPage(
                     }
                 },
             )
+            },
+        ) { topInset ->
+                Column(Modifier.fillMaxSize()) {
 
             Column(
                 Modifier
@@ -527,7 +535,9 @@ fun NewPostPage(
                     .navigationBarsPadding()
                     .padding(bottom = 28.dp)
             ) {
-                // 专区行
+                // 1.198：浮空顶栏时首块内容从栏下开始（关闭该效果时为 0，位置不变）
+            Spacer(Modifier.height(topInset))
+            // 专区行
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -973,6 +983,7 @@ fun NewPostPage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                 )
             }
+        }
         }
 
         // 1.112: 编辑模式——加载中 / 不可编辑遮罩（盖在表单之上）

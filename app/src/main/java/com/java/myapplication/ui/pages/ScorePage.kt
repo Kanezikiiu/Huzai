@@ -28,6 +28,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +46,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -73,6 +75,7 @@ import com.java.myapplication.data.mergeWithOptimistic
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.PageHeader
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SkeletonHome
 import com.java.myapplication.ui.components.normalizeCover
@@ -617,16 +620,15 @@ fun ScorePage(modifier: Modifier = Modifier) {
     }
 
     Box(modifier.fillMaxSize()) {
-        Column(
-            Modifier
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原形态）
+        FrostedHeaderLayout(
+            modifier = Modifier
                 .fillMaxSize()
                 .tabSwipeSwitch(
                     onPrevious = { swipeScoreTab(-1) },
                     onNext = { swipeScoreTab(1) },
-                )
-                // 1.191: 内容层挂记录层——弹窗画在根 Box 里本层之后的兄弟位置
-                .layerBackdrop(backdrop),
-        ) {
+                ),
+            header = {
             PageHeader(title = "评分")
         // 项目横滑条（与首页/专区同款裁剪）——首项为通用评分（虎扑评分，非赛事体系）
         val barState = rememberLazyListState()
@@ -668,11 +670,16 @@ fun ScorePage(modifier: Modifier = Modifier) {
                     if (!schedules.containsKey(id)) loadingGame = id
                 }
             }
-        }
+}
+            },
+        ) { topInset ->
+        // 1.191: 内容层挂记录层——弹窗画在根 Box 里本层之后的兄弟位置
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
         // 列表区：通用评分与赛事赛程二选一
         if (commonOpen) {
             when {
-                commonSubjects.isEmpty() && commonLoading -> SkeletonHome()
+                // 1.198：骨架也从浮空栏下开始（否则首行骨架块会被顶栏盖住）
+                commonSubjects.isEmpty() && commonLoading -> SkeletonHome(Modifier.padding(top = topInset))
                 commonSubjects.isEmpty() && commonFailed -> ErrorRetry { loadCommonSubjects(forceNetwork = true) }
                 else -> {
                     // 与电竞侧同款：下拉刷新（虎扑评分首页每次刷新换一批）
@@ -682,12 +689,23 @@ fun ScorePage(modifier: Modifier = Modifier) {
                         onRefresh = { loadCommonSubjects(forceNetwork = true) },
                         state = pullState,
                         modifier = Modifier.fillMaxSize(),
+                        // 1.198：指示器落在浮空顶栏下方（关闭该效果时 topInset = 0，位置不变）
+                        indicator = {
+                            PullToRefreshDefaults.Indicator(
+                                state = pullState,
+                                isRefreshing = commonLoading,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = topInset),
+                            )
+                        },
                     ) {
                         CommonSubjectsFeed(
                             subjects = commonSubjects,
                             onOpenSubject = { openCommon(it) },
                             onOpenItem = { openPlayer(it) },
                             scrollToTopTick = commonScrollTick,
+                            topInset = topInset,
                         )
                     }
                 }
@@ -711,13 +729,29 @@ fun ScorePage(modifier: Modifier = Modifier) {
             },
             state = pullState,
             modifier = Modifier.fillMaxSize(),
+            // 1.198：指示器落在浮空顶栏下方（关闭该效果时 topInset = 0，位置不变）
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = refreshing,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = topInset),
+                )
+            },
         ) {
             when {
-                days == null && refreshing -> SkeletonHome()
+                days == null && refreshing -> SkeletonHome(Modifier.padding(top = topInset))
                 days == null -> ErrorRetry { refreshTick++ }
                 days.isEmpty() -> EmptySchedule()
-                else -> ScheduleList(days, resetKey = "$selectedGame-$refreshVersion", onOpenMatch = { openMatch(it) })
+                else -> ScheduleList(
+                    days,
+                    resetKey = "$selectedGame-$refreshVersion",
+                    topInset = topInset,
+                    onOpenMatch = { openMatch(it) },
+                )
             }
+        }
         }
         }
         }
@@ -729,6 +763,14 @@ fun ScorePage(modifier: Modifier = Modifier) {
             androidx.compose.runtime.DisposableEffect(Unit) {
                 onDispose { if (matchEntered) { matchEntered = false; SecondaryPage.exit() } }
             }
+            // 1.198b：赛程卡的「进行中」判定 ——
+            // 解析器（HupuMatchParser.soccerMatchFrom）对足球/score 分支产出的是**无下划线**的 INPROGRESS，
+            // 与 match-api 的约定一致（ScorePageSchedule 也是用 "INPROGRESS"）。原书写成 "IN_PROGRESS" 不命中，
+            // 导致：① 状态胶囊不走主题色分支 ② live=false → 30s 轮询根本没起来（真机反馈）。
+            // 这里两种拼写都认，并用中文状态字面兜底。
+            val liveMatch = om.status.equals("INPROGRESS", true) ||
+                om.status.equals("IN_PROGRESS", true) ||
+                om.statusDesc.contains("进行") || om.statusDesc.contains("中场")
             val key = "${om.scoreBizType}-${om.scoreBizNo}"
             MatchDetailOverlay(
                 title = om.introduction.ifBlank { om.matchName.ifBlank { om.startTimeText } },
@@ -741,6 +783,43 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 ),
                 groups = matchGroups[key] ?: emptyList(),
                 groupMembers = groupMembers,
+                // 1.198：顶部记分板（数据全部来自赛程卡，无需新接口）
+                scoreboard = MatchScoreboard(
+                    stage = om.introduction.ifBlank { om.matchName },
+                    statusDesc = om.statusDesc,
+                    live = liveMatch,
+                    bestOf = om.home?.bigScore?.takeIf { it.isNotBlank() },
+                    homeName = om.home?.name.orEmpty(),
+                    homeLogo = om.home?.logo,
+                    homeScore = om.home?.baseScore.orEmpty(),
+                    awayName = om.away?.name.orEmpty(),
+                    awayLogo = om.away?.logo,
+                    awayScore = om.away?.baseScore.orEmpty(),
+                    homeWon = om.winnerMemberId != null && om.winnerMemberId == om.home?.memberId,
+                    awayWon = om.winnerMemberId != null && om.winnerMemberId == om.away?.memberId,
+                    timeText = om.startTimeText,
+                ),
+                live = liveMatch,
+                onLiveTick = {
+                    // 1.198：实时记分板 —— 静默刷新（**不动 detailLoading**，否则会闪骨架）
+                    val no = om.scoreBizNo
+                    val game = selectedGame
+                    scope.launch {
+                        // ① 赛程卡：比分/状态/胜队（顺带把 openedMatch 换成新对象，banner 才会更新）
+                        val ds = repo.matchSchedule(game, refresh = true)
+                        if (ds.isNotEmpty()) {
+                            schedules[game] = ds
+                            ds.asSequence().flatMap { it.matches.asSequence() }
+                                .firstOrNull { it.matchId == om.matchId }
+                                ?.let { openedMatch = it }
+                        }
+                        // ② 评分树：总分/评分人数/选手分
+                        if (no != null) {
+                            val t = repo.scoreTree(om.scoreBizType ?: "lol_match", no, refresh = true)
+                            if (t != null) matchTrees[key] = t
+                        }
+                    }
+                },
                 onBack = { closeMatch() },
                 onExitStart = { if (matchEntered) { matchEntered = false; SecondaryPage.exit() } },
                 onClosed = {

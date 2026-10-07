@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -72,6 +73,8 @@ internal fun CommonSubjectsFeed(
     onOpenSubject: (HupuCommonSubject) -> Unit,
     onOpenItem: (HupuScoreItem) -> Unit,
     scrollToTopTick: Int = 0,
+    /** 1.198：浮空顶栏时的顶部内边距（关闭该效果时为 0，布局与原来完全一致） */
+    topInset: Dp = 0.dp,
 ) {
     // 1.179: 显式持有列表状态。「虎扑评分」每次刷新会整批换新卡，
     // 刷新完必须回顶——否则会停在刷新前的位置（旧卡已不存在，体验错乱）。
@@ -83,7 +86,7 @@ internal fun CommonSubjectsFeed(
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(
-            start = 16.dp, end = 16.dp, top = 8.dp, bottom = 140.dp,
+            start = 16.dp, end = 16.dp, top = 8.dp + topInset, bottom = 140.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),

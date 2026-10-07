@@ -53,13 +53,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import com.java.myapplication.ui.glass.GlassSwitch
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -227,7 +227,12 @@ internal fun FixedChannelRow(
                 else MaterialTheme.colorScheme.error,
             )
         }
-        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
+        // 1.198：升级为 kyant 液态玻璃开关（原 Material3 Switch）
+        GlassSwitch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+        )
     }
 }
 
@@ -354,6 +359,9 @@ internal fun FeedList(
     loadingMore: Boolean = false,
     onLoadMore: (() -> Unit)? = null,
     resetKey: String = "",
+    /** 1.198：顶部内边距 —— 浮空顶栏骨架（FrostedHeaderLayout）把「实测栏高」传进来，
+     *  首项才能从栏下开始；不传时保持原样（0dp） */
+    topInset: Dp = 0.dp,
     onOpenThread: ((HupuThread) -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
@@ -404,7 +412,8 @@ internal fun FeedList(
     LazyColumn(
         state = listState,
         // 1.199：上方留白交给横滑条自身的 bottom padding，这里不再叠加（否则空隙过大）
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 140.dp),
+        // 1.198：浮空顶栏模式下 topInset = 实测栏高（含横滑条的 bottom padding），首项从栏下开始
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(filteredThreads, key = { it.tid }) { thread ->
@@ -448,6 +457,7 @@ internal fun SortBar(
 ) {
     if (sorts.isEmpty()) return
     val dark = isAppDarkTheme()
+    // 1.198g：二级 tab（排序条）与横滑条同源 —— 开启渐进模糊时走「底色上合成的不透明色」
     val count = sorts.size
     val idx = sorts.indexOfFirst { it.url == selected }.coerceAtLeast(0)
     val density = LocalDensity.current
@@ -487,7 +497,7 @@ internal fun SortBar(
                 .then(barWidthMod)
                 .height(barH)
                 .clip(shape)
-                .background(if (dark) Color.White.copy(0.07f) else Color.Black.copy(0.05f))
+                .background(chipGlassFill(dark, false))
                 .border(
                     0.6.dp,
                     if (dark) Color.White.copy(0.08f) else Color.White.copy(0.55f),
@@ -506,7 +516,7 @@ internal fun SortBar(
                     .width(segW - inset * 2)
                     .height(barH - inset * 2)
                     .clip(segShape)
-                    .background(if (dark) Color(0xFF2E2E30).copy(0.96f) else Color.White.copy(0.95f)),
+                    .background(chipGlassFill(dark, true)),
             )
             Row(
                 Modifier
@@ -559,14 +569,71 @@ internal fun SortBar(
  * 尺寸与旧版完全一致（12dp / 7dp 内边距），不改变各页横滑条布局高度。
  * 配色与按压统一走 glassFill / glassBorder / Modifier.glassPress。
  */
-/** 1.192f: 玻璃胶囊统一配色 —— 全站唯一定义，新增玻璃元素一律复用 */
-internal fun glassFill(dark: Boolean, selected: Boolean = false): Color =
-    if (selected) (if (dark) Color(0xFF2E2E30).copy(0.94f) else Color.White.copy(0.92f))
-    else (if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f))
+/** 1.192f: 玻璃胶囊统一配色 —— 全站唯一定义，新增玻璃元素一律复用
+ *
+ *  1.198f：新增 [boost] —— 开启「顶栏渐进模糊」时，把话题条/排序条这些横滑条胶囊的
+ *  **不透明度提上去**。原因是渐进模糊在栏位下半部本就偏淡（保留质感），
+ *  而 chips 恰好坐在那里，若自身仍是极淡半透明，就会和背后滚过的内容糊在一起。
+ *  按用户建议「提高控件自身不透明度」来保证可读性，而不是把顶栏压成实心。 */
+internal fun glassFill(dark: Boolean, selected: Boolean = false, boost: Float = 1f): Color =
+    if (selected) (if (dark) Color(0xFF2E2E30).copy(0.94f) else Color.White.copy(0.92f)).boostAlpha(boost)
+    else (if (dark) Color.White.copy(0.075f) else Color.Black.copy(0.045f)).boostAlpha(boost)
 
-internal fun glassBorder(dark: Boolean, selected: Boolean = false): Color =
-    if (selected) (if (dark) Color.White.copy(0.10f) else Color.Black.copy(0.05f))
-    else (if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f))
+/** alpha 放大并封顶到 1（[boost] = 1 时原样返回） */
+internal fun Color.boostAlpha(boost: Float): Color =
+    if (boost == 1f) this else copy(alpha = (alpha * boost).coerceAtMost(1f))
+
+/**
+ * 1.198g：横滑条 / 排序条胶囊是否要「实心化」。
+ *
+ * 1.198f 曾用「提高同一个半透明色的 alpha」来改善可读性，真机反馈很准确：
+ * **那只是越来越黑，依旧透**（背后滚过的内容照样看得见、照样抢可读性）。
+ * 现在改为：[chipGlassFill] / [chipGlassBorder] 在开启时把半透明的玻璃色
+ * **在页面底色上合成成一个不透明色** —— 静止时与原来的观感完全一致，
+ * 但内容从栏下滚过时不再透出来。关闭该效果时一切照旧。
+ */
+@Composable
+internal fun chipBarOpaque(): Boolean {
+    val v = HupuPrefs.progressiveHeaderVersion
+    return remember(v) { HupuPrefs.loadProgressiveHeader() }
+}
+
+/**
+ * 1.198h：开启渐进模糊时，把半透明玻璃色换成「**在页面底色上合成后、再保留一点点透明**」的色：
+ *
+ *   · 先合成：`lerp(页面底色, 玻璃色, 原 alpha)` —— 结果与「静止时原来那层半透明叠在底色上」一致；
+ *   · 再回透：乘上 [CHIP_SOLID_ALPHA]（0.94）—— 既留住一点玻璃的通透感，
+ *     又只剩 6% 的透出，背后滚过的内容不会再干扰 chips 的可读性。
+ *
+ * 关闭该效果（[chipBarOpaque] = false）时原样返回，观感一像素不变。
+ */
+@Composable
+private fun Color.solidOverPageBackground(): Color {
+    if (!chipBarOpaque() || alpha >= 1f) return this
+    val composited = androidx.compose.ui.graphics.lerp(
+        MaterialTheme.colorScheme.background,
+        Color(red, green, blue, 1f),
+        alpha,
+    )
+    return composited.copy(alpha = CHIP_SOLID_ALPHA)
+}
+
+/** 合成后保留的不透明度：越大越实。0.94 = 只剩 6% 透出 */
+private const val CHIP_SOLID_ALPHA = 0.94f
+
+/** chip 底色：开启渐进模糊时是不透明色（见 [chipBarOpaque]） */
+@Composable
+internal fun chipGlassFill(dark: Boolean, selected: Boolean): Color =
+    glassFill(dark, selected).solidOverPageBackground()
+
+/** chip 描边：同上 */
+@Composable
+internal fun chipGlassBorder(dark: Boolean, selected: Boolean): Color =
+    glassBorder(dark, selected).solidOverPageBackground()
+
+internal fun glassBorder(dark: Boolean, selected: Boolean = false, boost: Float = 1f): Color =
+    if (selected) (if (dark) Color.White.copy(0.10f) else Color.Black.copy(0.05f)).boostAlpha(boost)
+    else (if (dark) Color.White.copy(0.06f) else Color.Black.copy(0.03f)).boostAlpha(boost)
 
 /**
  * 1.223：**立即**按压缩放 —— 返回 (触发按压的 Modifier, 缩放值)。
@@ -704,9 +771,9 @@ internal fun Chip(
     // 1.192b（真机反馈）：去掉立体感——不再用投影/上下渐变/白色高光描边，
     // 改成「平铺半透明玻璃块 + 一层极淡描边」，接近 iOS 原生 chip 的扁平观感。
     // 1.192f: 配色收敛到全站唯一的 glassFill / glassBorder
-    val bg = glassFill(dark, selected)
+    val bg = chipGlassFill(dark, selected)
     // 1.194（方案 A）：选中态不再描边，改为极轻投影「浮起」；未选保持原样。
-    val edge = if (selected) Color.Transparent else glassBorder(dark, false)
+    val edge = if (selected) Color.Transparent else chipGlassBorder(dark, false)
     val contentColor =
         if (selected) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant

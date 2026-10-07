@@ -54,6 +54,7 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuMsgBadge
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.PageHeader
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.components.HuzaiToast
@@ -114,7 +115,10 @@ fun ProfilePage(modifier: Modifier = Modifier) {
         drawContent()
     }
     Box(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原形态，零额外开销）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
             PageHeader(title = "我的", trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 1.107: 发帖（未登录时提示，不打开编辑页）
@@ -149,6 +153,11 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                 }
             })
 
+            },
+        ) { topInset ->
+        // 内容层（弹窗记录层挂在这里）
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+
             // 1.63 修复：内容超过一屏后无法滚动——原为静态 Column，无任何滚动能力。
             // verticalScroll 全页单列表内容；bottom=140dp 给悬浮 Tab 栏留避让
             // （与列表页 contentPadding 一致，Tab 栏悬空不遮末行）
@@ -158,6 +167,8 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 140.dp)
             ) {
+                // 1.198：顶栏浮空时首块内容从栏下开始（关闭该效果时为 0，布局与原来一致）
+                Spacer(Modifier.height(topInset))
                 // 账号卡片：未登录 → 点击登录；已登录 → 头像昵称（点击展开退出）
                 val sessionVer = remember(HupuAccount.sessionVersion) { HupuAccount.sessionVersion }
                 val prof = remember(sessionVer) { HupuAccount.profile }
@@ -218,13 +229,13 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     SettingRow(
                         icon = HupuIcons.Tune,
                         title = "首页频道自定义",
-                        subtitle = "自定义首页顶部横滑条（最多 20 个）",
+                        subtitle = "自定义首页顶部横滑条",
                         onClick = { if (!profilePageOpen()) showPicker = true },
                     )
                     SettingRow(
                         icon = HupuIcons.StarRate,
                         title = "评分频道自定义",
-                        subtitle = "自定义评分页横滑条项目（最多 20 个）",
+                        subtitle = "自定义评分页横滑条项目",
                         onClick = { if (!profilePageOpen()) scorePickerEpoch++ },
                     )
                     SettingRow(
@@ -263,7 +274,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                     SettingRow(
                         icon = HupuIcons.History,
                         title = "浏览记录",
-                        subtitle = "最近浏览的帖子（最多 300 条）",
+                        subtitle = "最近浏览的帖子",
                         onClick = { if (!profilePageOpen()) historyEpoch++ },
                     )
                     SettingRow(
@@ -289,6 +300,10 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                 }
         }
         }
+        }
+        // ---------- 以下为「我的」页的盖入式二级页 ----------
+        // 1.198：必须放在 FrostedHeaderLayout **之外**（根 Box 内）——否则浮空顶栏会压在它们顶部、
+        // 盖住返回键。它们自带 zIndex，绘制在浮空顶栏之上。
 
         // 1.192: 退出登录改为毛玻璃弹窗确认（不再行内展开）
         if (logoutAsk) {

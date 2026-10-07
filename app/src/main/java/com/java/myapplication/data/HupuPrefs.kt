@@ -470,6 +470,27 @@ object HupuPrefs {
         autoHideBarVersion++
     }
 
+    // ---------- 1.198 「顶栏渐进模糊」 ----------
+    private const val KEY_PROGRESSIVE_HEADER = "progressive_header_v1"
+    /** 开关变更版本：四个主页观察到即切换形态（无需重启） */
+    var progressiveHeaderVersion by mutableIntStateOf(0)
+        private set
+    /**
+     * 顶栏渐进模糊（**默认关**）。
+     *
+     * · 开启：顶栏**浮在内容之上**、背景为渐进模糊（官方 progressive blur 移植），
+     *   条目滚到栏下会越靠上越模糊、并渐隐入页面底色 —— 不再被顶栏硬切一刀；
+     * · 关闭：**完全保持原有形态** —— 顶栏坐在页面流里、内容在其下缘截断，零额外开销。
+     *
+     * 之所以默认关：该效果需要给内容多打一层**全屏离屏层**，并且每帧跑一次 AGSL 着色器，
+     * 低端机可能掉帧，所以交给用户自己选。
+     */
+    fun loadProgressiveHeader(): Boolean = prefs.getBoolean(KEY_PROGRESSIVE_HEADER, false)
+    fun saveProgressiveHeader(v: Boolean) {
+        prefs.edit().putBoolean(KEY_PROGRESSIVE_HEADER, v).apply()
+        progressiveHeaderVersion++
+    }
+
     // ---------- 1.130 主题模式（跟随系统 / 浅色 / 深色） ----------
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"

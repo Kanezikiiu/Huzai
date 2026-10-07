@@ -96,6 +96,7 @@ import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.components.HuzaiToast
@@ -487,7 +488,11 @@ fun UserProfilePage(
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             // \u9876\u680f\uff1a\u8fd4\u56de + \u6635\u79f0\uff08\u907f\u8ba9\u72b6\u6001\u680f\uff09
             CenteredTopBar(
                 title = "用户主页",
@@ -507,9 +512,12 @@ fun UserProfilePage(
                     }
                 },
             )
+            },
+        ) { topInset ->
+        Column(Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
 
             when {
-                loading -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
+                loading -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp + topInset, bottom = 16.dp)) {
                     items(6) { i ->
                         Box(
                             Modifier
@@ -525,7 +533,8 @@ fun UserProfilePage(
                     ErrorRetry { refresh() }
                 }
                 else -> {
-                    val p = profile ?: return
+                    // 1.198：内容已在 FrostedHeaderLayout 的 lambda 内，裸 return 不允许 → 带标签返回
+                    val p = profile ?: return@FrostedHeaderLayout
                     // 1.193: 数据行已并入资料卡，回调在这里算好再传进去
                     //   （1.179 语义不变：粉丝 → 关注我的/关注TA的；关注 → 我关注的/TA关注的）
                     val openFollowers: (() -> Unit)? =
@@ -536,7 +545,7 @@ fun UserProfilePage(
                         state = listLs,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp,
+                            start = 16.dp, end = 16.dp, top = 4.dp + topInset, bottom = 24.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
@@ -709,6 +718,7 @@ fun UserProfilePage(
                     }
                 }
             }
+        }
         }
 
         // \u5e16\u5b50\u8be6\u60c5\u9875\uff08\u76d6\u5165\u5f0f\uff1b\u7ec4\u5408\u987a\u5e8f\u5728\u5217\u8868\u4e4b\u540e \u2192 \u76d6\u5728\u5176\u4e0a\uff09

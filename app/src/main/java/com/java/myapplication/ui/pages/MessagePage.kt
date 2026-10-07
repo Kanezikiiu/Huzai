@@ -66,6 +66,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -542,11 +543,17 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
             CenteredTopBar(
                 title = title,
                 onBack = { closing = true },
             )
+            },
+        ) { topInset ->
+        Column(Modifier.fillMaxSize()) {
 
             val cur = notices.value
             when {
@@ -583,12 +590,23 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
                                 refreshing = false
                             }
                         },
+                        // 1.198：指示器落在浮空顶栏下方（关闭该效果时为 0，位置不变）
+                        indicator = {
+                            androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(
+                                state = pullState,
+                                isRefreshing = refreshing,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = topInset),
+                            )
+                        },
                     ) {
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
+                            // 1.198：浮空顶栏时首项从栏下开始（关闭该效果时为 0，位置不变）
+                            start = 16.dp, end = 16.dp, top = 4.dp + topInset, bottom = 140.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
@@ -612,6 +630,7 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
             }
         }
 
+        }
         val ot = openedThread
         if (ot != null) {
             val d = threadDetails[ot.tid]

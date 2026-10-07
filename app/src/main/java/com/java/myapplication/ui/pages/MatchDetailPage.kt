@@ -33,6 +33,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,6 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import coil.compose.AsyncImage
+import com.java.myapplication.ui.components.normalizeCover
+import kotlinx.coroutines.delay
 import com.java.myapplication.data.HupuScoreGroup
 import com.java.myapplication.data.HupuScoreItem
 import com.java.myapplication.data.HupuScoreTree
@@ -87,6 +96,12 @@ fun MatchDetailOverlay(
     groups: List<HupuScoreGroup> = emptyList(),
     /** 分组成员缓存（groupId → 该组选手 bizId 集合的持有列表），由 ScorePage 预取 */
     groupMembers: Map<Long, List<HupuScoreItem>> = emptyMap(),
+    /** 1.198：顶部记分板数据（来自赛程卡，null = 不显示） */
+    scoreboard: MatchScoreboard? = null,
+    /** 1.198：对局进行中 → 每 30s 静默拉一次赛程卡与评分树 */
+    live: Boolean = false,
+    /** 1.198：轮询到点时的静默刷新回调（不动 loading 标志，避免闪骨架） */
+    onLiveTick: () -> Unit = {},
 ) {
     // 盖入动画：进入 0→1；返回动画结束后由父级移除本组件
     val progress = remember { Animatable(0f) }
@@ -131,6 +146,16 @@ fun MatchDetailOverlay(
     // 队伍分类子 Tab（"全部"为默认）：key = memberId 或 "fun"（趣评=中立角色）
     var selectedGroup by remember { mutableStateOf("all") }
 
+    // 1.198：实时记分板 —— **仅「进行中」才轮询**，30s 一次，页面离开即随 effect 取消；
+    // 对局结束后（isLive 变 false）本 effect 重启后直接返回，自然停止。
+    LaunchedEffect(live) {
+        if (!live) return@LaunchedEffect
+        while (true) {
+            delay(30_000)
+            onLiveTick()
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -168,7 +193,7 @@ fun MatchDetailOverlay(
                             if (t == null) {
                                 ErrorRetry { onRefresh() }
                             } else {
-                                TreeContent(t, currentRound?.bizId, teams = teams, groups = groups, groupMembers = groupMembers, selectedGroup = selectedGroup, onGroupChange = { selectedGroup = it }, onSelectRound = { selectedRoundId = it }, onOpenPlayer = onOpenPlayer)
+                                TreeContent(t, currentRound?.bizId, teams = teams, groups = groups, groupMembers = groupMembers, selectedGroup = selectedGroup, onGroupChange = { selectedGroup = it }, onSelectRound = { selectedRoundId = it }, onOpenPlayer = onOpenPlayer, scoreboard = scoreboard)
                             }
                         }
                     }
@@ -192,8 +217,12 @@ private fun TreeContent(
     onGroupChange: (String) -> Unit,
     onSelectRound: (String) -> Unit,
     onOpenPlayer: (HupuScoreItem) -> Unit,
+    /** 1.198：顶部记分板（可为 null） */
+    scoreboard: MatchScoreboard? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
+        // 1.198：记分板（赛制 / 状态 / 两队 / 比分或开赛时间）
+        scoreboard?.let { ScoreboardBanner(it) }
         // 对局横滑条（第1局…第N局，正序）——仅 MOBA 三层结构显示；
         // 传统体育（NBA 等）children 直接是选手（flat），没有对局层
         if (!tree.flat) {
@@ -372,3 +401,200 @@ internal fun scoreColor(scoreNum: String): androidx.compose.ui.graphics.Color {
     }
 }
 
+
+/** 1.198：评分二级页的记分板数据。
+ *
+ * 全部来自赛程卡 [com.java.myapplication.data.HupuMatch]（比分来自 HupuMatchTeam.baseScore，
+ * 赛制来自 bigScore，状态来自 status/statusDesc）—— **不需要任何新接口**；
+ * 进行中的对局由页面每 30s 静默刷新一次，结束后自动停。
+ */
+data class MatchScoreboard(
+    /** 阶段/赛事名，如「LPL第三赛段组内赛」 */
+    val stage: String,
+    /** 已结束 / 进行中 / 未开始 */
+    val statusDesc: String,
+    /** 进行中 → 呼吸点 + 轮询 */
+    val live: Boolean,
+    /** 赛制大分（HupuMatchTeam.bigScore，"5" → 显示 BO5） */
+    val bestOf: String?,
+    val homeName: String,
+    val homeLogo: String?,
+    val homeScore: String,
+    val awayName: String,
+    val awayLogo: String?,
+    val awayScore: String,
+    val homeWon: Boolean,
+    val awayWon: Boolean,
+    /** 开赛时间文案（未开始/无比分时占位显示） */
+    val timeText: String,
+)
+
+/** 1.198：记分板 —— 状态/赛制 + 两队 + 比分 + 日期时间。
+ *
+ * 布局（1.198b 真机反馈逐条修正）：
+ *   · 赛事名**不再重复**（顶栏已有），只留赛制与状态；
+ *   · 赛制 + 状态**居中**，与下方比分同一条中轴；
+ *   · 两队队标分别在自己那半区**居中**（左右对称拱着比分），队名在队标正下方居中；
+ *   · 底部固定显示**日期时间**（原来只在未开始时借位显示）。
+ */
+@Composable
+private fun ScoreboardBanner(sb: MatchScoreboard) {
+    val hasScore = sb.homeScore.isNotBlank() && sb.homeScore != "-" &&
+        sb.awayScore.isNotBlank() && sb.awayScore != "-"
+
+    // 比分变化 → 中间数字 Q 弹放大一次（真机反馈：要动效）
+    val pop = remember { Animatable(1f) }
+    val scoreText = if (hasScore) "${sb.homeScore} - ${sb.awayScore}" else ""
+    var last by remember { mutableStateOf(scoreText) }
+    LaunchedEffect(scoreText) {
+        if (scoreText != last) {
+            last = scoreText
+            if (scoreText.isNotEmpty()) {
+                pop.animateTo(1.22f, tween(110))
+                pop.animateTo(
+                    1f,
+                    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                )
+            }
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // 赛制 + 状态：居中（与比分同一条中轴）
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (!sb.bestOf.isNullOrBlank()) {
+                Text(
+                    "BO${sb.bestOf}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                )
+            }
+            StatusPill(sb)
+        }
+        // 两队 + 比分：队标在各自半区居中，比分居中
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TeamSide(sb.homeName, sb.homeLogo, sb.homeWon, modifier = Modifier.weight(1f))
+            Column(Modifier.width(118.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (hasScore) {
+                    Text(
+                        scoreText,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = pop.value
+                            scaleY = pop.value
+                        },
+                    )
+                } else {
+                    // 未开始：比分位置留空，避免与下方时间重复
+                    Text(
+                        "VS",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+            TeamSide(sb.awayName, sb.awayLogo, sb.awayWon, modifier = Modifier.weight(1f))
+        }
+        // 日期时间（始终显示）
+        if (sb.timeText.isNotBlank()) {
+            Text(
+                sb.timeText,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** 一侧队伍：队标 + 队名 —— 两者**水平居中对齐**（队名在队标正下方） */
+@Composable
+private fun TeamSide(
+    name: String,
+    logo: String?,
+    won: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AsyncImage(
+            model = normalizeCover(logo),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(44.dp),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            name,
+            fontSize = 13.sp,
+            fontWeight = if (won) FontWeight.Bold else FontWeight.Normal,
+            color = if (won) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+
+/** 状态胶囊：进行中 → 主题色呼吸点；其余 → 中性底显示状态文案 */
+@Composable
+private fun StatusPill(sb: MatchScoreboard) {
+    if (sb.live) {
+        val transition = rememberInfiniteTransition(label = "livePill")
+        val dotAlpha by transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.25f,
+            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+            label = "liveDotAlpha",
+        )
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .graphicsLayer { alpha = dotAlpha }
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text("进行中", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+        }
+    } else {
+        Text(
+            sb.statusDesc.ifBlank { "—" },
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+    }
+}

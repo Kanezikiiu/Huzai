@@ -1,6 +1,7 @@
 package com.java.myapplication
 
 import com.java.myapplication.ui.pages.formatPmTime
+import com.java.myapplication.ui.pages.pmDayLabel
 import com.java.myapplication.ui.pages.pmPreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -116,5 +117,42 @@ class PmListFormatTest {
     @Test
     fun time_zeroIsEmpty() {
         assertEquals("", formatPmTime(0L))
+    }
+
+    // ---------- pmDayLabel（1.198 聊天页日期分隔） ----------
+
+    @Test
+    fun day_today() {
+        val now = System.currentTimeMillis()
+        assertEquals("今天", pmDayLabel(now / 1000, now))
+    }
+
+    @Test
+    fun day_yesterday() {
+        val now = System.currentTimeMillis()
+        val y = Calendar.getInstance().apply {
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, -1)
+        }
+        assertEquals("昨天", pmDayLabel(y.timeInMillis / 1000, now))
+    }
+
+    @Test
+    fun day_sameYearShowsMonthDay() {
+        val now = Calendar.getInstance().apply { set(2025, 5, 15, 12, 0, 0) }.timeInMillis
+        val old = Calendar.getInstance().apply { set(2025, 4, 10, 12, 0, 0) }.timeInMillis
+        assertEquals("5月10日", pmDayLabel(old / 1000, now))
+    }
+
+    @Test
+    fun day_previousYearShowsYear() {
+        val now = Calendar.getInstance().apply { set(2025, 5, 15, 12, 0, 0) }.timeInMillis
+        val old = Calendar.getInstance().apply { set(2023, 4, 10, 12, 0, 0) }.timeInMillis
+        assertEquals("2023年5月10日", pmDayLabel(old / 1000, now))
+    }
+
+    @Test
+    fun day_zeroIsEmpty() {
+        assertEquals("", pmDayLabel(0L))
     }
 }

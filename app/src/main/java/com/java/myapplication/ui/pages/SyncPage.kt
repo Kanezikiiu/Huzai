@@ -69,6 +69,7 @@ import com.java.myapplication.data.encodeSyncBundle
 import com.java.myapplication.data.exportSyncItem
 import com.java.myapplication.data.syncItemCount
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.HuzaiToast
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.huzaiFieldColors
@@ -239,13 +240,17 @@ internal fun SyncPage(onClose: () -> Unit) {
                 .tapGuard()
                 .layerBackdrop(backdrop),
         ) {
-            CenteredTopBar(title = "数据同步", onBack = { closing = true })
+            // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+            FrostedHeaderLayout(
+                modifier = Modifier.fillMaxSize(),
+                header = { CenteredTopBar(title = "数据同步", onBack = { closing = true }) },
+            ) { topInset ->
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
-                    .padding(top = 4.dp, bottom = 120.dp),
+                    .padding(top = 4.dp + topInset, bottom = 120.dp),
             ) {
                 Text(
                     "两台设备需连接同一 WiFi。「合并」把对方内容并入本机（去重、超上限自动截断）；" +
@@ -444,6 +449,7 @@ internal fun SyncPage(onClose: () -> Unit) {
                     }
                 }
             }
+        }
         }
 
         // ---------- 接收确认弹窗 ----------

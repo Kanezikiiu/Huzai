@@ -76,6 +76,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.components.HuzaiToast
@@ -193,18 +194,27 @@ fun AboutPage(onClose: () -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .layerBackdrop(backdrop),
-        ) {
+        // 1.198 header
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             // 顶栏
             CenteredTopBar(
                 title = "关于",
                 onBack = { closing = true },
             )
+            },
+        ) { topInset ->
+                Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .layerBackdrop(backdrop),
+        ) {
 
+            // 1.198：浮空顶栏时首块内容从栏下开始（关闭该效果时为 0，位置不变）
+            Spacer(Modifier.height(topInset))
             // 头部：图标（主题色圆环） + 名称 + 版本胶囊 + 简介 + 三枚圆形按钮
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -331,6 +341,7 @@ fun AboutPage(onClose: () -> Unit) {
                 }
                 Spacer(Modifier.height(28.dp))
             }
+        }
         }
 
         // 子页（三级页）：盖在关于页之上
@@ -515,11 +526,18 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
             .background(MaterialTheme.colorScheme.background)
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198 header
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             CenteredTopBar(
                 title = kind.title,
                 onBack = { closing = true },
             )
+            },
+        ) { topInset ->
+                Column(Modifier.fillMaxSize()) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -527,6 +545,8 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
                     .padding(horizontal = 20.dp)
                     .padding(bottom = 32.dp),
             ) {
+                // 1.198：浮空顶栏时首块内容从栏下开始（关闭该效果时为 0，位置不变）
+                Spacer(Modifier.height(topInset))
                 // 段落化渲染：按空行分段，段间给统一间距（避免一段话被硬折行拆成好几段的观感）
                 val paragraphs = remember(body) {
                     body.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
@@ -541,6 +561,7 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
                     )
                 }
             }
+        }
         }
     }
 }

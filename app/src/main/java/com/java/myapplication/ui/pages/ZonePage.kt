@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +55,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -76,6 +78,7 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.FeedList
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.PageHeader
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SortBar
 import com.java.myapplication.ui.components.SORT_BAR_TOTAL_HEIGHT
@@ -302,20 +305,18 @@ fun ZonePage(modifier: Modifier = Modifier) {
 
     Box(modifier.fillMaxSize()) {
         // ---------- 一级页 ----------
-        Column(
-            Modifier
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原形态，零额外开销）
+        FrostedHeaderLayout(
+            modifier = Modifier
                 .fillMaxSize()
                 .tabSwipeSwitch(
                     onPrevious = { swipeCate(-1) },
                     onNext = { swipeCate(1) },
                 ),
-        ) {
-            PageHeader(title = "专区")
-            when {
-                categories == null && loading -> SkeletonHome()
-                categories == null -> ErrorRetry { cateRefreshTick++ }
-                categories!!.isEmpty() -> ErrorRetry { cateRefreshTick++ }
-                else -> {
+            header = {
+                PageHeader(title = "专区")
+                // 大类横滑条同属顶栏：浮空时与标题一起压在内容之上
+                if (categories != null && categories!!.isNotEmpty()) {
                     CateBar(
                         categories = categories!!,
                         selected = selectedCateId,
@@ -323,6 +324,15 @@ fun ZonePage(modifier: Modifier = Modifier) {
                         showFavorites = hasFav,
                         onSelectFavorites = { selectedCateId = FAV_CATE_ID },
                     )
+                }
+            },
+        ) { topInset ->
+            when {
+                // 1.198：骨架也从浮空栏下开始（否则首行骨架块会被顶栏盖住）
+                categories == null && loading -> SkeletonHome(Modifier.padding(top = topInset))
+                categories == null -> ErrorRetry { cateRefreshTick++ }
+                categories!!.isEmpty() -> ErrorRetry { cateRefreshTick++ }
+                else -> {
                     // 1.191: 选中「收藏专区」时网格数据来自收藏列表，其余走大类版块
                     val favTab = selectedCateId == FAV_CATE_ID
                     val topics = if (favTab) favTopics else current?.topics.orEmpty()
@@ -338,7 +348,8 @@ fun ZonePage(modifier: Modifier = Modifier) {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
                             // 1.199：上方留白交给横滑条自身的 bottom padding，这里不再叠加
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 140.dp),
+                            // 1.198：浮空顶栏模式下 topInset = 实测栏高（含横滑条的 bottom padding）
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset, bottom = 140.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize(),
@@ -615,7 +626,11 @@ private fun TopicFeedOverlay(
             // 穿透守卫：排序条空隙/失败态空白点击由本层兜底消费，不落穿到下层
             .tapGuard(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            // ---------- 顶栏（浮空：标题行 + 排序条） ----------
+            header = {
             // 顶栏：返回 + 版块名 + 热度
             CenteredTopBar(
                 title = topic.name,
@@ -650,6 +665,9 @@ private fun TopicFeedOverlay(
                 // 无任何可借用的排序条 → 占位同高，避免整行消失导致列表上移再弹回
                 Spacer(Modifier.height(SORT_BAR_TOTAL_HEIGHT))
             }
+            },
+        ) { topInset ->
+        Column(Modifier.fillMaxSize()) {
             // 列表区：排序切换用 Crossfade 防闪（每层用自己的目标态，不被污染）
             androidx.compose.animation.Crossfade(
                 targetState = selectedSort,
@@ -664,9 +682,19 @@ private fun TopicFeedOverlay(
                     onRefresh = onRefresh,
                     state = pullState,
                     modifier = Modifier.fillMaxSize(),
+                    // 1.198：指示器落在浮空顶栏下方（关闭该效果时为 0，位置不变）
+                    indicator = {
+                        PullToRefreshDefaults.Indicator(
+                            state = pullState,
+                            isRefreshing = loadingTopicKey == selKey,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = topInset),
+                        )
+                    },
                 ) {
                     when {
-                        selState == null -> SkeletonHome()
+                        selState == null -> SkeletonHome(Modifier.padding(top = topInset))
                         selState.threads.isEmpty() -> ErrorRetry { onRefresh() }
                         else -> FeedList(
                             threads = selState.threads,
@@ -675,11 +703,13 @@ private fun TopicFeedOverlay(
                             loadingMore = selState.loadingMore,
                             onLoadMore = { onLoadMore(topic.url, sel, selState.page) },
                             resetKey = "$selKey-$refreshVersion",
+                            topInset = topInset,
                             onOpenThread = onOpenThread,
                         )
                     }
                 }
             }
+        }
         }
     }
     // 首次进入 / 切换排序：无缓存才加载

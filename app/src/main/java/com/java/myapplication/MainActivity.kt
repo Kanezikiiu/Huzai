@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -71,6 +72,7 @@ import com.java.myapplication.ui.pages.UpdateDialog
 import com.java.myapplication.ui.pages.ZonePage
 import com.java.myapplication.ui.theme.LedgerTheme
 import com.java.myapplication.ui.theme.isAppDarkTheme
+import com.java.myapplication.ui.glass.LocalTabActive
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
@@ -250,7 +252,13 @@ fun PocketLedgerApp() {
                         // 隐形页的卡片上，触发 SecondaryPage.enter 后无路可退）
                         .tapGuard()
                 ) {
-                    page()
+                    // 1.198：告诉页面「你是不是当前 Tab」——只有当前 Tab 才真正开顶栏渐进模糊，
+                    // 避免四个常驻主页同时养四层全屏离屏层（切 Tab / 开关时都更跟手）
+                    CompositionLocalProvider(
+                        LocalTabActive provides (index == selectedTab)
+                    ) {
+                        page()
+                    }
                 }
             }
         }

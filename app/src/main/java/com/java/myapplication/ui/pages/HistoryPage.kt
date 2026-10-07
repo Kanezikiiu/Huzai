@@ -74,6 +74,7 @@ import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.CenteredTopBar
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.glass.liquidElevation
@@ -244,7 +245,11 @@ fun HistoryPage(onClose: () -> Unit) {
     ) {
         // 记录列表快照：键直接挂在对象版本号上——任何写入（打开置顶/清空）即刻刷新（含顶栏计数）
         val all = remember(HupuPrefs.historyVersion) { HupuPrefs.loadHistory() }
-        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            // ---------- 顶栏（浮空：标题行 + 搜索框） ----------
+            header = {
             // 顶栏：与主页频道自定义页同款——返回 + 标题 + 计数 + 右侧动作按钮
             CenteredTopBar(
                 title = "浏览记录",
@@ -291,6 +296,10 @@ fun HistoryPage(onClose: () -> Unit) {
                 shape = RoundedCornerShape(22.dp),
                 textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 14.sp),
             )
+            },
+        ) { topInset ->
+        // 内容层（弹窗记录层挂在这里，保持原有观感）
+        Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
 
             val list = if (query.isBlank()) all else all.filter {
                 it.title.contains(query, true) || it.topicName.contains(query, true)
@@ -308,7 +317,8 @@ fun HistoryPage(onClose: () -> Unit) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
+                        // 1.198：浮空顶栏时首项从栏下开始（关闭该效果时为 0，位置不变）
+                        start = 16.dp, end = 16.dp, top = 4.dp + topInset, bottom = 140.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -336,6 +346,7 @@ fun HistoryPage(onClose: () -> Unit) {
             }
         }
 
+        }
         // 帖子详情页（盖入式；组合顺序在列表之后 → 盖在其上）
         val ot = openedThread
         if (ot != null) {

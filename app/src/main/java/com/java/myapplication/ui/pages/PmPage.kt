@@ -27,13 +27,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -47,10 +46,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +62,7 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuApi
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.skeletonBlock
 import com.java.myapplication.ui.components.tapGuard
@@ -71,6 +74,7 @@ import org.json.JSONObject
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
 import com.java.myapplication.ui.glass.liquidElevation
 import androidx.compose.foundation.border
 import com.java.myapplication.ui.components.HuzaiToast
@@ -398,6 +402,31 @@ private fun sameDay(a: java.util.Calendar, b: java.util.Calendar): Boolean =
     a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) &&
         a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR)
 
+/** 1.198：两个秒级时间戳是否同一天（私信日期分隔用） */
+private fun sameDaySec(a: Long, b: Long): Boolean {
+    if (a <= 0L || b <= 0L) return false
+    val ca = java.util.Calendar.getInstance().apply { timeInMillis = a * 1000L }
+    val cb = java.util.Calendar.getInstance().apply { timeInMillis = b * 1000L }
+    return sameDay(ca, cb)
+}
+
+/** 1.198 私信日期分隔标签（纯函数，可单测）：今天 / 昨天 / M月d日 / YYYY年M月d日 */
+internal fun pmDayLabel(sec: Long, now: Long = System.currentTimeMillis()): String {
+    if (sec <= 0L) return ""
+    val t = sec * 1000L
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = t }
+    val n = java.util.Calendar.getInstance().apply { timeInMillis = now }
+    if (sameDay(c, n)) return "今天"
+    val y = (n.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+    if (sameDay(c, y)) return "昨天"
+    return if (c.get(java.util.Calendar.YEAR) == n.get(java.util.Calendar.YEAR)) {
+        "${c.get(java.util.Calendar.MONTH) + 1}月${c.get(java.util.Calendar.DAY_OF_MONTH)}日"
+    } else {
+        "${c.get(java.util.Calendar.YEAR)}年${c.get(java.util.Calendar.MONTH) + 1}月" +
+            "${c.get(java.util.Calendar.DAY_OF_MONTH)}日"
+    }
+}
+
 /** 私信时间分级（纯函数，可单测）：刚刚 / x分钟前 / HH:mm / 昨天 / 周x / M月d日。
  *  入参为秒级时间戳（接口口径，与列表其它处一致）。 */
 internal fun formatPmTime(sec: Long, now: Long = System.currentTimeMillis()): String {
@@ -684,7 +713,11 @@ fun PmChatPage(
             .tapGuard()
             .imePadding(),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原有观感）
+        FrostedHeaderLayout(
+            modifier = Modifier.fillMaxSize(),
+            header = {
+
             // 顶栏：返回 + 对方头像/昵称
             Row(
                 Modifier
@@ -720,6 +753,10 @@ fun PmChatPage(
                 )
             }
             }
+            },
+        ) { topInset ->
+                Column(Modifier.fillMaxSize()) {
+
 
             // 消息流
             Box(Modifier.weight(1f)) {
@@ -732,8 +769,24 @@ fun PmChatPage(
                         }
                     }
                     msgList.isEmpty() -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("还没有消息，打个招呼吧", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // 1.198：空态加图标，不再是孤零零一行字
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                HupuIcons.Comment,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                modifier = Modifier.size(44.dp),
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                "还没有消息，打个招呼吧",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     else -> {
@@ -744,19 +797,42 @@ fun PmChatPage(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(msgList.size) { idx ->
-                                PmBubble(msgList[msgList.size - 1 - idx], onOpenThread)
+                                val real = msgList.size - 1 - idx
+                                val m = msgList[real]
+                                val prev = msgList.getOrNull(real - 1)
+                                Column {
+                                    // 1.198：跨天插入日期分隔（今天 / 昨天 / M月d日）
+                                    if (prev == null || !sameDaySec(prev.time, m.time)) {
+                                        PmDaySeparator(m.time)
+                                    }
+                                    // 1.198b（真机反馈：气泡头像糊）：对方头像优先用**会话头像**——
+                                    // 与顶栏同一个 URL（顶栏清晰），详情接口的 headerPic 常是小尺寸变体。
+                                    PmBubble(m, peerAvatar = conv.avatar, onOpenThread = onOpenThread)
+                                }
                             }
-                        }
+                                                    // 1.198：浮空顶栏时最早的消息从栏下开始（reverseLayout 下末项在视觉顶部）
+                            item(key = "top-inset") { Spacer(Modifier.height(topInset)) }
+}
                     }
                 }
             }
 
-            // 输入行：图片按钮 + 输入框 + 发送
+            // 1.198：输入条升级为「浮动玻璃胶囊」——图片按钮 + 无边框输入框 + 圆形主题色发送按钮
+            // （原 Material OutlinedTextField + 文字「发送」，是此页最后一块与全站液态玻璃语言不符的地方）
+            val chatDark = isAppDarkTheme()
+            val barShape = RoundedCornerShape(24.dp)
+            val canSend = input.isNotBlank() && !sending
             Row(
                 Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp)
+                    // 悬浮感：与顶栏返回键 / Tab 栏同源（落影 → 裁形 → 玻璃底 → 极淡描边）
+                    .liquidElevation(barShape, chatDark, elevation = 6.dp)
+                    .clip(barShape)
+                    .background(buttonFill(chatDark))
+                    .border(0.6.dp, buttonBorder(chatDark), barShape)
+                    .padding(start = 6.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
@@ -766,44 +842,110 @@ fun PmChatPage(
                         .clickable(enabled = !sending) { pickImage.launch("image/*") },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(HupuIcons.ImageIcon, contentDescription = "发图片", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-                }
-                Spacer(Modifier.width(8.dp))
-                OutlinedTextField(
-                    colors = huzaiFieldColors(),
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("发送消息…", fontSize = 14.sp) },
-                    shape = RoundedCornerShape(20.dp),
-                    singleLine = true,
-                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 14.sp),
-                )
-                Spacer(Modifier.width(8.dp))
-                if (sending) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(
-                        "发送",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (input.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable(enabled = input.isNotBlank()) { sendText() }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    Icon(
+                        HupuIcons.ImageIcon,
+                        contentDescription = "发图片",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
                     )
+                }
+                Spacer(Modifier.width(4.dp))
+                // 无边框输入框：直接坐在玻璃条上（不再有 Material 的方框描边）
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    BasicTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        // 1.198b（真机反馈：字数多不换行）：单行 → 最多 4 行自动换行，
+                        // 输入条随内容长高（高度变化由外层 Row 自然撑开，上方的消息区 weight(1f) 相应收缩）
+                        maxLines = 4,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 15.sp,
+                            lineHeight = 21.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { inner ->
+                            if (input.isEmpty()) {
+                                Text(
+                                    "发送消息…",
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            inner()
+                        },
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                // 圆形发送按钮：可发送 = 主题色实心 + 白色箭头；不可用 = 极淡灰
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (canSend || sending) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)
+                        )
+                        .clickable(enabled = canSend) { sendText() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (sending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = androidx.compose.ui.graphics.Color.White,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            HupuIcons.SendArrow,
+                            contentDescription = "发送",
+                            tint = if (canSend) androidx.compose.ui.graphics.Color.White
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
 
         // 错误提示条
     }
+    }
 }
 
-/** 聊天气泡：自己右侧主题色、对方左侧浅灰；内容含 <img> 时渲染图片 */
+/** 1.198 私信日期分隔：居中次要文字（今天 / 昨天 / M月d日） */
 @Composable
-private fun PmBubble(m: PmMessage, onOpenThread: ((String) -> Unit)? = null) {
+private fun PmDaySeparator(timeSec: Long) {
+    val label = pmDayLabel(timeSec)
+    if (label.isEmpty()) return
+    Text(
+        label,
+        fontSize = 11.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp, bottom = 2.dp),
+    )
+}
+
+/** 聊天气泡（1.198 iOS 风格升级）：自己在右（主题色 + 白字）、对方在左（浅底 + 主文字色）；
+ *  圆角 18dp，靠近自己那一侧的底角收成 6dp 作为「气泡尖」；自己的气泡带极轻落影浮起。
+ *
+ *  @param peerAvatar 对方头像（会话头像，与顶栏同源 → 清晰度一致）；为空时回退到消息自带头像 */
+@Composable
+private fun PmBubble(
+    m: PmMessage,
+    peerAvatar: String? = null,
+    onOpenThread: ((String) -> Unit)? = null,
+) {
+    val shape = RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = 18.dp,
+        bottomStart = if (m.fromMe) 18.dp else 6.dp,
+        bottomEnd = if (m.fromMe) 6.dp else 18.dp,
+    )
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
@@ -811,7 +953,8 @@ private fun PmBubble(m: PmMessage, onOpenThread: ((String) -> Unit)? = null) {
     ) {
         if (!m.fromMe) {
             AsyncImage(
-                model = m.senderAvatar,
+                // 1.198b：与顶栏同一个头像 URL（会话头像），不再用详情接口里的小图
+                model = peerAvatar ?: m.senderAvatar,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(30.dp).clip(CircleShape),
@@ -825,7 +968,7 @@ private fun PmBubble(m: PmMessage, onOpenThread: ((String) -> Unit)? = null) {
                 contentDescription = "图片消息",
                 modifier = Modifier
                     .widthIn(max = 200.dp)
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(shape),
             )
         } else {
             // 1.2xx：站内链接（站务组「审核通过」等）→ 整体可点，点开对应帖子；
@@ -838,20 +981,27 @@ private fun PmBubble(m: PmMessage, onOpenThread: ((String) -> Unit)? = null) {
             }
             Text(
                 pmPreview(m.content),
-                fontSize = 14.sp,
-                color = if (m.fromMe) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+                color = if (m.fromMe) androidx.compose.ui.graphics.Color.White
+                else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
                     .then(clickable)
-                    .widthIn(max = 260.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 12.dp, topEnd = 12.dp,
-                            bottomStart = if (m.fromMe) 12.dp else 4.dp,
-                            bottomEnd = if (m.fromMe) 4.dp else 12.dp,
-                        )
+                    .widthIn(max = 262.dp)
+                    // 自己的气泡「浮」起来一点（对方气泡保持贴地，形成左右层次）
+                    .shadow(
+                        elevation = if (m.fromMe) 4.dp else 0.dp,
+                        shape = shape,
+                        clip = false,
+                        ambientColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.10f),
+                        spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.14f),
                     )
-                    .background(if (m.fromMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .clip(shape)
+                    .background(
+                        if (m.fromMe) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .padding(horizontal = 13.dp, vertical = 9.dp),
             )
         }
         if (m.fromMe) {

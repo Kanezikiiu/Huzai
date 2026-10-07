@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.java.myapplication.ui.components.animateChipCenterTo
+import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
@@ -437,14 +439,20 @@ private fun FeedContent(
     }
 
     Box(modifier.fillMaxSize()) {
-    Column(
-        Modifier
+    // 1.198：顶栏改为**浮空**（栏背景 = 官方 progressive blur），列表用「实测栏高」作顶部内边距
+    // —— 条目滚到栏下不再被硬切一刀，而是越靠上越模糊、并渐隐入页面底色。
+    val pullState = rememberPullToRefreshState()
+    // 已有内容的流刷新时走顶部指示器（内容保持不动）；仅首次加载（无缓存）才显示骨架
+    val inPlaceRefreshing = loadingTopic != null && feedStates[feedKey] != null
+    FrostedHeaderLayout(
+        modifier = Modifier
             .fillMaxSize()
             .tabSwipeSwitch(
                 onPrevious = { swipeTab(-1) },
                 onNext = { swipeTab(1) },
             ),
-    ) {
+        // ---------- 顶栏（浮空；背景由骨架统一负责） ----------
+        header = {
         PageHeader(title = "虎扑") {
             // 1.223：搜索键升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
             // 与标题的竖直对齐由 PageHeader 统一处理（标题与右侧内容同一竖直中心）。
@@ -493,14 +501,25 @@ private fun FeedContent(
                 Spacer(Modifier.height(SORT_BAR_TOTAL_HEIGHT))
             }
         }
-        val pullState = rememberPullToRefreshState()
+        },
+        // ---------- 内容（列表）：顶部内边距 = 实测栏高 ----------
+    ) { topInset ->
         // 已有内容的流刷新时走顶部指示器（内容保持不动）；仅首次加载（无缓存）才显示骨架
-        val inPlaceRefreshing = loadingTopic != null && feedStates[feedKey] != null
         PullToRefreshBox(
             isRefreshing = isRefreshing || inPlaceRefreshing,
             onRefresh = { if (selected == "hot") onRefresh() else forceReload() },
             state = pullState,
             modifier = Modifier.fillMaxSize(),
+            // 1.198：指示器必须落在浮空顶栏**下方**，否则会被栏体挡住看不见
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = isRefreshing || inPlaceRefreshing,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = topInset),
+                )
+            },
         ) {
             Crossfade(
                 targetState = selected,
@@ -520,13 +539,14 @@ private fun FeedContent(
                         threads = hotThreads,
                         useBigCards = true,
                         resetKey = if (sel == selected) "hot-$refreshVersion-$hotResetTick" else "hot",
+                        topInset = topInset,
                         onOpenThread = { if (sel == selected) openThread(it) },
                     )
                     else -> {
                         val state = feedStates[selKey]
                         when {
                             // 首次加载（无缓存）
-                            state == null -> SkeletonHome()
+                            state == null -> SkeletonHome(Modifier.padding(top = topInset))
                             // 加载失败/为空
                             state.threads.isEmpty() -> ErrorRetry { forceReload() }
                             // 话题流：无限滚动翻页
@@ -537,6 +557,7 @@ private fun FeedContent(
                                 loadingMore = state.loadingMore,
                                 onLoadMore = { if (sel == selected) loadMore() },
                                 resetKey = if (sel == selected) "$selKey-$refreshVersion" else selKey,
+                                topInset = topInset,
                                 onOpenThread = { if (sel == selected) openThread(it) },
                             )
                     }
@@ -544,7 +565,7 @@ private fun FeedContent(
             }
         }
     }
-    } // Column 关闭（overlay 挂 Box 内、Column 外）
+    } // FrostedHeaderLayout 内容块关闭（overlay 挂 Box 内、骨架外）
 
     // ---------- 搜索二级页：盖入式（挂在 Box 内、帖子详情之前——同 zIndex 2 时组合顺序决定层叠，详情页绘制在搜索页之上） ----------
     // 搜索结果打开帖子：不关闭搜索页——详情页直接盖在搜索页之上，
