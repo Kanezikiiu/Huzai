@@ -1,8 +1,8 @@
 {
-  "versionCode": 209,
-  "versionName": "1.199",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.199/huzai-1.199-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.199",
-  "changelog": "本版（1.199）：\n· 新增「热门赛事」评分频道：聚合赛程（F1 / 斯诺克 / 网球 / 乒乓球 / 排球 / 亚运电竞等热门赛事）\n· 「热门赛事」支持按比赛项目筛选，右上角为筛选入口\n· 修复：绝地求生、和平精英、奥运会举重等多人赛事错误显示记分板的问题\n上个版本（1.198）：\n· 新增「顶栏渐进模糊」（显示与阅读 → 外观 → 顶栏，默认关闭）：开启后顶栏浮在内容之上，条目滚动到栏下会逐渐模糊淡出\n· 评分二级页面新增记分板：赛制、状态、两队队徽与比分、日期时间，进行中的比赛每 30 秒自动刷新比分与评分\n· 聊天页升级：按日期分隔、气泡样式重做、浮动输入条",
+  "versionCode": 210,
+  "versionName": "1.200",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.200/huzai-1.200-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.200",
+  "changelog": "· 新增 NBA「数据统计」与「文字实录」(文字直播)\n· 看图器改版：操作条移至图片下方，「查看原图」标注原图体积，多图可「下载全部」\n· 修复比分过长时换行的问题",
   "forceUpdate": false
 }

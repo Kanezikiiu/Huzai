@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import com.java.myapplication.ui.components.AutoFitScore
 import com.java.myapplication.ui.components.normalizeCover
 import kotlinx.coroutines.delay
 import com.java.myapplication.data.HupuScoreGroup
@@ -102,6 +104,8 @@ fun MatchDetailOverlay(
     live: Boolean = false,
     /** 1.198：轮询到点时的静默刷新回调（不动 loading 标志，避免闪骨架） */
     onLiveTick: () -> Unit = {},
+    /** 1.200：NBA（basketball_match + NBA 联赛）——非空则显示「数据统计 / 文字实录」入口 */
+    nbaQuery: NbaStatsQuery? = null,
 ) {
     // 盖入动画：进入 0→1；返回动画结束后由父级移除本组件
     val progress = remember { Animatable(0f) }
@@ -146,6 +150,21 @@ fun MatchDetailOverlay(
     // 队伍分类子 Tab（"全部"为默认）：key = memberId 或 "fun"（趣评=中立角色）
     var selectedGroup by remember { mutableStateOf("all") }
 
+    // 1.201：顶层分类——null = 「评分」（默认）；BOX/PLAY = 数据统计 / 文字实录。
+    // 非 NBA（nbaQuery == null）时只会停在 null，等价于页面只有「评分」。
+    var nbaTab by remember { mutableStateOf<NbaStatsTab?>(null) }
+    // 换场（含组件实例复用）后若本场不再是 NBA，把选中项收回「评分」
+    LaunchedEffect(nbaQuery) { if (nbaQuery == null) nbaTab = null }
+    // 1.201：NBA 数据/实录的加载状态——**页面级持有**，切 tab 不销毁（不重拉、不闪骨架）
+    val nbaState = remember(nbaQuery) { NbaStatsState() }
+    // 1.201：顶层分类条数据源（评分恒有；NBA 追加数据统计 / 文字实录）
+    val detailTabs = remember(nbaQuery) {
+        buildList {
+            add(null to "评分")
+            if (nbaQuery != null) NbaStatsTab.entries.forEach { add(it to it.label) }
+        }
+    }
+
     // 1.198：实时记分板 —— **仅「进行中」才轮询**，30s 一次，页面离开即随 effect 取消；
     // 对局结束后（isLive 变 false）本 effect 重启后直接返回，自然停止。
     LaunchedEffect(live) {
@@ -175,29 +194,57 @@ fun MatchDetailOverlay(
                 subtitle = tree?.let { "${formatCount(it.scorePersonCount)}人评分" },
             )
 
-            // 内容区：加载中 / 失败重试 / 正常
-            val state = if (tree != null) "ok" else if (loading) "loading" else "error"
-            val pullState = rememberPullToRefreshState()
-            PullToRefreshBox(
-                isRefreshing = loading && tree != null,
-                onRefresh = onRefresh,
-                state = pullState,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Crossfade(targetState = state, animationSpec = tween(180), label = "matchDetailSwitch") { s ->
-                    when (s) {
-                        "loading" -> SkeletonHome()
-                        "error" -> ErrorRetry { onRefresh() }
-                        else -> {
-                            val t = tree
-                            if (t == null) {
-                                ErrorRetry { onRefresh() }
-                            } else {
-                                TreeContent(t, currentRound?.bizId, teams = teams, groups = groups, groupMembers = groupMembers, selectedGroup = selectedGroup, onGroupChange = { selectedGroup = it }, onSelectRound = { selectedRoundId = it }, onOpenPlayer = onOpenPlayer, scoreboard = scoreboard)
+            // 1.198：记分板（赛制 / 状态 / 两队 / 比分或开赛时间）
+            // 1.201：上提到内容区之外——各组内容（评分/数据统计/文字实录）共用同一块记分板，且不随列表滚走
+            scoreboard?.let { ScoreboardBanner(it) }
+
+            // 1.201：顶层分类条——「评分」恒有；NBA 追加「数据统计 / 文字实录」
+            // （非 NBA 只有一项，整条不显示，外观与旧版一致）
+            val detailTab = nbaTab
+            if (detailTabs.size > 1) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                        .chipBarClip()
+                        .padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(detailTabs, key = { it.first?.name ?: "score" }) { (key, label) ->
+                        Chip(text = label, selected = detailTab == key) { nbaTab = key }
+                    }
+                }
+            }
+
+            val q = nbaQuery
+            if (detailTab == null || q == null) {
+                // ---------- ① 评分（原样：加载中 / 失败重试 / 正常） ----------
+                val state = if (tree != null) "ok" else if (loading) "loading" else "error"
+                val pullState = rememberPullToRefreshState()
+                PullToRefreshBox(
+                    isRefreshing = loading && tree != null,
+                    onRefresh = onRefresh,
+                    state = pullState,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    Crossfade(targetState = state, animationSpec = tween(180), label = "matchDetailSwitch") { s ->
+                        when (s) {
+                            "loading" -> SkeletonHome()
+                            "error" -> ErrorRetry { onRefresh() }
+                            else -> {
+                                val t = tree
+                                if (t == null) {
+                                    ErrorRetry { onRefresh() }
+                                } else {
+                                    TreeContent(t, currentRound?.bizId, teams = teams, groups = groups, groupMembers = groupMembers, selectedGroup = selectedGroup, onGroupChange = { selectedGroup = it }, onSelectRound = { selectedRoundId = it }, onOpenPlayer = onOpenPlayer)
+                                }
                             }
                         }
                     }
                 }
+            } else {
+                // ---------- ② 数据统计 / 文字实录（与「评分」同级，直接嵌在本页 tab 下方） ----------
+                NbaStatsBody(state = nbaState, query = q, tab = detailTab)
             }
         }
     }
@@ -217,12 +264,9 @@ private fun TreeContent(
     onGroupChange: (String) -> Unit,
     onSelectRound: (String) -> Unit,
     onOpenPlayer: (HupuScoreItem) -> Unit,
-    /** 1.198：顶部记分板（可为 null） */
-    scoreboard: MatchScoreboard? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
-        // 1.198：记分板（赛制 / 状态 / 两队 / 比分或开赛时间）
-        scoreboard?.let { ScoreboardBanner(it) }
+        // 1.198：记分板与 1.201 的顶层分类条都已上提到本组件之外（页面级固定头部）
         // 对局横滑条（第1局…第N局，正序）——仅 MOBA 三层结构显示；
         // 传统体育（NBA 等）children 直接是选手（flat），没有对局层
         if (!tree.flat) {
@@ -492,12 +536,11 @@ private fun ScoreboardBanner(sb: MatchScoreboard) {
             TeamSide(sb.homeName, sb.homeLogo, sb.homeWon, modifier = Modifier.weight(1f))
             Column(Modifier.width(118.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (hasScore) {
-                    Text(
-                        scoreText,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
+                    // 1.199b：比分自适应字号（空间不够就缩小，不换行、不裁切）
+                    AutoFitScore(
+                        text = scoreText,
+                        maxFontSize = 26f,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
                         modifier = Modifier.graphicsLayer {
                             scaleX = pop.value
                             scaleY = pop.value

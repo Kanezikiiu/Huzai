@@ -453,6 +453,13 @@ internal fun SortBar(
      * - 给定 = 宽度由「段数 × segWidth」决定（帖子详情页「回复数」右侧）
      */
     segWidth: Dp? = null,
+    /**
+     * 1.224：整条左右内边距。默认 16dp（页面级排序条，如首页 / 专区）。
+     * 嵌入「已有自身 16dp 内容边距」的卡片流时传 0，避免与容器 padding 叠加错位。
+     */
+    hPad: Dp = 16.dp,
+    /** 1.224：整条底部呼吸。默认 6dp；嵌入列表项时传 0，由容器 spacing 负责间距。 */
+    bottomPad: Dp = 6.dp,
     onSelect: (String) -> Unit,
 ) {
     if (sorts.isEmpty()) return
@@ -477,8 +484,8 @@ internal fun SortBar(
         if (segWidth == null) {
             Modifier
                 .fillMaxWidth()
-                // 1.197（真机反馈）：下方留一点呼吸空间
-                .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+                // 1.197（真机反馈）：下方留一点呼吸空间（1.224：可由调用方覆盖）
+                .padding(start = hPad, end = hPad, bottom = bottomPad)
         } else {
             Modifier
         },

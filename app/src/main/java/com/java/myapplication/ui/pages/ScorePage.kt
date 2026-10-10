@@ -89,6 +89,8 @@ import com.java.myapplication.data.GrandExpandState
 import com.java.myapplication.data.flattenWithDescendants
 import com.java.myapplication.data.ScoreCommentState
 import com.java.myapplication.data.mergeWithOptimistic
+import com.java.myapplication.data.nbaBeijingDate
+import com.java.myapplication.data.isNbaStatsSupported
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.PageHeader
@@ -870,6 +872,20 @@ fun ScorePage(modifier: Modifier = Modifier) {
                     timeText = om.startTimeText,
                 ) else null,
                 live = liveMatch,
+                // 1.200：NBA（basketball_match + NBA 联赛）→ 详情页多出「数据统计 / 文字实录」两个入口。
+                // 两套 id 空间互不相通（评分侧 outBizNo vs nba 侧 match_id），唯一桥梁是按「北京时间日期」
+                // 抓 nba.hupu.com/games/{date} 再用两队中文名 join 出 gameId（比分兜底）。
+                // CBA 也是 basketball_match，但其 introduction 为「CBA夏季联赛」，不含 NBA → 自动排除。
+                nbaQuery = if (isNbaStatsSupported(om.scoreBizType, om.introduction) && isVersus) {
+                    NbaStatsQuery(
+                        date = nbaBeijingDate(om.startTimestamp),
+                        home = om.home?.name.orEmpty(),
+                        away = om.away?.name.orEmpty(),
+                        homeScore = om.home?.baseScore.orEmpty(),
+                        awayScore = om.away?.baseScore.orEmpty(),
+                        live = liveMatch,
+                    )
+                } else null,
                 onLiveTick = {
                     // 1.198：实时记分板 —— 静默刷新（**不动 detailLoading**，否则会闪骨架）
                     val no = om.scoreBizNo

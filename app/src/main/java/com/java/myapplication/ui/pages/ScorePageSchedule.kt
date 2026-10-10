@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.java.myapplication.ui.components.AutoFitScore
 import com.java.myapplication.ui.components.animateChipCenterTo
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -191,12 +194,17 @@ internal fun MatchCard(m: HupuMatch, onOpen: (HupuMatch) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TeamScore(m.home, isWinner = m.winnerMemberId == m.home?.memberId && m.home != null, alignEnd = false, modifier = Modifier.weight(1f))
             // 中间比分区
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 12.dp)) {
+            // 1.199b（真机反馈）：比分在空间不够时会被挤到第二行 →
+            // 这里给比分区一个**宽度上限**（长队名不再被它挤没），并让比分**自适应字号**
+            // （放不下就逐级缩小，绝不换行、不裁切）。
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 12.dp).widthIn(max = 132.dp),
+            ) {
                 if (m.home?.baseScore?.isNotEmpty() == true && m.away?.baseScore?.isNotEmpty() == true) {
-                    Text(
-                        "${m.home.baseScore} : ${m.away.baseScore}",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
+                    AutoFitScore(
+                        text = "${m.home.baseScore} : ${m.away.baseScore}",
+                        maxFontSize = 20f,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                 } else {
