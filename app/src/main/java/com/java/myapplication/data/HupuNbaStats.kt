@@ -98,6 +98,14 @@ data class NbaPlay(
      * 之前的解析器按「至少 3 格」过滤会把这些内容整条丢掉。
      */
     val note: Boolean = false,
+    /**
+     * 1.201：该事件在虎扑页里的 `<tr id="…">`（**毫秒时间戳**）。
+     *
+     * 用途只有一个：给列表当 **key**。直播刷新时 Compose 才能识别出「只是末尾多了一条」，
+     * 已有条目零重排；否则 items 只能按位置 diff，新事件一到达就可能整屏重绘，真机上看着像闪。
+     * 解析层保证唯一（原生 id 重复时顺延到自增负数），所以可以直接当 key 而不会崩。
+     */
+    val id: Long = 0L,
 )
 
 /** 文字实录页 */
@@ -369,8 +377,29 @@ fun parseNbaPlayByPlay(html: String): NbaPlayByPlay? {
     val zone = if (zoneStart >= 0) body.substring(zoneStart) else body
     val plays = ArrayList<NbaPlay>()
     var quarter = 1
-    for (tr in Regex("<tr id=\"\\d+\">([\\s\\S]*?)</tr>").findAll(zone)) {
-        val cells = rawTds(tr.groupValues[1])
+
+    // 1.201：先按 `<tr id>`（**毫秒时间戳**，实测已结束比赛 405 行严格单调递增）
+    // 升序排一遍，再逐行解析。原因：虎扑把「进行中」的比赛渲染成**最新在最上**
+    // （DOM 倒序），已结束的才是正序；不归一的话直播场次的事件流会整条颠倒，
+    // 与「最新在末尾 + 自动滚到底」的直播跟随自相矛盾。
+    // 顺带好处：按真实时间顺序遍历，下面的「第 X 节开始」推进 quarter 也才是对的。
+    val ordered = Regex("<tr id=\"(\\d+)\">([\\s\\S]*?)</tr>").findAll(zone)
+        .map { it.groupValues[1].toLongOrNull() to it.groupValues[2] }
+        .sortedBy { it.first ?: Long.MAX_VALUE }
+
+    // id 唯一化：原生时间戳极少重复，但**列表 key 一旦重复 LazyColumn 会直接崩**，所以兜一层。
+    // 重复或缺失时改用自增负数（-1、-2…），既唯一又不会与真实时间戳（正数）撞车。
+    val usedIds = HashSet<Long>()
+    var synthId = -1L
+    fun uniqueId(raw: Long?): Long {
+        var v = raw ?: synthId--
+        while (!usedIds.add(v)) v = synthId--
+        return v
+    }
+
+    for ((rawId, frag) in ordered) {
+        val rowId = uniqueId(rawId)
+        val cells = rawTds(frag)
         if (cells.isEmpty()) continue
 
         // 1.201：跨列整行提示（colspan=4 的单格行）——暂停 / 第一节结束。/ 上半场结束。
@@ -387,6 +416,7 @@ fun parseNbaPlayByPlay(html: String): NbaPlayByPlay? {
                 score = "",
                 important = cells[0].bold,
                 note = true,
+                id = rowId,
             )
             continue
         }
@@ -403,6 +433,7 @@ fun parseNbaPlayByPlay(html: String): NbaPlayByPlay? {
             score = cells.getOrNull(3)?.text.orEmpty(),
             // 虎扑用「事件格内联 font-weight:bold」标记重要动作（得分/盖帽/抢断等）
             important = cells[2].bold,
+            id = rowId,
         )
     }
     if (plays.isEmpty() && away == null && home == null) return null

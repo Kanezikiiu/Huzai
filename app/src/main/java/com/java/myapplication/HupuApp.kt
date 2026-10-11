@@ -4,6 +4,7 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.ImageDecoderDecoder
+import com.java.myapplication.data.HupuPrefs
 
 class HupuApp : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader =
@@ -18,6 +19,10 @@ class HupuApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // 1.224e：在这里（而不是 MainActivity 首帧路径上）初始化偏好并预热，
+        // 把 SharedPreferences 首次读盘 + home_topics JSON 解析挪到「还没有画面」的时候。
+        // 否则这些成本会落在首页第一帧上，表现为冷启动明显变慢。
+        HupuPrefs.init(this)
         // 1.133: 崩溃取证只在 debug 构建启用。这是 1.129 为排查偶发闪退临时加的取证代码，
         // 会把异常堆栈写入外部共享目录——正式包不应向共享存储落盘堆栈（隐私/体积）。
         if (BuildConfig.DEBUG) installCrashLogger()

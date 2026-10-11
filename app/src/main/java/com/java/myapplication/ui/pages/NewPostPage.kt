@@ -1031,23 +1031,23 @@ fun NewPostPage(
         // toast
     }
 
-    if (showPicker) {
-        PostTopicSheet(
-            selectedTopicId = topic?.id,
-            onPick = { t, z ->
-                // 换专区 → 已选话题作废（话题从属于专区）
-                if (topic?.id != t.id) tags.clear()
-                topic = t
-                zone = z
-                showPicker = false
-            },
-            onDismiss = { showPicker = false },
-        )
-    }
+    PostTopicSheet(
+        visible = showPicker,
+        selectedTopicId = topic?.id,
+        onPick = { t, z ->
+            // 换专区 → 已选话题作废（话题从属于专区）
+            if (topic?.id != t.id) tags.clear()
+            topic = t
+            zone = z
+            showPicker = false
+        },
+        onDismiss = { showPicker = false },
+    )
 
     val tagTopic = topic
-    if (showTagPicker && tagTopic != null) {
+    if (tagTopic != null) {
         TagPickerSheet(
+            visible = showTagPicker,
             topicId = tagTopic.id,
             selectedIds = tags.map { it.id },
             onToggle = { tg ->
@@ -1060,21 +1060,20 @@ fun NewPostPage(
         )
     }
 
-    if (showDeclare) {
-        DeclarePickerSheet(
-            current = containsAi,
-            onPick = {
-                containsAi = it
-                showDeclare = false
-            },
-            onDismiss = { showDeclare = false },
-        )
-    }
+    DeclarePickerSheet(
+        visible = showDeclare,
+        current = containsAi,
+        onPick = {
+            containsAi = it
+            showDeclare = false
+        },
+        onDismiss = { showDeclare = false },
+    )
 
     // 1.113: 创建投票（先建票拿 voteId，再按光标位置插入块）
-    if (showVoteSheet) {
-        VoteCreateSheet(
-            creating = voteCreating,
+    VoteCreateSheet(
+        visible = showVoteSheet,
+        creating = voteCreating,
             onSubmit = { vt, choices, type, limit ->
                 voteCreating = true
                 scope.launch {
@@ -1098,7 +1097,6 @@ fun NewPostPage(
                     }
                 }
             },
-            onDismiss = { if (!voteCreating) showVoteSheet = false },
-        )
-    }
+        onDismiss = { if (!voteCreating) showVoteSheet = false },
+    )
 }

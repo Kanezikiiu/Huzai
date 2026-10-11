@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -156,9 +157,12 @@ fun MatchDetailOverlay(
     // 换场（含组件实例复用）后若本场不再是 NBA，把选中项收回「评分」
     LaunchedEffect(nbaQuery) { if (nbaQuery == null) nbaTab = null }
     // 1.201：NBA 数据/实录的加载状态——**页面级持有**，切 tab 不销毁（不重拉、不闪骨架）
-    val nbaState = remember(nbaQuery) { NbaStatsState() }
+    // key 用「比赛身份指纹」而非整个 nbaQuery：nbaQuery 含比分，直播轮询每 30s 可能换新值，
+    // 若拿它当 key，比分会把状态实例整个重建 → 闪骨架（「数据更新时整页闪烁」的根因之一）。
+    val nbaKey = nbaStatsKey(nbaQuery)
+    val nbaState = remember(nbaKey) { NbaStatsState() }
     // 1.201：顶层分类条数据源（评分恒有；NBA 追加数据统计 / 文字实录）
-    val detailTabs = remember(nbaQuery) {
+    val detailTabs = remember(nbaKey) {
         buildList {
             add(null to "评分")
             if (nbaQuery != null) NbaStatsTab.entries.forEach { add(it to it.label) }
@@ -247,6 +251,10 @@ fun MatchDetailOverlay(
                 NbaStatsBody(state = nbaState, query = q, tab = detailTab)
             }
         }
+
+        // 1.224j：球员 PK 换人弹层挂在**页面根节点**（不是 tab 内容区）——遮罩才能盖住顶栏 / 记分板。
+        // 此前它挂在「数据统计」正文里，弹层打开只有下半屏变暗，上半屏依旧亮着，很怪。
+        NbaPkPickerHost(nbaState)
     }
 }
 
@@ -378,52 +386,73 @@ private fun TreeContent(
     }
 }
 
-/** 选手评分行：头像 + 名字 + 热评 | 大字分数（点击进入选手详情） */
+/** 选手评分行：头像 + 名字/说明 | 大字分数（居中对齐）| 热评（头像下方另起一行）；点击进入选手详情 */
 @Composable
 private fun PlayerScoreRow(p: HupuScoreItem, onClick: () -> Unit) {
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
             .clickable { onClick() }
             .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeroBadgeAvatar(avatar = p.image, heroIcon = p.heroIcon, size = 44.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                p.name,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (p.hotComment.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
+        // 1.224k：整行**顶部对齐**（此前是 CenterVertically，说明文本没显示时名称被压到行中间，
+// 看着比"原来"低了一截）。顶部对齐后名称与头像顶边齐平，说明文本紧随其下。
+        Row(verticalAlignment = Alignment.Top) {
+            HeroBadgeAvatar(avatar = p.image, heroIcon = p.heroIcon, size = 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                 Text(
-                    "「${p.hotComment}」",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    p.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    // 1.224k：名称**左对齐**（不居中）——只有右侧「分数 / N人」才做居中对齐。
+                    textAlign = TextAlign.Start,
+                )
+                // 1.224k：名称下方改为**评分对象说明文本**（此前这里是热评）。
+                // 没有说明文本的对象不占位。
+                if (p.intro.isNotBlank()) {
+                    Text(
+                        p.intro,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Start,
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            // 1.224k：分数与评分人数**居中对齐**（此前右对齐，小字被顶到右边、与分数中轴不齐）。
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    p.scoreAvg,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = scoreColor(p.scoreAvg),
+                )
+                Text(
+                    "${formatCount(p.scorePersonCount)}人",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        Spacer(Modifier.width(10.dp))
-        Column(horizontalAlignment = Alignment.End) {
+        // 1.224k：热评文本**另起一行，位于头像下方**（与通用评分二级页同款）。
+        if (p.hotComment.isNotBlank()) {
             Text(
-                p.scoreAvg,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = scoreColor(p.scoreAvg),
-            )
-            Text(
-                "${formatCount(p.scorePersonCount)}人",
-                fontSize = 11.sp,
+                "「${p.hotComment}」",
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp),
             )
         }
     }

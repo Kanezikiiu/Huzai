@@ -128,7 +128,9 @@ private fun FeedContent(
 ) {
     val repo = remember { HupuRepository() }
     // 单选流切换："hot"=全站热帖（默认）| 其他=话题 url（如 /topic-daily）
-    var selected by remember { mutableStateOf("hot") }
+    // 1.224c：初始值**同步读盘**（热帖隐藏时直接停在自定义频道首页）——否则冷启动会先渲染
+    // 一帧热帖再被下面的校正 effect 切走，即真机反馈的「热帖页面一闪而过」。
+    var selected by remember { mutableStateOf(HupuPrefs.initialHomeTopicSelection()) }
     // 话题内的排序 tab url（null=默认最新回复）
     var selectedSort by remember { mutableStateOf<String?>(null) }
     // 各话题流的累积状态：key = "话题url#排序url"

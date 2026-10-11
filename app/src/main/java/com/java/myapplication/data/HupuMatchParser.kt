@@ -173,6 +173,11 @@ object HupuMatchParser {
         // 所选英雄/角色小图标（MOBA 有值，教练/中立角色为 null）
         heroIcon = n.optJSONObject("infoJson")?.optJSONArray("auxiliaryPic")
             ?.optString(0)?.ifEmpty { null },
+        // 1.224k：评分对象说明文本（infoJson.desc[0]）——比赛评分二级页的选手行
+        // 名称下方要显示的那行；只收敛「空」和 JSON 字面量，短串（如 KDA）照常显示。
+        intro = scoreIntroFromDesc(
+            n.optJSONObject("infoJson")?.optJSONArray("desc")?.optString(0),
+        ),
     )
 
     /**

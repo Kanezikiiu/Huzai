@@ -55,6 +55,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import com.java.myapplication.ui.components.huzaiFieldColors
+import com.java.myapplication.ui.components.HuzaiHalfSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -217,18 +218,18 @@ internal fun StepBtn(label: String, enabled: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * 1.113: 创建投票面板（ModalBottomSheet，2~10 个选项）。
+ * 1.113: 创建投票面板（自研半屏面板，2~10 个选项）。
  * 1.119: 支持单选（radio / limit 1）与多选（checkbox / limit N）。
+ * 1.224f: 由 ModalBottomSheet 改为自研半屏面板（性能）。
  * 点击「创建投票」后先调 POST /api/v1/votes 拿 voteId，再由页面插入块。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun VoteCreateSheet(
+    visible: Boolean,
     creating: Boolean,
     onSubmit: (String, List<String>, String, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var voteTitle by remember { mutableStateOf("") }
     val choices = remember { mutableStateListOf("", "") }
     // 1.119: 单选 / 多选 + 多选时的「最多可选 N 项」
@@ -250,15 +251,14 @@ internal fun VoteCreateSheet(
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    HuzaiHalfSheet(visible = visible, onDismiss = onDismiss, fraction = 0.72f) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.66f)
+                .weight(1f)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp)
-                .navigationBarsPadding(),
+                .padding(bottom = 24.dp),
         ) {
             Text(
                 "发起投票",

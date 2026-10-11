@@ -96,6 +96,7 @@ import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.chipGlassFill
 import com.java.myapplication.ui.components.chipGlassBorder
 import com.java.myapplication.ui.components.ErrorRetry
+import com.java.myapplication.ui.components.HuzaiHalfSheet
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.normalizeCover
@@ -380,15 +381,14 @@ fun SearchPage(
         }
         }
 
-        // 专区筛选：半屏弹出菜单（可上拉全屏）
-        if (forumPickerOpen) {
-            ForumPickerSheet(
-                categories = categories,
-                selectedTopicId = topicId,
-                onSelect = { changeForum(it); forumPickerOpen = false },
-                onDismiss = { forumPickerOpen = false },
-            )
-        }
+        // 专区筛选：半屏弹出菜单（自研面板；状态挂在页面，退场动画播完才自然消失）
+        ForumPickerSheet(
+            visible = forumPickerOpen,
+            categories = categories,
+            selectedTopicId = topicId,
+            onSelect = { changeForum(it); forumPickerOpen = false },
+            onDismiss = { forumPickerOpen = false },
+        )
         // 1.191: 清空搜索历史确认弹窗（Liquid Glass 同款外观 + Q 弹出入场）
         if (clearHistoryAsk) {
             LiquidGlassDialog(
@@ -666,20 +666,19 @@ private fun SearchItemRow(it: HupuSearchItem, onOpen: (HupuSearchItem) -> Unit) 
 // ---------- 专区筛选（半屏弹出菜单） ----------
 
 /**
- * 专区选择器（ModalBottomSheet）：
- * - 1.182: 固定 72% 屏高、默认展开（打开即完整展示，不再停在小半屏）
+ * 专区选择器（自研半屏面板）：
+ * - 1.182: 固定 72% 屏高、完整展开
+ * - 1.224f: 由 ModalBottomSheet 改为自研半屏面板（性能）
  * - 顶部「所有专区」恢复全站搜索；大类 chips 过滤；搜索框过滤版块名
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ForumPickerSheet(
+    visible: Boolean,
     categories: List<HupuCategory>,
     selectedTopicId: String?,
     onSelect: (String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 1.182: 固定 72% 高度 + 默认展开（skipPartiallyExpanded=true → 打开即 Expanded，不再停在半屏）
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf("") }
     var selectedCate by remember { mutableStateOf<String?>(null) }
     // 1.192k: 大类 chips 条补「选中项居中」便捷特性（与三大页顶部横滑条同一套）。
@@ -701,12 +700,8 @@ private fun ForumPickerSheet(
         else allTopics.filter { it.name.contains(query.trim(), ignoreCase = true) }.distinctBy { it.topicId }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-    ) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.72f)) {
+    HuzaiHalfSheet(visible = visible, onDismiss = onDismiss, fraction = 0.72f) {
+        Column(Modifier.fillMaxWidth().weight(1f)) {
             // 标题
             Text(
                 "选择专区",

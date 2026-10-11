@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -322,11 +323,10 @@ private fun CommonHeader(t: HupuCommonTree, onBack: () -> Unit) {
     }
 }
 
-/** 子项行：头像 + 名称 + 人数 + 均分 */
+/** 子项行（评分对象）：头像 + 名称/说明 + 均分（人数在分数下方） + 热评（头像下方另起一行） */
 @Composable
 private fun CommonItemRow(item: HupuScoreItem, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
@@ -334,36 +334,74 @@ private fun CommonItemRow(item: HupuScoreItem, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(12.dp),
     ) {
-        if (item.image != null) {
-            AsyncImage(
-                model = normalizeCover(item.image),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),
-            )
+        // 1.224k：整行**顶部对齐**（此前是 CenterVertically，说明文本没显示时名称被压到行中间，
+        // 看着比"原来"低了一截）。顶部对齐后名称与头像顶边齐平，说明文本紧随其下。
+        Row(verticalAlignment = Alignment.Top) {
+            if (item.image != null) {
+                AsyncImage(
+                    model = normalizeCover(item.image),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                Text(
+                    item.name,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // 1.224k：名称**左对齐**（不居中）——只有右侧「分数 / N人」才做居中对齐。
+                    textAlign = TextAlign.Start,
+                )
+                // 1.224k：名称下方改为**评分对象说明文本**。
+                // 此前这行说明只有点进叶子详情页（评分评价页）才看得到；现在二级页每行直接展示。
+                // 没有说明的对象不占位（不画空行）。
+                if (item.intro.isNotBlank()) {
+                    Text(
+                        item.intro,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Start,
+                    )
+                }
+            }
             Spacer(Modifier.width(10.dp))
+            // 1.224k：评分人数从名称下方**移到分数下方**，并补上单位「人」——
+            // 与比赛评分二级页的选手行（分数大字 / 「N人」小字）保持同一口径；
+            // 两者**居中对齐**（右对齐时小字被顶到右边、与分数中轴不齐）。
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    item.scoreAvg,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = scoreColor(item.scoreAvg),
+                )
+                Text(
+                    "${formatCount(item.scorePersonCount)}人",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        Column(Modifier.weight(1f)) {
+        // 1.224k：热评文本**另起一行，位于头像下方**（与赛程卡的选手评分卡同款）。
+        if (item.hotComment.isNotBlank()) {
             Text(
-                item.name,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                formatCount(item.scorePersonCount),
-                fontSize = 11.sp,
+                "「${item.hotComment}」",
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp),
             )
         }
-        Text(
-            item.scoreAvg,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = scoreColor(item.scoreAvg),
-        )
     }
 }
 

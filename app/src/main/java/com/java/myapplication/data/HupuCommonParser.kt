@@ -42,6 +42,24 @@ object HupuCommonParser {
         return if (t.isEmpty() || t == NULL_LITERAL) "" else t
     }
 
+    /**
+     * 1.224k：评分对象的**说明文本**（二级页每行名称下方要显示的那行）。
+     *
+     * 与叶子详情页同源：都是 `infoJson.desc`（官方给的是数组，取第 0 项）。
+     * 兼容 `infoJson.desc[]` / `infoJson.desc`（平铺串）/ 顶层 `desc` 三种形态。
+     *
+     * ⚠️ 关键：**一旦命中数组形态就直接以它为准，不再往下回落**。
+     * 早期写法是「数组取第 0 项，为空再回落取整个 desc 字段」，而 desc 本身就是数组，
+     * 回落就把数组序列化成 `[""]` 显示到了名称下方。
+     * 空串 / JSON 字面量交给 [scoreIntroFromDesc] 收敛成空；短串（如 KDA）照常显示。
+     */
+    private fun introOf(n: JSONObject): String {
+        val info = n.optJSONObject("infoJson")
+        info?.optJSONArray("desc")?.let { return scoreIntroFromDesc(strAt(it, 0)) }
+        val flat = str(info, "desc").ifEmpty { str(n, "desc") }
+        return scoreIntroFromDesc(flat)
+    }
+
     /** 首页 SSR：__NEXT_DATA__ → pageProps.list[] → subject/item/detail.items */
     fun parseScoreHome(html: String): List<HupuCommonSubject> {
         return try {
@@ -124,6 +142,7 @@ object HupuCommonParser {
                         scoreAvg = formatAvg(n.optDouble("scoreAvg", 0.0)),
                         scorePersonCount = n.optLong("summedScorePersonCount", n.optLong("scorePersonCount", 0L)),
                         hotComment = str(n.optJSONArray("hotCommentModels")?.optJSONObject(0), "commentContent"),
+                        intro = introOf(n),
                     )
                 }
             }

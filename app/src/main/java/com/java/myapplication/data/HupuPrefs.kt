@@ -48,11 +48,30 @@ object HupuPrefs {
     const val MAX_FAVORITE_TOPICS = 50
 
     private lateinit var prefs: SharedPreferences
-
+    private var inited = false
     fun init(context: Context) {
+        // 幂等：HupuApp.onCreate（预热）与 MainActivity.onCreate 都会调
+        if (inited) return
         prefs = context.getSharedPreferences("hupu_prefs", Context.MODE_PRIVATE)
         disclaimerAccepted = prefs.getBoolean(KEY_DISCLAIMER_ACCEPTED, false)
+        // 1.224e：把「首页第一帧就要用到的偏好」在这里先读进内存。
+        warmUp()
         seedNewScoreChannels()
+        inited = true
+    }
+
+    /**
+     * 1.224e：首帧前的预热。
+     *
+     * 首页的频道初值（[initialHomeTopicSelection]）与横滑条（[effectiveHomeTopics]）都要读
+     * `home_topics`——那是一段含全部频道的 JSON，解析一次要遍历上百个条目。
+     * 把它放在**第一帧**里同步做，冷启动会明显变慢
+     * （真机反馈：修掉「热帖闪一下」之后反而更慢 —— 正是因为频道初值从常量改成了「同步读盘 + 解析」）。
+     * 这里在 `Application.onCreate` 提前做掉：那时还没有画面，读盘与解析不会掉帧。
+     */
+    fun warmUp() {
+        isHomeHotHidden()
+        loadHomeTopics()
     }
 
     // ---------- 1.196：新增评分频道「默认开启」的一次性补入 ----------
@@ -106,13 +125,26 @@ object HupuPrefs {
     /** 是否自定义过（区分「没配过=用官方热门」与「配成空=只留热帖」） */
     fun hasCustomHomeTopics(): Boolean = prefs.contains(KEY_HOME_TOPICS)
 
+    /**
+     * 1.224e：`home_topics` 解析结果的**内存缓存**。
+     *
+     * 首页第一帧会问它两次（频道初值 + 横滑条），每次都要遍历全部频道做 JSON 解析；
+     * 缓存一份后首帧只解析一次，之后（含每次重组）都是零成本返回。
+     * 写入 / 清除时同步更新缓存，保证不会读到旧列表。
+     */
+    private var homeTopicsCache: List<HupuTopicInfo>? = null
+
     fun loadHomeTopics(): List<HupuTopicInfo> {
-        val json = prefs.getString(KEY_HOME_TOPICS, null) ?: return emptyList()
-        return decodeHomeTopicsJson(json)
+        homeTopicsCache?.let { return it }
+        val json = prefs.getString(KEY_HOME_TOPICS, null)
+        val list = if (json == null) emptyList() else decodeHomeTopicsJson(json)
+        homeTopicsCache = list
+        return list
     }
 
     fun saveHomeTopics(list: List<HupuTopicInfo>) {
         prefs.edit().putString(KEY_HOME_TOPICS, encodeHomeTopicsJson(list)).apply()
+        homeTopicsCache = list
         homeTopicsVersion++
     }
 
@@ -127,6 +159,7 @@ object HupuPrefs {
 
     fun clearHomeTopics() {
         prefs.edit().remove(KEY_HOME_TOPICS).apply()
+        homeTopicsCache = emptyList()
         homeTopicsVersion++
     }
 
@@ -242,6 +275,21 @@ object HupuPrefs {
     /** 首页实际使用的频道列表：有自定义用自定义，否则回退官方热门 */
     fun effectiveHomeTopics(fallback: List<HupuTopicInfo>): List<HupuTopicInfo> =
         if (hasCustomHomeTopics()) loadHomeTopics() else fallback
+
+    /**
+     * 1.224c：首页**首帧**应停在哪个频道（冷启动用）。
+     *
+     * 之前首页把选中频道硬编码初始为 `"hot"`，于是「热帖已隐藏」的用户冷启动时会
+     * **先渲染一帧热帖（缓存秒开，肉眼可见）再被校正 effect 切走**，也就是真机反馈的
+     * 「热帖页面一闪而过」；顺带还白发了一次热帖请求。
+     *
+     * 这里同步读盘（SharedPreferences）把初始值定死：热帖未隐藏 → `"hot"`；
+     * 已隐藏 → 自定义频道的第一条；异常兜底 `"hot"`。
+     */
+    fun initialHomeTopicSelection(): String {
+        if (!isHomeHotHidden()) return "hot"
+        return loadHomeTopics().firstOrNull()?.url?.takeIf { it.isNotBlank() } ?: "hot"
+    }
 
     // ---------- 评分频道自定义（镜像主页频道自定义模式） ----------
     /** 版本号：评分频道保存后 +1，评分页观察到变化即刷新横滑条 */

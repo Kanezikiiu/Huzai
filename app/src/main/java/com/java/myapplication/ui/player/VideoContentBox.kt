@@ -137,36 +137,79 @@ internal data class FrameInfo(val box: ContentBox?, val aspect: Float)
 /** 探针缓存（url → FrameInfo）；同步可读，供"重新进入组合"时立刻复用，避免二次等待 */
 private val frameCache = java.util.concurrent.ConcurrentHashMap<String, FrameInfo>()
 
+/**
+ * 已经**探测失败过**的 url —— 不再重试。
+ *
+ * 1.224j（真机反馈「MIUI14 / Android13 点播放约 1 秒后闪退」排查）：
+ * 详情页是 LazyColumn，主楼滚出视口再滚回来会重新进入组合 → 旧代码会**再抓一次帧**。
+ * 一段视频被来回滚动就可能反复触发整帧解码，反复与播放器争抢解码器 / 内存。
+ * 失败过就不再试，是最省事也最稳的收敛。
+ */
+private val failedProbes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
 internal fun cachedFrameInfo(url: String): FrameInfo? = frameCache[url]
 
 /**
- * 抓取视频首帧并检测真实画面范围（结果缓存；失败返回 box=null 但仍带上帧比例）。
+ * 抓取视频首帧并检测真实画面范围（结果缓存；失败返回 null，不影响播放）。
  *
  * 使用 MediaMetadataRetriever：media3 1.8 的 PlayerView 已不再支持 TextureView，
  * 拿不到实时帧，只能单独取一帧（只取一次、结果缓存；失败不影响播放）。
+ *
+ * 1.224j：改用 **getScaledFrameAtTime**（API 27+，本项目 minSdk 34）**直接解出 48×48**。
+ * 旧写法 `getFrameAtTime` 会先解出一整帧**原分辨率**位图再缩到 48×48 ——
+ * 1080p 约 8MB、4K 约 33MB，且正好发生在 ExoPlayer 起播、解码器缓冲分配的同一时间窗里。
+ * 个别 ROM（小米等）的解码器在这种内存竞争下会直接崩掉原生进程，
+ * 表现为「点了播放、响一秒声音就闪退」。缩略解码不产生大位图，从根上避开这次竞争。
  */
 internal suspend fun probeFrameInfo(url: String): FrameInfo? =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         frameCache[url]?.let { return@withContext it }
+        if (url in failedProbes) return@withContext null
         val info = runCatching {
             val r = android.media.MediaMetadataRetriever()
             try {
                 r.setDataSource(url, mapOf("Referer" to "https://www.hupu.com/"))
-                val frame = r.getFrameAtTime(
-                    0,
-                    android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                ) ?: return@runCatching null
-                val fw = frame.width
-                val fh = frame.height
-                if (fw <= 0 || fh <= 0) {
-                    frame.recycle()
-                    return@runCatching null
-                }
-                val small = android.graphics.Bitmap.createScaledBitmap(frame, 48, 48, false)
+                // 1.224j：优先用 **getScaledFrameAtTime**（API 27+）直接解出 48×48 ——
+                // 旧写法 getFrameAtTime 会先解出一整帧**原分辨率**位图再缩到 48×48
+                // （1080p 约 8MB、4K 约 33MB），且正好落在 ExoPlayer 起播、解码器缓冲分配的
+                // 同一时间窗里；个别 ROM（小米等）的解码器会因此崩掉原生进程，
+                // 表现为「点了播放、响一秒声音就闪退」。
+                // 本项目 minSdk 24：低版本没有这个方法，回落到老写法（这些机型此前无问题）。
+                val frame = if (android.os.Build.VERSION.SDK_INT >= 27) {
+                    r.getScaledFrameAtTime(
+                        0,
+                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        48,
+                        48,
+                    )
+                } else {
+                    r.getFrameAtTime(
+                        0,
+                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    )?.let { full ->
+                        android.graphics.Bitmap.createScaledBitmap(full, 48, 48, false).also {
+                            full.recycle()
+                        }
+                    }
+                } ?: return@runCatching null
                 val px = IntArray(48 * 48)
-                small.getPixels(px, 0, 48, 0, 0, 48, 48)
-                small.recycle()
+                frame.getPixels(px, 0, 48, 0, 0, 48, 48)
                 frame.recycle()
+                // 比例改从元数据取（缩略帧是正方形，拿不到原始宽高）。
+                // 仅作 ui.videoAspect 缺失时的兜底，因此这里取不到也不必失败。
+                var fw = r.extractMetadata(
+                    android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH,
+                )?.toIntOrNull() ?: 0
+                var fh = r.extractMetadata(
+                    android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT,
+                )?.toIntOrNull() ?: 0
+                val rot = r.extractMetadata(
+                    android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION,
+                )?.toIntOrNull() ?: 0
+                if (rot == 90 || rot == 270) {
+                    val t = fw; fw = fh; fh = t
+                }
+                if (fw <= 0 || fh <= 0) return@runCatching null
                 FrameInfo(
                     box = detectContentBox(px, 48, 48),
                     aspect = fw.toFloat() / fh,
@@ -175,6 +218,6 @@ internal suspend fun probeFrameInfo(url: String): FrameInfo? =
                 runCatching { r.release() }
             }
         }.getOrNull()
-        if (info != null) frameCache[url] = info
+        if (info != null) frameCache[url] = info else failedProbes.add(url)
         info
     }

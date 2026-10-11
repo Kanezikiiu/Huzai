@@ -88,7 +88,9 @@ import com.java.myapplication.data.HupuBlocks
 import com.java.myapplication.data.HupuDraft
 import com.java.myapplication.data.HupuImage
 import com.java.myapplication.data.HupuPostApi
+import com.java.myapplication.data.HupuRepository
 import com.java.myapplication.ui.components.HupuIcons
+import com.java.myapplication.ui.components.HuzaiHalfSheet
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
@@ -109,23 +111,32 @@ internal fun declareLabel(v: Int): String =
     DECLARE_OPTIONS.firstOrNull { it.first == v }?.second ?: "内容无需标注"
 
 /**
- * 内容声明选择器（ModalBottomSheet）：6 档单选，点选即生效并关闭。
- * 与专区/话题选择器统一：默认展开（skipPartiallyExpanded）+ 高度 2/3 屏。
+ * 1.224g：专区**本地子串匹配** —— 与「搜索结果页的专区面板」同一口径。
+ *
+ * 原因：服务端 `topic/search?search=` 会漏结果（真机实测：搜「足球」查不到「足球话题区」，
+ * 但搜「足球话」可以）。本地按名称 contains 匹配不会漏，故发帖页的搜索改走这里。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+internal fun filterTopicsByKeyword(
+    list: List<HupuPostApi.Topic>,
+    keyword: String,
+): List<HupuPostApi.Topic> {
+    val kw = keyword.trim()
+    return if (kw.isEmpty()) list else list.filter { it.name.contains(kw, ignoreCase = true) }
+}
+
+/**
+ * 内容声明选择器（自研半屏面板）：6 档单选，点选即生效并关闭。
+ * 1.224f: 由 ModalBottomSheet 改为自研半屏面板（性能）。
+ */
 @Composable
 internal fun DeclarePickerSheet(
+    visible: Boolean,
     current: Int,
     onPick: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-    ) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.66f)) {
+    HuzaiHalfSheet(visible = visible, onDismiss = onDismiss, fraction = 0.66f) {
+        Column(Modifier.fillMaxWidth().weight(1f)) {
             Text(
                 "内容声明",
                 fontSize = 17.sp,
@@ -170,36 +181,33 @@ internal fun DeclarePickerSheet(
 }
 
 /**
- * 话题选择器（ModalBottomSheet）：搜索框 + 话题列表（tag/search?topicId=&name=），
+ * 话题选择器（自研半屏面板）：搜索框 + 话题列表（tag/search?topicId=&name=），
  * 可多选（最多 2 个），点击行即切换选中，关闭由「完成」或下滑完成。
+ * 1.224f: 由 ModalBottomSheet 改为自研半屏面板（性能）。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TagPickerSheet(
+    visible: Boolean,
     topicId: Int,
     selectedIds: List<Int>,
     onToggle: (HupuPostApi.Tag) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 1.109: 默认展开 + 高度 2/3 屏
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var query by remember { mutableStateOf("") }
-    var list by remember { mutableStateOf<List<HupuPostApi.Tag>?>(null) }
+    // 1.224f：面板内部的状态与拉取都放进 content —— 面板收起时不组合、不发请求。
+    // （此前 ModalBottomSheet 是按需挂载，状态随开关重建；这里保持同样的时机）
+    HuzaiHalfSheet(visible = visible, onDismiss = onDismiss, fraction = 0.66f) {
+        var query by remember { mutableStateOf("") }
+        var list by remember { mutableStateOf<List<HupuPostApi.Tag>?>(null) }
 
-    LaunchedEffect(topicId, query) {
-        val kw = query.trim()
-        // 空关键词拉默认（热门）列表；1 个字不搜（服务端模糊匹配太宽）
-        if (kw.length == 1) return@LaunchedEffect
-        list = null
-        list = HupuPostApi.tags(topicId, kw)
-    }
+        LaunchedEffect(topicId, query) {
+            val kw = query.trim()
+            // 空关键词拉默认（热门）列表；1 个字不搜（服务端模糊匹配太宽）
+            if (kw.length == 1) return@LaunchedEffect
+            list = null
+            list = HupuPostApi.tags(topicId, kw)
+        }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-    ) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.66f)) {
+        Column(Modifier.fillMaxWidth().weight(1f)) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -307,59 +315,97 @@ internal fun TagPickerSheet(
 }
 
 /**
- * 专区选择器（ModalBottomSheet）：
+ * 专区选择器（自研半屏面板）：
  * - 顶部搜索框（跨分类搜专区）
  * - 分类 chips（来自 /topic/cates 的 15 个分类）
  * - 专区列表（logo + 名称 + 帖数）；选中专区后若有子专区，列在名称下方作为 chips
+ * 1.224f: 由 ModalBottomSheet 改为自研半屏面板（性能）。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PostTopicSheet(
+    visible: Boolean,
     selectedTopicId: Int?,
     onPick: (HupuPostApi.Topic, HupuPostApi.Zone?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 1.109: 默认展开 + 高度 2/3 屏
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var query by remember { mutableStateOf("") }
-    var cates by remember { mutableStateOf<List<HupuPostApi.Cate>>(emptyList()) }
-    var cateId by remember { mutableStateOf<Int?>(null) }
-    var topics by remember { mutableStateOf<List<HupuPostApi.Topic>?>(null) }
-    var zones by remember { mutableStateOf<List<HupuPostApi.Zone>>(emptyList()) }
-    var pickedTopic by remember { mutableStateOf<HupuPostApi.Topic?>(null) }
+    // 1.224f：面板内部的状态与拉取都放进 content —— 面板收起时不组合、不发请求。
+    HuzaiHalfSheet(visible = visible, onDismiss = onDismiss, fraction = 0.66f) {
+        var query by remember { mutableStateOf("") }
+        var cates by remember { mutableStateOf<List<HupuPostApi.Cate>>(emptyList()) }
+        var cateId by remember { mutableStateOf<Int?>(null) }
+        var topics by remember { mutableStateOf<List<HupuPostApi.Topic>?>(null) }
+        var zones by remember { mutableStateOf<List<HupuPostApi.Zone>>(emptyList()) }
+        var pickedTopic by remember { mutableStateOf<HupuPostApi.Topic?>(null) }
+        // 1.224g：全量专区表（本地搜索用）。
+        // 1.224j：改为**面板一打开就预热**（见下方 LaunchedEffect）—— 此前是「第一次搜索时才拉」，
+        // 于是首个字符输入后要等一次整树网络往返，期间列表还停在旧内容（真机反馈「慢悠悠」）。
+        var allTopics by remember { mutableStateOf<List<HupuPostApi.Topic>?>(null) }
+        val repo = remember { HupuRepository() }
 
-    LaunchedEffect(Unit) {
-        cates = HupuPostApi.cates()
-        if (cateId == null && cates.isNotEmpty()) cateId = cates.first().id
-    }
-    // 分类切换 / 关键词搜索 → 拉专区
-    LaunchedEffect(cateId, query) {
-        val kw = query.trim()
-        if (kw.isNotEmpty()) {
-            if (kw.length < 2) return@LaunchedEffect
-            topics = HupuPostApi.searchTopics(kw)
-            pickedTopic = null
-            zones = emptyList()
-        } else {
-            val cid = cateId ?: return@LaunchedEffect
-            topics = null
-            topics = HupuPostApi.topicsByCate(cid)
-            pickedTopic = null
-            zones = emptyList()
+        // 1.224j：预热全量专区表（与分类拉取并行；不阻塞后续搜索）
+        LaunchedEffect(Unit) {
+            val loaded = runCatching {
+                repo.categories()
+                    .flatMap { it.topics }
+                    .distinctBy { it.topicId }
+                    .mapNotNull { info ->
+                        val id = info.topicId.toIntOrNull() ?: return@mapNotNull null
+                        HupuPostApi.Topic(
+                            id = id,
+                            name = info.name,
+                            logo = info.logo,
+                            desc = info.desc.ifBlank { null },
+                            count = null,
+                            zoneId = 0,
+                        )
+                    }
+            }.getOrNull()
+            if (loaded != null) allTopics = loaded
         }
-    }
-    // 选中专区 → 拉子专区
-    LaunchedEffect(pickedTopic?.id) {
-        val t = pickedTopic ?: return@LaunchedEffect
-        zones = HupuPostApi.zones(t.id)
-    }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-    ) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.66f)) {
+        LaunchedEffect(Unit) {
+            cates = HupuPostApi.cates()
+            // 1.224g（真机反馈）：不默认落在「我的」（关注专区）——没关注过专区的用户进来会看到空列表。
+            // 优先选第一个非「我的」分类；若只有「我的」则退回第一条。
+            if (cateId == null && cates.isNotEmpty()) {
+                cateId = (cates.firstOrNull { !it.name.startsWith("我的") } ?: cates.first()).id
+            }
+        }
+        // 分类切换 / 关键词搜索 → 拉专区
+        LaunchedEffect(cateId, query) {
+            val kw = query.trim()
+            if (kw.isNotEmpty()) {
+                // 1.224g（真机反馈）：**搜不到**根因是服务端 topic/search?search= 会漏结果
+                // （实测「足球」查不到「足球话题区」，但「足球话」可以）。这里改为与
+                // 「搜索结果页的专区面板」一致的**本地子串匹配**，再与服务端结果合并——
+                // 二者取并集后按 id 去重，本地保证不漏、服务端补本地树里没有的新专区。
+                //
+                // 1.224j（真机反馈「输入后先停在旧内容、过一会儿才出结果」）：
+                //  · 进入搜索立刻把列表切成「加载中」（topics = null）或**本地命中的即时结果**，
+                //    绝不再把上一个分类的列表留在屏幕上；
+                //  · 本地匹配同步算（预热已完成时零延迟），服务端结果到达后合并 —— 不再等网络才出屏。
+                val l = allTopics
+                topics = if (l != null) filterTopicsByKeyword(l, kw) else null
+                pickedTopic = null
+                zones = emptyList()
+                val remote = runCatching { HupuPostApi.searchTopics(kw) }.getOrNull().orEmpty()
+                val local = filterTopicsByKeyword(allTopics.orEmpty(), kw)
+                topics = (local + remote).distinctBy { it.id }
+            } else {
+                val cid = cateId ?: return@LaunchedEffect
+                topics = null
+                topics = HupuPostApi.topicsByCate(cid)
+                pickedTopic = null
+                zones = emptyList()
+            }
+        }
+        // 选中专区 → 拉子专区
+        LaunchedEffect(pickedTopic?.id) {
+            val t = pickedTopic ?: return@LaunchedEffect
+            zones = HupuPostApi.zones(t.id)
+        }
+
+        Column(Modifier.fillMaxWidth().weight(1f)) {
             Text(
                 if (pickedTopic == null) "选择专区" else "选择子专区（可选）",
                 fontSize = 17.sp,
@@ -430,7 +476,7 @@ internal fun PostTopicSheet(
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .clip(RoundedCornerShape(22.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                    placeholder = { Text("搜索专区（至少 2 个字）", fontSize = 14.sp) },
+                    placeholder = { Text("搜索专区", fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     },

@@ -333,7 +333,27 @@ data class HupuScoreItem(
     /** 所选英雄/角色小图标（infoJson.auxiliaryPic[0]，MOBA 赛事有值）；
      *  教练/中立角色为 null，偶有兜底图 → 渲染层「有才显示」 */
     val heroIcon: String? = null,
+    /** 1.224k：评分对象**说明文本**（infoJson.desc；通用评分层为简介长文，赛事选手层为 KDA 短串）。
+     *  此前它只在叶子详情页（getSelfByBizKey）取得到，二级页的行也能拿同一份就一并解析出来展示。 */
+    val intro: String = "",
 )
+
+/**
+ * 1.224k：`infoJson.desc[0]` → **评分对象说明文本**（二级页每行名称下方那行）。
+ *
+ * 这里**只做两处收敛**，其余一律原样返回 —— 短文本（如电竞选手的 `K/D/A:1/3/20`）
+ * 也是要显示的，绝不能再按长度或 KDA 形态过滤掉：
+ *  · 空 / 全空白 → 返回空（渲染层不占位，不画空行）；
+ *  · 取到的是 JSON 数组/对象字面量（以 `[` / `{` 开头）→ 按空处理。
+ *    踩过的坑：解析时先试数组取第 0 项、空了再回落到「整个 desc 字段」，
+ *    而 desc 本身就是数组 → 回落拿到数组本体，界面上就出现 `[""]` 字样。
+ */
+internal fun scoreIntroFromDesc(desc: String?): String {
+    val d = desc?.trim().orEmpty()
+    if (d.isEmpty()) return ""
+    if (d.startsWith("[") || d.startsWith("{")) return ""
+    return d
+}
 
 /** 服务端分组定义（getSubGroups 响应项）：分类子 Tab 的数据源（官方对所有赛事通用） */
 data class HupuScoreGroup(

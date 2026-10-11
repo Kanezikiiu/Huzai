@@ -447,6 +447,54 @@ class NbaStatsParserTest {
         assertNull(parseNbaPlayByPlay(""))
     }
 
+    /**
+     * 1.201：**进行中**的比赛，虎扑把最新事件渲染在最上方（DOM 逆序、`<tr id>` 递减）。
+     * 解析层必须按 id（毫秒时间戳）升序归一成「时间正序」——否则直播场次的实录会整条颠倒，
+     * 出现「新消息在最上方」，还会与直播跟随（滚到最后一条）自相矛盾。
+     */
+    @Test
+    fun playByPlay_reversedDomIsNormalizedToChronological() {
+        val html = "<html><body><div class=\"playbyplay_td table_overflow\"><table>" +
+            // 注意：这里的 DOM 顺序是「新的在前」（id 递减），模拟进行中的比赛
+            "<tr id=\"1791549000000\"><td>0:12</td><td>火箭</td><td>三分命中</td><td>10-8</td></tr>" +
+            "<tr id=\"1791548800000\"><td>0:40</td><td>独行侠</td><td>两分命中</td><td>7-8</td></tr>" +
+            "<tr id=\"1791548000000\"><td>11:20</td><td>火箭</td><td>第二节开始</td><td>7-6</td></tr>" +
+            "<tr id=\"1791547983247\"><td>12:00</td><td>火箭</td><td>第一节开始</td><td>0-0</td></tr>" +
+            "</table></div></body></html>"
+        val pbp = parseNbaPlayByPlay(html)!!
+        assertEquals(4, pbp.plays.size)
+        // 最早的在最前、最新的在最后
+        assertEquals("第一节开始", pbp.plays.first().text)
+        assertEquals("三分命中", pbp.plays.last().text)
+        // 顺带：按真实时间顺序遍历，「第 X 节开始」推进 quarter 才是对的
+        assertEquals(1, pbp.plays.first().quarter)
+        assertEquals(2, pbp.plays.last().quarter)
+        // id 保留原生毫秒时间戳（列表 key 靠它做精准 diff）
+        assertEquals(1791547983247L, pbp.plays.first().id)
+        assertEquals(1791549000000L, pbp.plays.last().id)
+    }
+
+    /**
+     * 1.201：`NbaPlay.id` 直接当列表 key，**重复会让 LazyColumn 直接崩**。
+     * 真实页面 id 极少重复，但重复/缺失必须有兜底（自增负数），这里锁死唯一性。
+     */
+    @Test
+    fun playByPlay_idsAreUniqueEvenWhenSourceRepeats() {
+        val html = "<html><body><div class=\"playbyplay_td table_overflow\"><table>" +
+            "<tr id=\"1791547983247\"><td>12:00</td><td>火箭</td><td>第一节开始</td><td>0-0</td></tr>" +
+            // 故意重复同一个 id
+            "<tr id=\"1791549000000\"><td>0:30</td><td>火箭</td><td>两分命中</td><td>8-8</td></tr>" +
+            "<tr id=\"1791549000000\"><td>0:12</td><td>火箭</td><td>三分命中</td><td>10-8</td></tr>" +
+            "</table></div></body></html>"
+        val pbp = parseNbaPlayByPlay(html)!!
+        assertEquals(3, pbp.plays.size)
+        val ids = pbp.plays.map { it.id }
+        assertEquals("id 必须唯一（列表 key）", ids.size, ids.toSet().size)
+        // 未重复的那条保留原生时间戳，重复那条退化为负数（不与真实时间戳撞车）
+        assertTrue(ids.contains(1791547983247L))
+        assertTrue(ids.any { it < 0L })
+    }
+
     // =================================================================
     // ⑥ 去标签工具（表格单元格取值统一走它）
     // =================================================================

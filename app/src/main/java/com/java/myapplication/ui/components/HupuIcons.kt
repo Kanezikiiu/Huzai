@@ -76,6 +76,10 @@ object HupuIcons {
     val FormatSize: ImageVector = materialIcon(name = "HupuIcons.FormatSize") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M9 5.5c0 .83.67 1.5 1.5 1.5H14v10.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V7h3.5c.83 0 1.5-.67 1.5-1.5S21.33 4 20.5 4h-10C9.67 4 9 4.67 9 5.5zM4.5 12H6v5.5c0 .83.67 1.5 1.5 1.5S9 18.33 9 17.5V12h1.5c.83 0 1.5-.67 1.5-1.5S11.33 9 10.5 9h-6C3.67 9 3 9.67 3 10.5S3.67 12 4.5 12z"))
     }
+    /** 1.224d：球员 PK 的「换人」图标（Material swap_horiz 24px path） */
+    val SwapHoriz: ImageVector = materialIcon(name = "HupuIcons.SwapHoriz") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"))
+    }
     val Logout: ImageVector = materialIcon(name = "HupuIcons.Logout") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M5,5h6c0.55,0,1-0.45,1-1v0c0-0.55-0.45-1-1-1H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h6c0.55,0,1-0.45,1-1v0 c0-0.55-0.45-1-1-1H5V5z"))
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M20.65,11.65l-2.79-2.79C17.54,8.54,17,8.76,17,9.21V11h-7c-0.55,0-1,0.45-1,1v0c0,0.55,0.45,1,1,1h7v1.79 c0,0.45,0.54,0.67,0.85,0.35l2.79-2.79C20.84,12.16,20.84,11.84,20.65,11.65z"))

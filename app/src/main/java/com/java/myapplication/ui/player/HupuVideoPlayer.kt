@@ -80,6 +80,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
@@ -268,6 +269,13 @@ private fun buildPlayer(context: android.content.Context, url: String): ExoPlaye
             /* handleAudioFocus = */ true,
         )
         setSeekParameters(SeekParameters.CLOSEST_SYNC)
+        // 1.224j：把播放错误落到日志 —— 排查「点播放约 1 秒后闪退」这类真机问题时必须有证据。
+        // 不改变行为（ExoPlayer 本来就会停在该错误上），只是让它可被 logcat 抓到。
+        addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                android.util.Log.w("HupuVideo", "playback error: ${error.errorCodeName}", error)
+            }
+        })
         setMediaItem(MediaItem.fromUri(url))
         prepare()
         playWhenReady = true
