@@ -141,8 +141,8 @@
 
 可在 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)** 页面下载正式签名版。
 
-最新版本：**[v1.201](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.201)** ·
-[`huzai-1.201-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.201/huzai-1.201-release.apk)（minSdk 24，正式签名）。
+最新版本：**[v1.202](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.202)** ·
+[`huzai-1.202-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.202/huzai-1.202-release.apk)（minSdk 24，正式签名）。
 
 ---
 
@@ -151,7 +151,7 @@
 ```
 app/src/main/java/com/java/myapplication/
 ├── MainActivity.kt          # 四 Tab 常驻 + 盖入式转场 + 主题应用
-├── HupuApp.kt               # Application（Coil ImageLoader / debug 崩溃取证）
+├── HupuApp.kt               # Application（Coil ImageLoader / 崩溃取证，默认关闭）
 ├── data/                    # 数据层：Api / Parser / Repository / 账号 / 缓存 / 偏好 / 图片 / 节流
 └── ui/
     ├── pages/               # 各页面（首页 / 专区 / 评分 / 我的 / 帖子详情 / 私信 / 用户主页…）
