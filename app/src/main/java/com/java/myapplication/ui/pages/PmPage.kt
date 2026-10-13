@@ -50,8 +50,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -755,11 +760,16 @@ fun PmChatPage(
             }
             },
         ) { topInset ->
-                Column(Modifier.fillMaxSize()) {
+                // 1.224n：消息流**铺满整个区域**，输入条改为**贴底浮层**。
+                // 以前两者是 Column 里的兄弟：输入条独占一条与页面同色的带子，
+                // 消息滚到那里就被裁掉 —— 看着"像悬浮但不是"。现在列表在下面照常滚动，
+                // 只有胶囊本身遮住一小块内容，其余文字可从胶囊周围透出，才是真悬浮。
+                var barHeightPx by remember { mutableIntStateOf(0) }
+                Box(Modifier.fillMaxSize()) {
 
 
             // 消息流
-            Box(Modifier.weight(1f)) {
+            Box(Modifier.fillMaxSize()) {
                 // 1.170: 一次取出消息列表，避免多处 !!
                 val msgList = messages.value
                 when {
@@ -796,6 +806,12 @@ fun PmChatPage(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
+                            // 1.224n：reverseLayout 下**第一项在最下方** —— 这块 spacer 垫在最新消息下面，
+                            // 正好留出浮动输入条的高度，保证最后一条不会被压住（高度取实测值，
+                            // 含导航条内边距，避免各机型差一截）。
+                            item(key = "bottom-inset") {
+                                Spacer(Modifier.height(with(LocalDensity.current) { barHeightPx.toDp() }))
+                            }
                             items(msgList.size) { idx ->
                                 val real = msgList.size - 1 - idx
                                 val m = msgList[real]
@@ -822,9 +838,26 @@ fun PmChatPage(
             val chatDark = isAppDarkTheme()
             val barShape = RoundedCornerShape(24.dp)
             val canSend = input.isNotBlank() && !sending
+            // 1.224n（真机反馈：光标偏上）：与帖子回复框同一套收口 ——
+            // lineHeight 大于字号时，默认 leading 全落在基线下方，会把文字/光标顶到行顶；
+            // Center 对齐 + 关掉 includeFontPadding 让它稳稳居中，空态与有内容时行高一致。
+            val pmInputStyle = TextStyle(
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.None,
+                ),
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
             Row(
                 Modifier
+                    // 1.224n：贴底浮层（真悬浮）—— 消息流在它下面滚动
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    // 实测高度放在最外层 → 含导航条内边距与全部 padding，供消息流底部留白
+                    .onSizeChanged { barHeightPx = it.height }
                     .navigationBarsPadding()
                     .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp)
                     // 悬浮感：与顶栏返回键 / Tab 栏同源（落影 → 裁形 → 玻璃底 → 极淡描边）
@@ -857,20 +890,19 @@ fun PmChatPage(
                         onValueChange = { input = it },
                         modifier = Modifier.fillMaxWidth(),
                         // 1.198b（真机反馈：字数多不换行）：单行 → 最多 4 行自动换行，
-                        // 输入条随内容长高（高度变化由外层 Row 自然撑开，上方的消息区 weight(1f) 相应收缩）
+                        // 输入条随内容长高（实测高度回灌给消息流底部留白，见 bottom-inset）
                         maxLines = 4,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 15.sp,
-                            lineHeight = 21.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
+                        minLines = 1,
+                        textStyle = pmInputStyle,
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         decorationBox = { inner ->
                             if (input.isEmpty()) {
                                 Text(
                                     "发送消息…",
-                                    fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    // 与输入文本同一套行高/居中参数 —— 否则占位文字看起来比光标低一截
+                                    style = pmInputStyle.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
                                 )
                             }
                             inner()

@@ -871,11 +871,21 @@ fun ThreadDetailOverlay(
         maxOf(with(density) { TAB_GAP_GESTURE.roundToPx() }, reservedBottomPx).toFloat()
     }
 
+    // 1.224n：**只在滑入/滑出动画期间才加图层** —— 动画落定后返回无层，
+// 避免给承载视频 SurfaceView 的层级长期挂着 `graphicsLayer`
+//（真机崩溃报告里出现过框架的 surface 位置/缩放事务 → libgui.so）。
+    val pageAnimating = progress.value < 0.999f
     Box(
         Modifier
             .fillMaxSize()
             .zIndex(2f)
-            .graphicsLayer { translationX = (1f - progress.value) * size.width }
+            .then(
+                if (pageAnimating) {
+                    Modifier.graphicsLayer { translationX = (1f - progress.value) * size.width }
+                } else {
+                    Modifier
+                },
+            )
             .background(MaterialTheme.colorScheme.background)
             // 穿透守卫：失败态/加载态空白点击由本层兜底，不落穿到下层页面
             .tapGuard()

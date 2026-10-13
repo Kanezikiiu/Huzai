@@ -6,6 +6,8 @@
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="hupu_account.xml" />
-    <!-- 异常堆栈取证文件（仅 debug 构建会写），不参与备份 -->
+    <!-- 崩溃取证文件（1.224n 起正式包也写），不参与备份 -->
     <exclude domain="file" path="crash_last.txt" />
+    <exclude domain="file" path="video_blackbox.txt" />
+    <exclude domain="file" path="session.marker" />
 </full-backup-content>

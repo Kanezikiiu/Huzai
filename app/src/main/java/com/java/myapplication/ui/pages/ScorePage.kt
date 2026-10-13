@@ -521,12 +521,20 @@ fun ScorePage(modifier: Modifier = Modifier) {
             return@LaunchedEffect
         }
         delay(120) // 盖入动画 280ms + 余量（首个网络请求前）
-        val t = matchTrees[key] ?: repo.scoreTree(m.scoreBizType ?: "lol_match", no)?.also { matchTrees[key] = it }
+        // 1.224n（真机反馈「趣评 tab 一闪而过」）：
+        // 树与分组必须**同帧**进组合。此前是这里先把树写进 matchTrees，而 MatchDetailPage 只要
+        // `tree != null` 就立刻渲染（忽略 loading）→ 那一帧里 groups 还是空的，分类条先按
+        // 「赛程卡两队 teamId」的本地方案画一条（其中会凭空多出一个「趣评」），
+        // 等分组到位再整条换成服务端分组 → 趣评就"出现又消失"了。
+        // 改法：分组解析完再写树（两次状态写入在同一个同步块内 → 同一帧生效）。
+        val cached = matchTrees[key]
+        val t = cached ?: repo.scoreTree(m.scoreBizType ?: "lol_match", no)
         if (t == null) {
             if (openedMatch?.scoreBizNo == no) detailLoading = false
             return@LaunchedEffect
         }
         loadGroupsResolved(key, m, t)
+        if (cached == null) matchTrees[key] = t
         if (openedMatch?.scoreBizNo == no) detailLoading = false
     }
 
@@ -640,9 +648,16 @@ fun ScorePage(modifier: Modifier = Modifier) {
 
     Box(modifier.fillMaxSize()) {
         // 1.198：顶栏浮空（可选效果，默认关；关闭时退回原形态）
-        // 1.199：热门赛事的「项目筛选」—— **不持久化**（用户要求"不记"）：
-        // 只在本次会话内有效（切 tab / 切页都保留），重启 App 后恢复「全部显示」。
-        var hotExcluded by remember { mutableStateOf(emptySet<String>()) }
+        // 1.224l：热门赛事的「项目筛选」—— **改为持久化**。
+        // 1.199 起是不持久化（当时用户要求"不记"），但真机反馈正是"重启就被清了"，
+        // 所以这里按用户诉求记住它。过滤按**类别名**匹配（见 HupuPrefs.loadHotExcluded），
+        // 与列表顺序 / 当前场次 / 某项今天有没有比赛都无关 —— 不会因列表变化而出错。
+        var hotExcluded by remember { mutableStateOf(HupuPrefs.loadHotExcluded()) }
+        // 统一出口：改内存 + 落盘，保证重启后仍生效
+        fun setHotExcluded(next: Set<String>) {
+            hotExcluded = next
+            HupuPrefs.saveHotExcluded(next)
+        }
         var hotFilterOpen by remember { mutableStateOf(false) }
         // 注意：切到「虎扑评分」（commonOpen）时 selectedGame 仍停留在上一个频道，
         // 所以要同时排除 commonOpen，否则评分 tab 上也会冒出筛选按钮。
@@ -790,7 +805,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 days == null -> ErrorRetry { refreshTick++ }
                 days.isEmpty() -> EmptySchedule()
                 // 1.199：筛选把比赛全筛掉了 → 给一条「清除筛选」的出路，而不是白屏
-                shownDays.isEmpty() -> HotFilterEmpty { hotExcluded = emptySet() }
+                // （1.224l：清除 = 清空整个排除集，连带清掉历史遗留项）
+                shownDays.isEmpty() -> HotFilterEmpty { setHotExcluded(emptySet()) }
                 else -> ScheduleList(
                     shownDays,
                     resetKey = "$selectedGame-$refreshVersion",
@@ -807,16 +823,29 @@ fun ScorePage(modifier: Modifier = Modifier) {
         if (hotFilterOpen) {
             // 类别与场次随当前数据动态生成（只列此刻真实出现的项目）
             val hotCounts = HotSport.counts(schedules[HupuMatchApi.COMMON_HOT_SPORTS_ID].orEmpty())
+            // 1.224l：面板列表 = **当前出现的类别 ∪ 已被排除的类别**。
+            // 历史遗留的排除项（今天没有该项目的比赛）必须也列出来，否则它**没有任何入口能取消**
+            // —— 比赛被静默隐藏、用户却看不出原因；而且会让「所有 chip 都勾着、右上角却写着全选」
+            // 的矛盾状态出现（旧代码的 allSelected = excluded.isEmpty() 就是这么来的）。
+            val hotItems = remember(hotCounts, hotExcluded) {
+                hotCounts + hotExcluded
+                    .filter { n -> hotCounts.none { it.first == n } }
+                    .sorted()
+                    .map { it to 0 }
+            }
+            // 「全不选 ⇄ 全选」的判据用**可见项**，而不是 excluded 是否为空
+            val hotAllSelected = hotItems.none { (name, _) -> name in hotExcluded }
             HotSportFilterSheet(
-                counts = hotCounts,
+                counts = hotItems,
                 excluded = hotExcluded,
                 onToggle = { name ->
-                    hotExcluded = if (name in hotExcluded) hotExcluded - name else hotExcluded + name
+                    setHotExcluded(if (name in hotExcluded) hotExcluded - name else hotExcluded + name)
                 },
-                // 全选 ⇄ 全不选：全部勾选时点一下 = 全部取消，否则 = 全部勾选
+                // 全部可见项都已勾选 → 点一下「全不选」；否则「全选」= 清空整个排除集（连带历史项）
                 onToggleAll = {
-                    hotExcluded = if (hotExcluded.isEmpty()) hotCounts.map { it.first }.toSet()
-                    else emptySet()
+                    setHotExcluded(
+                        if (hotAllSelected) hotItems.map { it.first }.toSet() else emptySet(),
+                    )
                 },
                 onDismiss = { hotFilterOpen = false },
             )
@@ -1525,9 +1554,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
  *
  * · 多选 = 勾选要显示的项目（默认全勾）；每个项目后面带**当前场次数**，方便取舍；
  * · 「全选」一键恢复；点遮罩或「完成」关闭；
- * · 不持久化（用户要求"不记"）：状态由调用方 remember 持有，重启即恢复全选；
- * · 类别列表由 [com.java.myapplication.data.HotSport.counts] **按当前数据动态生成**，
- *   只列出此刻真实出现的项目（避免出现永远为空的类别）。
+ * · **1.224l 起持久化**（1.199 时是不记的，真机反馈要记）——排除项存在 [com.java.myapplication.data.HupuPrefs]，
+ *   重启后仍生效；面板里的类别列表 = 当前出现的类别 ∪ 已被排除的类别。
  */
 /**
  * 1.199：热门赛事的「项目筛选」底部 sheet。
@@ -1540,7 +1568,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
  * · 多选 = 勾选要显示的项目（默认全勾）；每个项目后面带**当前场次数**；
  * · 右上角一键「全不选 / 全选」：全部选中时显示「全不选」，否则显示「全选」；
  * · 打开期间让底部悬浮 Tab 栏神隐（[SecondaryPage]），否则面板会被它盖住；
- * · 不持久化（用户要求"不记"）：状态由调用方 remember 持有，重启即恢复全选。
+ * · **1.224l 起持久化**（见调用方与 [com.java.myapplication.data.HupuPrefs.saveHotExcluded]）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1564,7 +1592,11 @@ private fun HotSportFilterSheet(
     val scrimSource = remember { MutableInteractionSource() }
     val panelSource = remember { MutableInteractionSource() }
     val side = rememberSheetSideInset(depth = 25.dp)
-    val allSelected = excluded.isEmpty()
+    // 1.224l：「全不选 ⇄ 全选」按**可见项**判断，而不是 excluded 是否为空 ——
+    // 持久化之后可能出现「排除集里只剩一个今天不出现的类别」，
+    // 那种情况下列表里所有 chip 都是勾着的，若按 excluded.isEmpty() 判断，
+    // 右上角却会写着「全选」，与肉眼所见自相矛盾。
+    val allSelected = counts.none { (name, _) -> name in excluded }
 
     Box(
         Modifier
@@ -1641,7 +1673,12 @@ private fun HotSportFilterSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     counts.forEach { (name, count) ->
-                        Chip(text = "$name $count", selected = name !in excluded) { onToggle(name) }
+                        // 1.224l：count = 0 的是"历史遗留的排除项"（今天没有该项目的比赛），
+                        // 仍然列出来，好让用户能取消它。
+                        Chip(
+                            text = if (count > 0) "$name $count" else "$name（暂无）",
+                            selected = name !in excluded,
+                        ) { onToggle(name) }
                     }
                 }
                 LiquidButton(

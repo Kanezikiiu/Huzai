@@ -29,6 +29,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.java.myapplication.ui.components.Chip
+import com.java.myapplication.ui.components.animateChipCenterTo
+import com.java.myapplication.ui.components.chipBarClip
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -492,30 +496,25 @@ internal fun PostTopicSheet(
                     textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
                 )
                 // 分类 chips（搜索时隐藏）
+                // 1.224n：由「自绘 Text 胶囊」改为与「搜索结果页专区面板」同款的玻璃 Chip，
+                // 并补上选中项自动居中（与三大页顶部横滑条、搜索页大类条同一套便捷特性）。
                 if (query.isBlank()) {
+                    val cateBarState = rememberLazyListState()
+                    val cateIdx = cates.indexOfFirst { it.id == cateId }
+                    LaunchedEffect(cateIdx) {
+                        if (cateIdx >= 0) cateBarState.animateChipCenterTo(cateIdx)
+                    }
                     LazyRow(
+                        state = cateBarState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
+                            // 裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
+                            .chipBarClip()
                             .padding(bottom = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(cates, key = { it.id }) { c ->
-                            val on = cateId == c.id
-                            Text(
-                                c.name,
-                                fontSize = 13.sp,
-                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(
-                                        if (on) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                        else MaterialTheme.colorScheme.surface
-                                    )
-                                    .clickable { cateId = c.id }
-                                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                            )
+                            Chip(text = c.name, selected = cateId == c.id) { cateId = c.id }
                         }
                     }
                 }

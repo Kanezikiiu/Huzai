@@ -22,8 +22,8 @@ android {
         applicationId = "com.huzai.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 211
-        versionName = "1.201"
+        versionCode = 212
+        versionName = "1.202"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -108,4 +108,6 @@ dependencies {
     implementation(libs.coil.gif)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    // 1.224n：媒体下载改走 OkHttp（见 HupuVideoPlayer.buildPlayer 的说明）
+    implementation(libs.media3.datasource.okhttp)
 }

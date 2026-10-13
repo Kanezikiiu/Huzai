@@ -80,6 +80,11 @@ object HupuIcons {
     val SwapHoriz: ImageVector = materialIcon(name = "HupuIcons.SwapHoriz") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"))
     }
+
+    /** 1.224n：「导出 / 保存到文件」图标（Material file_download 24px path，自绘） */
+    val Download: ImageVector = materialIcon(name = "HupuIcons.Download") {
+        addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"))
+    }
     val Logout: ImageVector = materialIcon(name = "HupuIcons.Logout") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M5,5h6c0.55,0,1-0.45,1-1v0c0-0.55-0.45-1-1-1H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h6c0.55,0,1-0.45,1-1v0 c0-0.55-0.45-1-1-1H5V5z"))
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M20.65,11.65l-2.79-2.79C17.54,8.54,17,8.76,17,9.21V11h-7c-0.55,0-1,0.45-1,1v0c0,0.55,0.45,1,1,1h7v1.79 c0,0.45,0.54,0.67,0.85,0.35l2.79-2.79C20.84,12.16,20.84,11.84,20.65,11.65z"))

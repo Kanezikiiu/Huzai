@@ -152,8 +152,10 @@ internal fun cachedFrameInfo(url: String): FrameInfo? = frameCache[url]
 /**
  * 抓取视频首帧并检测真实画面范围（结果缓存；失败返回 null，不影响播放）。
  *
- * 使用 MediaMetadataRetriever：media3 1.8 的 PlayerView 已不再支持 TextureView，
- * 拿不到实时帧，只能单独取一帧（只取一次、结果缓存；失败不影响播放）。
+ * 使用 MediaMetadataRetriever：**历史实现**（当时渲染面是 SurfaceView，拿不到实时帧）。
+ * 1.224n 起渲染面已改为 **TextureView**，其实可以直接用 `TextureView.getBitmap()` 取当前帧，
+ * 不必再单开一路解码器 —— 这里保留 MediaMetadataRetriever 只是"暂不动已验证可用的代码"，
+ * 后续要简化时按上面思路替换即可。
  *
  * 1.224j：改用 **getScaledFrameAtTime**（API 27+，本项目 minSdk 34）**直接解出 48×48**。
  * 旧写法 `getFrameAtTime` 会先解出一整帧**原分辨率**位图再缩到 48×48 ——
@@ -165,10 +167,21 @@ internal suspend fun probeFrameInfo(url: String): FrameInfo? =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         frameCache[url]?.let { return@withContext it }
         if (url in failedProbes) return@withContext null
+        // 1.224n：黑匣子记录抓帧的起止 —— 抓帧（MediaMetadataRetriever 另开一路解码）
+        // 与 ExoPlayer 起播在时间上重叠，是「点播放约 1 秒后闪退」最可疑的环节，
+        // 必须能看出崩溃发生在抓帧中还是抓帧之后。
+        com.java.myapplication.data.HupuCrashLog.note(
+            "抓帧开始",
+            com.java.myapplication.data.HupuCrashLog.safeUrl(url),
+        )
         val info = runCatching {
             val r = android.media.MediaMetadataRetriever()
             try {
+                // 1.224n：把抓帧内部再细分三段 —— 真机上"抓帧开始"之后没有下文时，
+                // 这几行能定位到是**取数据源**还是**解码那一帧**把进程带走的。
+                com.java.myapplication.data.HupuCrashLog.note("抓帧·取数据源")
                 r.setDataSource(url, mapOf("Referer" to "https://www.hupu.com/"))
+                com.java.myapplication.data.HupuCrashLog.note("抓帧·解码中")
                 // 1.224j：优先用 **getScaledFrameAtTime**（API 27+）直接解出 48×48 ——
                 // 旧写法 getFrameAtTime 会先解出一整帧**原分辨率**位图再缩到 48×48
                 // （1080p 约 8MB、4K 约 33MB），且正好落在 ExoPlayer 起播、解码器缓冲分配的
@@ -219,5 +232,12 @@ internal suspend fun probeFrameInfo(url: String): FrameInfo? =
             }
         }.getOrNull()
         if (info != null) frameCache[url] = info else failedProbes.add(url)
+        val boxText = info?.box?.let {
+            "裁 ${(it.width * 100).toInt()}%x${(it.height * 100).toInt()}%"
+        } ?: "无"
+        com.java.myapplication.data.HupuCrashLog.note(
+            if (info != null) "抓帧成功" else "抓帧失败",
+            "box=$boxText",
+        )
         info
     }

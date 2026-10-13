@@ -20,7 +20,7 @@ package com.java.myapplication.data
  */
 object HupuBlacklist {
     /** 黑名单条目上限（按「人」计；一个人内部可能挂多把 id 钥匙：puid / euid） */
-    const val MAX_ENTRIES = 500
+    const val MAX_ENTRIES = 1000
 
     /**
      * 黑名单表：id（puid / euid / commentUserId） → 显示用昵称。

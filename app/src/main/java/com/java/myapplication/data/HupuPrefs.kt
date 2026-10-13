@@ -105,6 +105,56 @@ object HupuPrefs {
         prefs.edit().putBoolean(flagKey, true).apply()
     }
 
+    // ---------- 1.224l：热门赛事「项目筛选」的排除项（持久化） ----------
+    private const val KEY_HOT_EXCLUDED = "score_hot_excluded_v1"
+
+    /**
+     * 1.224l：热门赛事当前**被排除**（不显示）的项目名 —— 即 [HotSport] 的那套类别名。
+     *
+     * 存的是**类别名字符串集合**，不是下标 / id：过滤走
+     * `HotSport.filterDays(days, excluded)`（按 `HotSport.of(match)` 归类后比对名字），
+     * 所以与①列表顺序 ②当前有多少场比赛 ③某些项目今天有没有比赛 **都无关** ——
+     * 即使某个历史排除项今天在列表里不存在，也只是"没匹配到"，不会有任何副作用。
+     *
+     * ⚠️ 唯一要注意的是**别改 [HotSport.TABLE] 里的类别名**：改名会让老数据静默失效
+     * （要么保持名字稳定，要么改名前写迁移）。
+     */
+    fun loadHotExcluded(): Set<String> =
+        prefs.getStringSet(KEY_HOT_EXCLUDED, emptySet())?.toSet() ?: emptySet()
+
+    /** 保存排除项（空集 = 全显示） */
+    fun saveHotExcluded(v: Set<String>) {
+        prefs.edit().putStringSet(KEY_HOT_EXCLUDED, v).apply()
+    }
+
+    // ---------- 1.224n：崩溃取证（默认**关闭**） ----------
+    private const val KEY_CRASH_LOG = "crash_log_enabled_v1"
+
+    /**
+     * 是否开启崩溃取证。
+     *
+     * **默认关闭**（1.224n 起）：取证会持续写入播放阶段、系统退出记录与原生崩溃报告
+     * （单个文件可达数百 KB），对绝大多数用户没有收益，没必要一直跑。
+     * 用户可在「关于 → 崩溃日志」页顶部按需开启；开启后遇到崩溃即可导出提交。
+     *
+     * 规划：1.224n 之前默认开启是为了定位"个别机型播放闪退"，那个问题已随渲染面改用
+     * TextureView 修复，因此恢复为默认关闭。
+     */
+    fun isCrashLogEnabled(): Boolean = prefs.getBoolean(KEY_CRASH_LOG, false)
+
+    fun saveCrashLogEnabled(v: Boolean) {
+        prefs.edit().putBoolean(KEY_CRASH_LOG, v).apply()
+    }
+
+    // ---------- 1.224n：上次已上报的"系统进程退出记录"时间戳 ----------
+    private const val KEY_LAST_EXIT_TS = "crash_last_exit_ts_v1"
+
+    fun lastSeenExitTs(): Long = prefs.getLong(KEY_LAST_EXIT_TS, 0L)
+
+    fun saveSeenExitTs(ts: Long) {
+        prefs.edit().putLong(KEY_LAST_EXIT_TS, ts).apply()
+    }
+
     /**
      * 1.154 免责声明同意状态。false = 必须在「免责声明」门禁页同意后才能使用本应用；
      * 同意后持久化，卸载或清除数据才会重置。UI 读它决定显示门禁还是主界面。

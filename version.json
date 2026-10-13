@@ -1,8 +1,8 @@
 {
-  "versionCode": 211,
-  "versionName": "1.201",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.201/huzai-1.201-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.201",
-  "changelog": "· 新增 NBA「球员 PK」「本场数据帝」「球队统计」\n· 半屏面板控件更换：更加流畅、打开更快（球员 / 专区 / 话题 / 内容声明 / 发起投票 / 搜索筛选）\n· 评分二级页：名称下方新增评分对象说明文本；热评移至头像下方另起一行\n· 修复「关闭热帖但是冷启动时热帖一闪而过」的问题\n· 修复个别机型播放视频闪退的问题\n· 修复NBA数据统计、文字实录页面数据更新时的闪烁问题\n· 修复文字实录滑动位置不正确的问题",
+  "versionCode": 212,
+  "versionName": "1.202",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.202/huzai-1.202-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.202",
+  "changelog": "· 修复对局评分页「趣评」标签一闪而过的问题\n· 修复私信聊天页输入框光标偏上的问题\n· 修复个别机型播放视频闪退的问题\n· 完善「崩溃取证」：可在「关于 → 崩溃日志」开启，崩溃时自动记录现场，支持一键导出 / 清除\n· 热门赛事的项目筛选改为记忆：重启后仍保留\n· 黑名单容量由 500 提升至 1000",
   "forceUpdate": false
 }

@@ -88,6 +88,8 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.java.myapplication.data.HupuCrashLog
+import com.java.myapplication.data.HupuHttp
 import com.java.myapplication.ui.components.HupuIcons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,8 +104,15 @@ import kotlin.math.roundToInt
  *  1. **尺寸**：容器比例 == 内容比例（预览=封面比例，播放就绪后=视频比例）。
  *     比例一致时 Fit 就等于铺满 —— 既不裁切封面（不丢信息），也没有黑边、不会显得小。
  *     切换发生在"视频可显示"的同一帧：封面撤下与框变形同时完成，没有中间态。
- *  2. **渲染面**：media3 的 PlayerView（内部 SurfaceView）。它不受 Compose alpha/缩放影响，
- *     所以隐藏靠"上面盖一层封面"、缩放靠 graphicsLayer，不做 OPAQUE 之类 hack。
+ *  2. **渲染面**：media3 的 PlayerView，且**显式指定 `surface_type=texture_view`**（见
+ *     `res/layout/view_video_surface.xml`）。1.224n 之前用的是默认的 SurfaceView，结果在个别
+ *     MIUI 机型上会崩在框架的「SurfaceView 位置/缩放事务」路径
+ *     （`onSetSurfacePositionAndScale` → `SurfaceControl$Transaction.setPosition` → `libgui.so`，
+ *     两种签名：SIGSEGV / `decStrong() called too many times`）。
+ *     TextureView 是普通视图：没有 SurfaceControl、没有位置更新事务，因此**那条路径不存在**；
+ *     而且它**支持** alpha/缩放（SurfaceView 不支持），将来要做画面缩放也就没有障碍了。
+ *     ⚠️ 旧注释曾写「media3 1.8 的 PlayerView 不再支持 TextureView」—— 那是**错的**，
+ *     1.8 依然支持（AAR 里有 `SURFACE_TYPE_TEXTURE_VIEW` / `setVideoTextureView`）。
  *  3. **视频自带黑边**：抓帧检测真实画面范围（VideoContentBox.kt），再放大裁掉外圈。
  *  4. **控件**：初始不显示；缓冲时立即隐藏且不自动恢复；3s 无操作自动隐藏；点击画面唤出。
  *
@@ -210,6 +219,13 @@ internal fun rememberPlayerUi(player: ExoPlayer?): HupuPlayerUi {
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     ui.videoAspect =
                         videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                    // 1.224n：记进黑匣子 —— 解码器相关的原生崩溃，这几行往往是唯一线索
+                    HupuCrashLog.note(
+                        "视频尺寸",
+                        "${videoSize.width}x${videoSize.height}" +
+                            " rot=${videoSize.unappliedRotationDegrees}" +
+                            " par=${videoSize.pixelWidthHeightRatio}",
+                    )
                 }
             }
 
@@ -258,9 +274,80 @@ private fun PlayerLifecycleBinding(player: ExoPlayer?) {
 
 // ─────────────────────────────────────────────────────────────── 3. 小窗
 
+/** 每个进程、每个 mime 只记录一次"候选列表"（避免刷屏） */
+private val codecLoggedMimes = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+/**
+ * 1.224n：是否启用「裁掉视频自带黑边」。
+ *
+ * **现在开启**（恢复）：渲染面已从 SurfaceView 换成 **TextureView**，而对 TextureView 做
+ * alpha / 缩放是普通视图变换（安全），所以这个美化可以放心启用。取帧也已改为
+ * `TextureView.getBitmap()`（不再单开 MediaMetadataRetriever）。
+ *
+ * 历史教训（务必保留这段）：1.224n 之前渲染面是 SurfaceView，只要给它所在的层加变换
+ * （**包括 alpha**）就会走进框架的「SurfaceView 位置/缩放事务」路径
+ * （`onSetSurfacePositionAndScale` → `SurfaceControl$Transaction.setPosition` → MIUI 的 `libgui.so`），
+ * 在个别机型上原生崩溃（SIGSEGV / `decStrong() called too many times`）。
+ * 换句话说：**这段缩放变换与 SurfaceView 不兼容**，换成 TextureView 后才安全。
+ *
+ * 关掉这个常量 = 既不取帧、也不加任何缩放变换（画面按原始比例显示）。
+ */
+private const val ENABLE_BLACK_BAR_CROP = true
+
 /** 创建播放器：音频焦点（自动让路）+ 非精确 seek（避免改进度后缓存条塌回播放头） */
-private fun buildPlayer(context: android.content.Context, url: String): ExoPlayer =
-    ExoPlayer.Builder(context).build().apply {
+private fun buildPlayer(context: android.content.Context, url: String): ExoPlayer {
+    // 1.224n：**始终**接管解码器选择，做三件事：
+    //  ① 把最终选中的解码器名字记进黑匣子 —— 真机上崩溃发生在**创建解码器过程中**，
+    //     那时 onVideoDecoderInitialized 不会回调，这是唯一能知道"用的是哪个解码器"的地方；
+    //  ② 「视频兼容模式」= 只要软件解码器；
+    //  ③ 跳过"上次把它带崩的解码器"，换同编码的下一个候选
+    //     （同一编码通常有多个：c2.qti.* / c2.android.* / OMX.qcom.*，崩的往往只是某一个）。
+    //     注意 setEnableDecoderFallback 帮不上忙：它只在解码器**抛 Java 异常**时兜底，对原生崩溃无效。
+    val renderers = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+        .setEnableDecoderFallback(true)
+        // 1.224n：**改用异步缓冲区排队模式**（MediaCodec 的另一条工作路径）。
+        //
+        // 依据：最新一份崩溃报告给出的不是猜测而是断言信息 ——
+        // `SIGABRT / SI_QUEUE / decStrong() called on 0x… too many times`，
+        // 这是 AOSP libutils 里强引用指针被"多减一次引用"时的致命断言 ⇒ **原生媒体栈的引用计数 bug**。
+        // 而此前已经逐条排除了我们这侧的嫌疑：抓帧（关掉照崩）、图层变换（v141 无变换照崩）、
+        // 媒体下载栈（v142 改用 OkHttp 照崩）、解码器选择（软解/硬解都崩）。
+        // 同步/异步排队是 MediaCodec 同一原生栈里的两条不同路径，这是 App 侧还能动的最后一个开关。
+        .forceEnableMediaCodecAsynchronousQueueing()
+    renderers.setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+        val all = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+            .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+        // 1.224n：这里**只做记录**（把选中的解码器与候选列表写进黑匣子），**不再做任何筛选** ——
+        // 排查期用过的「强制软解（视频兼容模式）」与「跳过崩过的解码器」都随崩溃修复
+        //（渲染面改用 TextureView）一并撤销：那场崩溃与解码器无关，
+        // 留着只会让个别设备白白丢掉硬解（耗电、发热上升）。
+        if (all.isNotEmpty()) {
+            if (codecLoggedMimes.add(mimeType)) {
+                HupuCrashLog.note("候选列表", "$mimeType: " + all.joinToString(", ") { it.name })
+            }
+            HupuCrashLog.note(
+                "选解码器",
+                "$mimeType → ${all.first().name}" +
+                    "（候选 ${all.size} / 软解 ${all.count { !it.hardwareAccelerated }}）",
+            )
+        }
+        all
+    }
+    return ExoPlayer.Builder(context, renderers)
+        // 1.224n：**媒体下载改走我们自己的 OkHttp**，不再用系统 HttpURLConnection。
+        //
+        // 依据（真机崩溃取证）：最新一份原生崩溃报告的摘要里出现
+        // `com.android.okhttp.internal.huc.HttpURLConnectionImpl.execute/connect` ——
+        // 那正是 ExoPlayer 默认下载视频用的**系统实现**（我们自己的接口调用与 Coil 图片都走 OkHttp4，
+        // 只有播放器这一路在用系统栈）。而且这几次崩溃已经排除了抓帧、解码器、图层变换三条线。
+        // 换成成熟的 OkHttp4：绕开系统实现里可能的坑，顺带获得连接复用/连接池。
+        .setMediaSourceFactory(
+            androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
+                .setDataSourceFactory(
+                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(HupuHttp.client),
+                ),
+        )
+        .build().apply {
         setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -271,15 +358,68 @@ private fun buildPlayer(context: android.content.Context, url: String): ExoPlaye
         setSeekParameters(SeekParameters.CLOSEST_SYNC)
         // 1.224j：把播放错误落到日志 —— 排查「点播放约 1 秒后闪退」这类真机问题时必须有证据。
         // 不改变行为（ExoPlayer 本来就会停在该错误上），只是让它可被 logcat 抓到。
+        // 1.224n：同时写进「关于 → 崩溃日志」，用户可直接一键保存发回。
         addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 android.util.Log.w("HupuVideo", "playback error: ${error.errorCodeName}", error)
+                HupuCrashLog.recordPlaybackError(
+                    "播放错误",
+                    "code=${error.errorCodeName}  url=${HupuCrashLog.safeUrl(url)}",
+                    error,
+                )
+            }
+        })
+        // 1.224n：把「播放状态 / 首帧」记进黑匣子 —— 与解码器、崩溃点一一对应，
+        // 能看出崩在"缓冲中/就绪"的哪一步、有没有渲染出首帧。
+        addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                HupuCrashLog.note("播放状态", stateName(playbackState))
+            }
+
+            override fun onRenderedFirstFrame() {
+                HupuCrashLog.note("首帧已渲染")
+            }
+        })
+        // 1.224n：解码器名字（关键！）—— 一眼看出走的是硬解还是软解：
+        // 软解形如 c2.android.avc.decoder / OMX.google.*，硬解形如 c2.qti.*/OMX.qcom.*。
+        // 只有 ExoPlayer 的 AnalyticsListener 才有这个回调。
+        addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            override fun onVideoDecoderInitialized(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                decoderName: String,
+                initializationDurationMs: Long,
+            ) {
+                HupuCrashLog.note("视频解码器", "$decoderName  init=${initializationDurationMs}ms")
+            }
+
+            // 1.224n：音频这条线也要留痕 —— 崩溃既可能发生在视频侧（无 onVideoDecoderInitialized），
+            // 也可能落在音频/输出侧；两边都记，"崩在哪一侧"才不会靠猜。
+            override fun onAudioDecoderInitialized(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                decoderName: String,
+                initializationDurationMs: Long,
+            ) {
+                HupuCrashLog.note("音频解码器", "$decoderName  init=${initializationDurationMs}ms")
             }
         })
         setMediaItem(MediaItem.fromUri(url))
-        prepare()
+        // 1.224n：**不再在这里 prepare()** —— 见 PlayerStage 里的「等真实渲染面就绪再 prepare」。
+        // 这里 prepare 的话，此刻 PlayerView 还没组合出来（它是后一步才渲染的），
+        // media3 会退而求其次自造一个**离屏占位 Surface**（PlaceholderSurface = EGL + SurfaceTexture，
+        // 全走原生图形栈）；真机崩溃点恰好落在"创建解码器"这一瞬，两种签名（SIGSEGV / decStrong
+        // 引用计数断言）都是图形栈的症状 —— 与解码器选择、图层、HTTP 栈都无关，全都对得上。
         playWhenReady = true
     }
+}
+
+/** 播放状态名（黑匣子用） */
+private fun stateName(state: Int): String = when (state) {
+    Player.STATE_IDLE -> "空闲"
+    Player.STATE_BUFFERING -> "缓冲中"
+    Player.STATE_READY -> "就绪"
+    Player.STATE_ENDED -> "播放结束"
+    else -> "状态$state"
+}
 
 /**
  * 小窗视频。
@@ -329,6 +469,9 @@ internal fun VideoPlayer(
     /** 点播放：**幂等地**确保"这一次点击就进入播放"（建实例 / 从暂停态续播都覆盖） */
     fun ensurePlaying() {
         host.started = true
+        // 1.224n：黑匣子记录「起播」这一时刻、视频地址（已脱敏）与**解码方式**——
+        // 原生崩溃时进程直接消失，只有这些提前落盘的行能告诉我们崩在哪支视频、走的软解还是硬解。
+        HupuCrashLog.note("起播请求", HupuCrashLog.safeUrl(url))
         val p = host.player
         if (p == null) {
             host.player = buildPlayer(context, url)
@@ -680,24 +823,17 @@ private fun PlayerStage(
         }
     }
 
-    // ── 视频"自带黑边"检测（抓帧 → 画面范围 → 放大裁掉）
+    // ── 视频"自带黑边"检测：**直接从 TextureView 取当前帧**（1.224n 重写）
+    // 旧实现另开一路 MediaMetadataRetriever 抓帧（多占一个解码器，个别视频还会失败）；
+    // 现在渲染面是 TextureView（普通视图），`TextureView.getBitmap()` 就能拿到正在显示的帧 ——
+    // 更准、更快，也不再碰第二个解码器。取帧放在下面「等渲染面就绪」的 effect 里做
+    //（那里才有 PlayerView 的引用）。
     val videoUrl = remember(player) {
         runCatching { player.getMediaItemAt(0).localConfiguration?.uri?.toString() }.getOrNull()
     }
     var boxSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
-    var frameInfo by remember(videoUrl) { mutableStateOf(videoUrl?.let { cachedFrameInfo(it) }) }
-    var detected by remember(videoUrl) { mutableStateOf(frameInfo != null) }
-    LaunchedEffect(videoUrl) {
-        val url = videoUrl
-        if (url == null) {
-            detected = true
-        } else {
-            if (frameInfo == null) {
-                frameInfo = withTimeoutOrNull(1500) { probeFrameInfo(url) }
-            }
-            detected = true
-        }
-    }
+    var frameInfo by remember(videoUrl) { mutableStateOf<FrameInfo?>(null) }
+    var detected by remember(videoUrl) { mutableStateOf(false) }
     // 同步换算（不进协程）：缓存命中时第一帧就是放大后的画面，划回来不闪
     val renderAspect = ui.videoAspect ?: frameInfo?.aspect
     val viewBox = remember(frameInfo, boxSize, renderAspect) {
@@ -719,38 +855,116 @@ private fun PlayerStage(
         }
     }
     val revealed = forceReveal || (detected && (frameInfo?.box == null || viewBox != null))
-    val revealAlpha by animateFloatAsState(
-        targetValue = if (revealed) 1f else 0f,
-        animationSpec = tween(120),
-        label = "videoReveal",
-    )
-    // 视频可显示就立刻通知外部：外部据此启动容器 spring 动画；
-    // 封面由外部一直保留到动画落定（每一帧都是满的），落定后才撤下
+    // 1.224n（真机崩溃栈定位）：崩溃发生在 hwui 任务线程的
+    // 「SurfaceView 位置+缩放更新」路径上（`SurfaceView.onSetSurfacePositionAndScale` →
+    // `SurfaceControl$Transaction.setPosition` → `libgui.so` 里空指针解引用）。
+    // 而唯一会让 SurfaceView 走进那条路径的，就是**给承载它的层加变换** —— 我们之前
+    // 无条件加了 `graphicsLayer{ alpha; scale; translate }`（alpha 过渡 + 裁黑边缩放）。
+    //
+    // 改法：
+    //  · **过渡不再动视频层** —— 视频一直在封面底下渲染，揭幕 = 直接撤掉封面（硬切，
+    //    因为下面早就是正确画面，肉眼几乎察觉不到）；
+    //  · **只有确实检测到黑边（viewBox 非空）时才加变换**，其余情况**完全不加图层**，
+    //    让 SurfaceView 处于"没有变换"的常态 —— 和所有普通播放器一样。
+    val videoLayerModifier = if (ENABLE_BLACK_BAR_CROP) {
+        viewBox?.let { box ->
+            Modifier.graphicsLayer {
+                val (k, dx, dy) = contentZoom(box)
+                scaleX = k
+                scaleY = k
+                translationX = dx * size.width * k
+                translationY = dy * size.height * k
+            }
+        } ?: Modifier
+    } else {
+        // 裁黑边下线 → **永不给视频层加任何变换**（含 alpha）。
+        // 揭幕靠撤封面完成（视频一直封面底下渲染，下面早就是正确画面）。
+        Modifier
+    }
+    // 视频可显示就立刻通知外部：外部据此撤下封面
     LaunchedEffect(revealed) {
-        if (revealed) onReady()
+        if (revealed) {
+            // 1.224n：记录「画面真正出来了」——与后面的原生崩溃记录一比，就知道是
+            // 「起播阶段就崩」还是「画面出来之后才崩」。
+            HupuCrashLog.note(
+                "视频可显示",
+                if (frameInfo?.box != null) "已裁黑边（加了图层变换）" else "原始画面（无图层变换）",
+            )
+            onReady()
+        }
+    }
+
+    // 1.224n：等真实渲染面就绪 → prepare → **顺手取一帧做黑边检测**。
+    // · 不再在 buildPlayer 里立刻 prepare（那时还没有渲染面，media3 会自造离屏占位 Surface，
+    //   而个别机型的原生图形栈会崩在这条路上）；
+    // · 取帧：首帧渲染出来之前 getBitmap 可能是黑的，所以**轮询到取到有效画面为止**
+    //   （最多约 1.5s），取到就立刻算包围盒 → 缩放与揭幕同帧生效，没有"先小后大"的跳变；
+    //   取不到就当"没有黑边"，直接放行（绝不阻塞显示）。
+    val playerViewRef = remember { mutableStateOf<PlayerView?>(null) }
+    LaunchedEffect(player, playerViewRef.value) {
+        val pv = playerViewRef.value ?: return@LaunchedEffect
+        var ready = false
+        val deadline = System.currentTimeMillis() + 2000L
+        while (System.currentTimeMillis() < deadline) {
+            when (val v = pv.videoSurfaceView) {
+                is android.view.TextureView -> if (v.isAvailable) {
+                    ready = true
+                    break
+                }
+
+                is android.view.SurfaceView -> if (v.isAttachedToWindow && v.holder.surface.isValid) {
+                    ready = true
+                    break
+                }
+
+                else -> Unit
+            }
+            kotlinx.coroutines.delay(20)
+        }
+        if (player.playbackState == Player.STATE_IDLE) {
+            HupuCrashLog.note("渲染面就绪后 prepare", "surfaceReady=$ready")
+            player.prepare()
+        }
+        val tv = pv.videoSurfaceView as? android.view.TextureView
+        if (tv != null) {
+            var tries = 0
+            while (tries < 15) {
+                val bmp = runCatching { tv.getBitmap(48, 48) }.getOrNull()
+                if (bmp != null) {
+                    val px = IntArray(48 * 48)
+                    bmp.getPixels(px, 0, 48, 0, 0, 48, 48)
+                    bmp.recycle()
+                    val box = detectContentBox(px, 48, 48)
+                    if (box != null) {
+                        frameInfo = FrameInfo(box, ui.videoAspect ?: 1f)
+                        HupuCrashLog.note(
+                            "取帧成功",
+                            "裁 ${(box.width * 100).toInt()}%x${(box.height * 100).toInt()}%",
+                        )
+                        break
+                    }
+                }
+                tries++
+                kotlinx.coroutines.delay(100)
+            }
+        }
+        detected = true
     }
 
     Box(modifier.onSizeChanged { boxSize = it }) {
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShutterBackgroundColor(android.graphics.Color.BLACK)
-                }
+                // 1.224n：**从布局 inflate**（该布局里写死了 `surface_type=texture_view`）。
+                // 换掉 SurfaceView 的原因见 `res/layout/view_video_surface.xml` 顶部注释：
+                // 崩溃路径（SurfaceView 的 SurfaceControl 位置事务 → libgui.so）随之一并消失。
+                (android.view.LayoutInflater.from(ctx)
+                    .inflate(com.java.myapplication.R.layout.view_video_surface, null) as PlayerView)
+                    .apply { playerViewRef.value = this }
             },
             update = { v -> if (v.player !== player) v.player = player },
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    alpha = revealAlpha
-                    val b = viewBox ?: return@graphicsLayer
-                    val (k, dx, dy) = contentZoom(b)
-                    scaleX = k
-                    scaleY = k
-                    translationX = dx * size.width * k
-                    translationY = dy * size.height * k
-                },
+                .then(videoLayerModifier),
         )
         // 封面占位：盖在渲染面之上（SurfaceView 隐藏不掉，只能盖）
         if (posterVisible && posterUrl != null) {

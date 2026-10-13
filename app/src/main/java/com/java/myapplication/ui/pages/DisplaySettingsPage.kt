@@ -144,6 +144,7 @@ fun DisplaySettingsPage(onClose: () -> Unit) {
                 Chip(text = "外观", selected = tab == 0, onClick = { tab = 0 })
                 Chip(text = "阅读字号", selected = tab == 1, onClick = { tab = 1 })
                 Chip(text = "屏幕刷新率", selected = tab == 2, onClick = { tab = 2 })
+                // 1.224n：「音视频」tab 已移除（里面的「视频兼容模式」随播放崩溃修复一并撤销）
             }
             },
         ) { topInset ->

@@ -1,5 +1,15 @@
 package com.java.myapplication.ui.pages
 
+import com.java.myapplication.ui.theme.isAppDarkTheme
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.GlassSwitch
+import androidx.compose.foundation.border
+import com.java.myapplication.ui.components.pressScale
+import com.java.myapplication.ui.components.rememberInstantPressScale
+import com.java.myapplication.ui.components.FixedChannelRow
+import androidx.compose.material.icons.rounded.Delete
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -38,6 +48,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.java.myapplication.ui.glass.LiquidGlassButton
 import com.java.myapplication.ui.glass.LiquidGlassCard
+import com.java.myapplication.ui.glass.LiquidGlassDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +77,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
+import com.java.myapplication.data.HupuCrashLog
 import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuUpdate
 import com.java.myapplication.data.HupuUpdateInfo
@@ -91,15 +103,8 @@ private enum class AboutSub(val title: String) {
     CRASH("崩溃日志"),
 }
 
-/** 读取崩溃取证文件（内部私有目录优先，其次外部专属目录）；不存在返回空串。 */
-private fun readCrashLog(context: Context): String {
-    val dirs = listOfNotNull(context.filesDir, context.getExternalFilesDir(null))
-    for (d in dirs) {
-        val f = java.io.File(d, "crash_last.txt")
-        if (f.exists()) return runCatching { f.readText() }.getOrDefault("")
-    }
-    return ""
-}
+/** 读取崩溃取证（内部私有目录）；不存在返回空串。1.224n：正式包也启用，并附最近播放记录（黑匣子）。 */
+private fun readCrashLog(): String = HupuCrashLog.readForDisplay()
 
 /**
  * 1.134 关于页（盖入式二级页）：应用图标/名称/版本/简介 + 三条快捷 + 协议/许可/免责/日志列表。
@@ -153,7 +158,7 @@ fun AboutPage(onClose: () -> Unit) {
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
         if (uri != null) {
-            val log = readCrashLog(context)
+            val log = readCrashLog()
             val ok = runCatching {
                 context.contentResolver.openOutputStream(uri)?.use { it.write(log.toByteArray()) }
             }.isSuccess
@@ -161,13 +166,18 @@ fun AboutPage(onClose: () -> Unit) {
         }
     }
     fun saveLog() {
-        if (readCrashLog(context).isBlank()) {
+        if (readCrashLog().isBlank()) {
             com.java.myapplication.ui.components.HuzaiToast.show("暂无日志可保存")
             return
         }
         val name = "huzai_log_" +
             SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".txt"
         saveLauncher.launch(name)
+    }
+    // 1.224n：清除取证文件（「崩溃日志」页右上角图标按钮）
+    fun clearLog() {
+        HupuCrashLog.clear()
+        com.java.myapplication.ui.components.HuzaiToast.show("已清除本机取证文件")
     }
     fun openUrl(url: String) {
         runCatching {
@@ -336,8 +346,6 @@ fun AboutPage(onClose: () -> Unit) {
                     AboutRow("免责声明") { sub = AboutSub.DISCLAIMER }
                     AboutDivider()
                     AboutRow("崩溃日志") { sub = AboutSub.CRASH }
-                    AboutDivider()
-                    AboutRow("保存日志") { saveLog() }
                 }
                 Spacer(Modifier.height(28.dp))
             }
@@ -345,7 +353,16 @@ fun AboutPage(onClose: () -> Unit) {
         }
 
         // 子页（三级页）：盖在关于页之上
-        sub?.let { s -> AboutSubPage(s, context, onClose = { sub = null }) }
+        sub?.let { s ->
+            AboutSubPage(
+                s,
+                context,
+                onClose = { sub = null },
+                // 1.224n：崩溃日志页右上角的「保存 / 清除」图标按钮
+                onSaveLog = { saveLog() },
+                onClearLog = { clearLog() },
+            )
+        }
 
         // 顶部提示
         // 1.177: 发现新版本对话框
@@ -485,7 +502,14 @@ private fun AboutDivider() {
 
 /** 关于页内的三级子页：盖入式，返回逐层弹出。 */
 @Composable
-private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) {
+private fun AboutSubPage(
+    kind: AboutSub,
+    context: Context,
+    onClose: () -> Unit,
+    /** 1.224n：崩溃日志页右上角两个图标按钮的动作（在父级定义：保存走 SAF、清除要弹 toast） */
+    onSaveLog: () -> Unit = {},
+    onClearLog: () -> Unit = {},
+) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         SecondaryPage.enter()
@@ -516,7 +540,18 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
             throw e
         }
     }
-    val body = remember(kind) { subBody(kind, context) }
+    // 1.224n：正文在「清空日志」后要**立刻**刷新（以前 remember(kind) 只算一次，
+// 清空后要退出页面再进才看到效果）。用一个 tick 触发重算。
+    var logTick by remember { mutableStateOf(0) }
+    val body = remember(kind, logTick) { subBody(kind, context) }
+    // 1.224n：清除崩溃日志前的确认弹窗（与「退出登录」完全同款：Liquid Glass 毛玻璃弹窗）
+    var clearAsk by remember { mutableStateOf(false) }
+    // 1.224n：记录层——供 Liquid Glass 弹窗采样背后像素（弹窗画在内容层之后，不自采样）
+    val dialogBg = MaterialTheme.colorScheme.background
+    val backdrop = rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
 
     Box(
         Modifier
@@ -534,34 +569,96 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
             CenteredTopBar(
                 title = kind.title,
                 onBack = { closing = true },
+                // 1.224n：崩溃日志页的「保存 / 清除」—— **与帖子详情右上角的「编辑 / 删除」同款控件与形式**：
+                // 两个裸图标按钮合在一个玻璃胶囊里（liquidElevation + buttonFill + buttonBorder，
+                // 圆角 22dp、内垫 2dp），而不是各自独立的裸按钮。
+                actions = if (kind == AboutSub.CRASH) {
+                    {
+                        val dark = isAppDarkTheme()
+                        Row(
+                            Modifier
+                                .liquidElevation(RoundedCornerShape(22.dp), dark)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(buttonFill(dark))
+                                .border(0.6.dp, buttonBorder(dark), RoundedCornerShape(22.dp))
+                                .padding(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AboutTopAction(HupuIcons.Download, "保存日志") { onSaveLog() }
+                            AboutTopAction(Icons.Rounded.Delete, "清除日志") {
+                                // 1.224n：先弹确认弹窗（与「退出登录」同款），确认后才真正清除
+                                clearAsk = true
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
             )
             },
         ) { topInset ->
-                Column(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
                     .padding(bottom = 32.dp),
             ) {
                 // 1.198：浮空顶栏时首块内容从栏下开始（关闭该效果时为 0，位置不变）
                 Spacer(Modifier.height(topInset))
-                // 段落化渲染：按空行分段，段间给统一间距（避免一段话被硬折行拆成好几段的观感）
-                val paragraphs = remember(body) {
-                    body.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
-                }
-                paragraphs.forEachIndexed { i, para ->
-                    if (i > 0) Spacer(Modifier.height(14.dp))
-                    Text(
-                        para,
-                        fontSize = 14.sp,
-                        lineHeight = 22.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 1.224n：崩溃日志页顶部放「崩溃取证」开关（默认关闭，见 HupuPrefs）。
+                // 注意：开关行**不套内容区的 20dp 水平边距** —— 它自带 16dp，与全站卡片同宽；
+                // 之前被内容区再收 20dp，导致卡片明显偏窄。
+                if (kind == AboutSub.CRASH) {
+                    var crashLogOn by remember { mutableStateOf(HupuPrefs.isCrashLogEnabled()) }
+                    FixedChannelRow(
+                        name = "崩溃取证",
+                        checked = crashLogOn,
+                        enabled = true,
+                        onCheckedChange = { v ->
+                            crashLogOn = v
+                            HupuCrashLog.setEnabled(context, v)
+                            // 与「清除日志」一致：立即重算正文，不必退出页面再进
+                            logTick++
+                        },
                     )
+                    Spacer(Modifier.height(10.dp))
                 }
-            }
+                // 正文段落：保持 20dp 水平边距
+                Column(Modifier.padding(horizontal = 20.dp)) {
+                    // 段落化渲染：按空行分段，段间给统一间距（避免一段话被硬折行拆成好几段的观感）
+                    val paragraphs = remember(body) {
+                        body.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
+                    }
+                    paragraphs.forEachIndexed { i, para ->
+                        if (i > 0) Spacer(Modifier.height(14.dp))
+                        Text(
+                            para,
+                            fontSize = 14.sp,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                }
         }
+        }
+        // 1.224n：清除确认弹窗 —— 与「退出登录」完全同款（Liquid Glass 毛玻璃 + Q 弹出入场）。
+        // 放在根 Box 内、内容层之后（兄弟顺序在记录层之后），毛玻璃才能采到页面像素。
+        if (clearAsk) {
+            LiquidGlassDialog(
+                backdrop = backdrop,
+                title = "清除崩溃日志",
+                message = "将删除本机已记录的全部崩溃日志与取证实录，此操作不可恢复。",
+                confirmText = "清除",
+                dismissText = "取消",
+                onConfirm = {
+                    onClearLog()
+                    // 清空后立刻重算正文（不必退出页面再进）
+                    logTick++
+                },
+                onDismiss = { clearAsk = false },
+            )
         }
     }
 }
@@ -569,10 +666,7 @@ private fun AboutSubPage(kind: AboutSub, context: Context, onClose: () -> Unit) 
 private fun subBody(kind: AboutSub, context: Context): String = when (kind) {
     AboutSub.PRIVACY -> PRIVACY_TEXT
     AboutSub.DISCLAIMER -> DISCLAIMER_TEXT
-    AboutSub.CRASH -> {
-        val log = readCrashLog(context)
-        if (log.isBlank()) "暂无崩溃日志。\n\n崩溃取证仅在 debug 构建启用。" else log
-    }
+    AboutSub.CRASH -> readCrashLog()
     AboutSub.LICENSE -> LICENSE_NOTICE + "\n\n" + THIRD_PARTY_NOTICE + "\n\n" +
         "────────────\n\n完整许可证文本（GNU GPLv3）\n\n" +
         runCatching {
@@ -591,6 +685,7 @@ private const val PRIVACY_TEXT = """
 · 登录凭据：你在应用内通过虎扑官方网页完成登录，登录 Cookie 仅保存在本机应用私有存储，用于以你的身份访问虎扑接口；退出登录即清除。应用全程不接触你的账号密码。
 · 使用偏好：阅读字号、主题模式、频道自定义、关键词过滤等，保存在本机。
 · 浏览记录、本地关注集合等，保存在本机。
+· 崩溃取证：出现崩溃或异常终止时，本机会记录异常堆栈、以及"崩溃前的最后阶段"（例如最近播放的视频地址，已去掉鉴权参数）。这些内容**仅保存在本机私有目录**，可在「关于 → 崩溃日志」查看、一键导出或清除，且不参与云备份与换机迁移。
 
 三、网络请求
 
@@ -706,3 +801,29 @@ private const val THIRD_PARTY_NOTICE = """
 
 /** 供「关于」页复用：版本展示文案。 */
 internal fun aboutVersionLabel(): String = "v" + BuildConfig.VERSION_NAME
+
+/**
+ * 1.224n：子页顶栏右侧的小动作按钮。
+ * 样式**对齐帖子详情页右上角的「删除 / 编辑」按钮**：38dp 圆角命中区 + 即时按压缩放 + 裸图标
+ *（本身不画圆底，由外层胶囊 / 顶栏承载）。
+ */
+@Composable
+private fun AboutTopAction(icon: ImageVector, desc: String, onClick: () -> Unit) {
+    val (trigger, scale) = rememberInstantPressScale()
+    Box(
+        Modifier
+            .size(38.dp)
+            .then(trigger)
+            .pressScale(scale)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(interactionSource = null, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = desc,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}

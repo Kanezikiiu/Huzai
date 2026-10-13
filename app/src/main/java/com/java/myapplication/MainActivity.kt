@@ -122,6 +122,15 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 1.224n：崩溃取证的「正常结束」信号 —— App 退到后台即清掉运行标记，
+     * 之后被系统回收就不再算异常终止；只有**前台崩溃/被强杀**才会把标记留到下次启动。
+     */
+    override fun onStop() {
+        com.java.myapplication.data.HupuCrashLog.onAppBackground()
+        super.onStop()
+    }
+
+    /**
      * 1.169: 页面销毁时取消在途的角标拉取（原 HupuMsgBadge 用 GlobalScope，
      * 不受生命周期约束；现在有明确的作用域 + 取消钩子）。
      */
@@ -240,14 +249,25 @@ fun PocketLedgerApp() {
                     animationSpec = tween(280),
                     label = "pageA$index",
                 )
+                val pageAnimated = offset != 0f || alpha != 1f
                 Box(
                     Modifier
                         .fillMaxSize()
                         .zIndex(if (index == selectedTab) 1f else 0f)
-                        .graphicsLayer {
-                            translationX = offset * size.width
-                            this.alpha = alpha
-                        }
+                        // 1.224n：**只在动画期间才加图层** —— 动画落定（位移 0 + alpha 1）时返回无层。
+                        // 原因：给承载 SurfaceView（视频）的层级长期挂 `graphicsLayer`，会把它推进框架的
+                        // 「surface 位置/缩放/alpha 事务」路径（真机崩溃报告里出现过
+                        // `SurfaceControl$Transaction.setPosition` → `libgui.so`）；空闲时留一层也白费 GPU。
+                        .then(
+                            if (pageAnimated) {
+                                Modifier.graphicsLayer {
+                                    translationX = offset * size.width
+                                    this.alpha = alpha
+                                }
+                            } else {
+                                Modifier
+                            },
+                        )
                         // 穿透守卫：alpha=0 的后台页不可再被命中（否则点击落穿到
                         // 隐形页的卡片上，触发 SecondaryPage.enter 后无路可退）
                         .tapGuard()

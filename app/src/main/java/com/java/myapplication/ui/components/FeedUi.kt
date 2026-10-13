@@ -199,7 +199,8 @@ internal fun HeroBadgeAvatar(
 @Composable
 internal fun FixedChannelRow(
     name: String,
-    subtitle: String,
+    // 1.224n：说明文本可为空 —— 为空时**整行只显示名称 + 开关**（不占两行、不留空白）。
+    subtitle: String = "",
     checked: Boolean,
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -219,13 +220,16 @@ internal fun FixedChannelRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                subtitle,
-                fontSize = 11.sp,
-                color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.error,
-            )
+            // 1.224n：说明为空时整行只有名称，不渲染占位空隙
+            if (subtitle.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    fontSize = 11.sp,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.error,
+                )
+            }
         }
         // 1.198：升级为 kyant 液态玻璃开关（原 Material3 Switch）
         GlassSwitch(

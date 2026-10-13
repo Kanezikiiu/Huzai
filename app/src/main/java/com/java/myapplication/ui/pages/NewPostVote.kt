@@ -8,9 +8,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import com.java.myapplication.ui.components.pressScale
-import com.java.myapplication.ui.components.rememberPressScale
+import com.java.myapplication.ui.components.SortBar
+import com.java.myapplication.data.SortTab
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -173,29 +172,6 @@ internal fun VoteBlockCard(
     }
 }
 
-/** 1.119: 投票面板里的单选 / 多选胶囊（选中填充主题色） */
-@Composable
-internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    // 1.223：按压改为 spring 缩放手感（与主页横滑条 Chip 同源），不再用默认 ripple 压暗
-    val interaction = remember { MutableInteractionSource() }
-    val press = rememberPressScale(interaction)
-    Text(
-        label,
-        fontSize = 13.sp,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .pressScale(press)
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-    )
-}
-
 /** 1.119: 「最多可选」步进按钮（− / + 文本，避免依赖扩展图标库） */
 @Composable
 internal fun StepBtn(label: String, enabled: Boolean, onClick: () -> Unit) {
@@ -273,11 +249,26 @@ internal fun VoteCreateSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            // 1.119: 单选 / 多选切换 + 多选时的「最多可选」步进器
+            // 1.224n：单选 / 多选改为**与发帖页「类型」同款的分段控件**（iOS 式玻璃分段）。
+            // 做法也照抄「类型」行：先在分段条下面垫一层**页面底色**的凹槽，
+            // 否则半透明玻璃轨道会落在面板底色上被抬亮，选中胶囊与轨道分不出来。
+            // 选中值直接用提交时的官方串（radio / checkbox），少一层映射。
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ModeChip("单选", selected = !multi) { multi = false }
-                Spacer(Modifier.width(8.dp))
-                ModeChip("多选", selected = multi) { multi = true }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    SortBar(
+                        sorts = listOf(
+                            SortTab(0, "单选", "radio"),
+                            SortTab(1, "多选", "checkbox"),
+                        ),
+                        selected = modeType,
+                        segWidth = 56.dp,
+                        onSelect = { multi = it == "checkbox" },
+                    )
+                }
                 if (multi) {
                     Spacer(Modifier.weight(1f))
                     Text(
