@@ -165,11 +165,22 @@ fun LiquidGlassButton(
     // 改成 onSurface 的 12%（深色档 16%）：既是「灰按钮」的语义，胶囊形状也清晰可辨。
     val idleColor = MaterialTheme.colorScheme.onSurface
         .copy(alpha = if (isLight) 0.12f else 0.16f)
+    // 1.224o：弹窗按钮补上**与全站按钮一致的手感**（真机反馈：评分对话框的按钮有按压手感，
+    // 而退出登录 / 清空浏览记录 / 重置首页频道 / 更多操作等弹窗里的没有）。
+    // 这里统一用 LiquidButton 那套：液体按压形变 + 按下处流体高光。
+    val highlight = rememberLiquidHighlight()
     Row(
         modifier
+            .liquidPressTransform(highlight)
             .clip(Capsule())
             .background(if (accent) MaterialTheme.colorScheme.primary else idleColor)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = null,
+                indication = null,
+                onClick = onClick,
+            )
+            .then(highlight.modifier)
+            .then(highlight.gestureModifier)
             .height(48f.dp)
             .padding(horizontal = 16f.dp),
         horizontalArrangement = Arrangement.spacedBy(4f.dp, Alignment.CenterHorizontally),

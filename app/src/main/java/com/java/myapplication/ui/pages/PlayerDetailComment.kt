@@ -168,6 +168,8 @@ internal fun CommentRow(
                 )
             }
         }
+        // 1.224q：正文与昵称行之间补一点呼吸感（真机反馈贴得太近）
+        Spacer(Modifier.height(3.dp))
         if (c.content.isNotBlank()) {
             EmojiText(
                 c.content,
@@ -189,6 +191,10 @@ internal fun CommentRow(
             )
             Spacer(Modifier.height(6.dp))
         }
+        // 1.224p：语音评论（官方 commentAncillaryContents 的 AUDIO 附件；正文里的「[语音]」占位已在解析层剥掉）
+        if (c.audioUrl.isNotBlank()) {
+            VoiceBubble(url = c.audioUrl, durationSec = c.audioDurationSec)
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -202,6 +208,8 @@ internal fun CommentRow(
             }
             Spacer(Modifier.weight(1f))
             // 1.145 回复入口（回复嵌套进楼中楼，非帖子式新楼层）
+            // 1.224o：虎扑已把评分评论回复限制为官方客户端 → 隐藏「回复」入口（点亮不受影响）
+            if (SCORE_COMMENT_WRITE_ENABLED) {
             Text(
                 "回复",
                 fontSize = 12.sp,
@@ -211,6 +219,7 @@ internal fun CommentRow(
                     .clickable { onReply() }
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
+            }
             Spacer(Modifier.width(6.dp))
             // 1.64 点亮：可点击红心（登录态，乐观翻转+自愈；与帖子详情页同形态）
             val litKey = c.subjectId.ifEmpty { c.commentId } + ":" + c.commentId
@@ -360,6 +369,7 @@ internal fun SubCommentRow(
                     .clickable(enabled = canOpen) { onOpenUser(sub.userId) },
             )
         }
+        Spacer(Modifier.height(3.dp))
         EmojiText(
             sub.content,
             fontSize = 13.sp,
@@ -378,6 +388,10 @@ internal fun SubCommentRow(
                     .clickable { onImageClick(sub.images, i) },
             )
         }
+        // 1.224p：子回复的语音附件
+        if (sub.audioUrl.isNotBlank()) {
+            VoiceBubble(url = sub.audioUrl, durationSec = sub.audioDurationSec)
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             val meta = listOf(sub.date, sub.ipLocation).filter { it.isNotBlank() }.joinToString(" · ")
             if (meta.isNotBlank()) {
@@ -385,6 +399,8 @@ internal fun SubCommentRow(
             }
             Spacer(Modifier.weight(1f))
             // 1.145 回复入口（子回复）
+            // 1.224o：评分评论回复已被虎扑限制为官方客户端 → 隐藏
+            if (SCORE_COMMENT_WRITE_ENABLED) {
             Text(
                 "回复",
                 fontSize = 12.sp,
@@ -394,6 +410,7 @@ internal fun SubCommentRow(
                     .clickable { onReply() }
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
+            }
             Spacer(Modifier.width(6.dp))
             // 1.64 点亮（子回复）
             val sKey = sub.subjectId.ifEmpty { sub.commentId } + ":" + sub.commentId
@@ -484,6 +501,10 @@ internal fun SubCommentRow(
                         color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 17.sp,
                     )
+                    // 1.224p：孙评论的语音附件
+                    if (grand.audioUrl.isNotBlank()) {
+                        VoiceBubble(url = grand.audioUrl, durationSec = grand.audioDurationSec)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val gmeta = listOf(grand.date, grand.ipLocation).filter { it.isNotBlank() }.joinToString(" · ")
                         if (gmeta.isNotBlank()) {
@@ -491,6 +512,8 @@ internal fun SubCommentRow(
                         }
                         Spacer(Modifier.weight(1f))
                         // 1.145 回复入口（孙评论）
+                        // 1.224o：同上 —— 写入入口隐藏
+                        if (SCORE_COMMENT_WRITE_ENABLED) {
                         Text(
                             "回复",
                             fontSize = 10.sp,
@@ -500,6 +523,7 @@ internal fun SubCommentRow(
                                 .clickable { onReplyGrand(grand) }
                                 .padding(horizontal = 5.dp, vertical = 1.dp),
                         )
+                        }
                         Spacer(Modifier.width(4.dp))
                         // 1.64 点亮（孙评论）
                         val gKey = grand.subjectId.ifEmpty { grand.commentId } + ":" + grand.commentId

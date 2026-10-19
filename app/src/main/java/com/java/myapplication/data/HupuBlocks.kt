@@ -27,6 +27,17 @@ object HupuBlocks {
         data class Text(override val id: Long, val text: String) : Block()
 
         data class Image(override val id: Long, val url: String) : Block()
+        /**
+         * 1.226：链接块。
+         * [card] = true 时官方按「卡片」渲染（编辑器里它固定排到正文末尾）；
+         * false 时就地插入，作为正文里可点的一句话。
+         */
+        data class Link(
+            override val id: Long,
+            val url: String,
+            val text: String,
+            val card: Boolean,
+        ) : Block()
 
         data class Vote(
             override val id: Long,
@@ -100,30 +111,47 @@ object HupuBlocks {
         val v3 = JSONArray()
         val imgList = JSONArray()
         var hasVote = false
+        var hasLink = false
+
+        // 1.226：段落缓冲。
+        // 官方把「行内链接」放在同一段落里（`文字<a>链接</a>文字`），
+        // 所以文本/行内链接先进缓冲，遇到块级元素或换行再落成 <p>。
+        var pHtml = StringBuilder()   // 旧版 content（带 data-type / data-name）
+        var pH3 = StringBuilder()     // format.htmlV3（带 data-hupu-node）
+        var pChildren = JSONArray()   // format.jsonV3 段落 children
+
+        fun flushPara() {
+            if (pHtml.isEmpty() && pChildren.length() == 0) return
+            content.append("<p>").append(pHtml).append("</p>")
+            htmlV3.append("<p>").append(pH3).append("</p>")
+            v3.put(
+                JSONObject()
+                    .put("type", "paragraph")
+                    .put("attrs", JSONObject().put("textAlign", ""))
+                    .put("content", pChildren),
+            )
+            pHtml = StringBuilder()
+            pH3 = StringBuilder()
+            pChildren = JSONArray()
+        }
 
         blocks.forEach { b ->
             when (b) {
                 is Block.Text -> {
-                    b.text.split("\n")
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .forEach { line ->
-                            content.append("<p>").append(escape(line)).append("</p>")
-                            htmlV3.append("<p>").append(escape(line)).append("</p>")
-                            v3.put(
-                                JSONObject()
-                                    .put("type", "paragraph")
-                                    .put(
-                                        "content",
-                                        JSONArray().put(
-                                            JSONObject().put("type", "text").put("text", line),
-                                        ),
-                                    ),
-                            )
+                    val lines = b.text.split("\n").map { it.trim() }
+                    lines.forEachIndexed { i, line ->
+                        if (line.isNotEmpty()) {
+                            pHtml.append(escape(line))
+                            pH3.append(escape(line))
+                            pChildren.put(JSONObject().put("type", "text").put("text", line))
                         }
+                        // 除最后一行外，每个换行都收一段
+                        if (i < lines.lastIndex) flushPara()
+                    }
                 }
 
                 is Block.Image -> {
+                    flushPara()
                     content.append("<p><img src=\"").append(b.url).append("\"/></p>")
                     htmlV3.append("<p><img src=\"").append(b.url).append("\"/></p>")
                     v3.put(
@@ -135,8 +163,52 @@ object HupuBlocks {
                     imgList.put(JSONObject().put("remoteUrl", b.url).put("key", b.url))
                 }
 
+                is Block.Link -> {
+                    hasLink = true
+                    val label = b.text.ifBlank { b.url }
+                    if (b.card) {
+                        // 卡片：块级、独立于段落（官方 `<a data-type="card-link">` + jsonV3 cardLink）
+                        flushPara()
+                        content.append("<a data-type=\"card-link\" data-name=\"")
+                            .append(escapeAttr(label)).append("\" target=\"_blank\" href=\"")
+                            .append(escapeAttr(b.url)).append("\">").append(escape(label)).append("</a>")
+                        htmlV3.append("<a href=\"").append(escapeAttr(b.url))
+                            .append("\" target=\"_blank\" title=\"").append(escapeAttr(label))
+                            .append("\" data-hupu-node=\"cardLink\">")
+                            .append(escape(label)).append("</a>")
+                        v3.put(
+                            JSONObject().put("type", "cardLink").put(
+                                "attrs",
+                                JSONObject()
+                                    .put("href", b.url)
+                                    .put("target", "_blank")
+                                    .put("title", label),
+                            ),
+                        )
+                    } else {
+                        // 行内链接：并入当前段落
+                        pHtml.append("<a data-type=\"link\" data-name=\"")
+                            .append(escapeAttr(label)).append("\" target=\"_blank\" href=\"")
+                            .append(escapeAttr(b.url)).append("\">").append(escape(label)).append("</a>")
+                        pH3.append("<a href=\"").append(escapeAttr(b.url))
+                            .append("\" target=\"_blank\" title=\"").append(escapeAttr(label))
+                            .append("\" data-hupu-node=\"link\">")
+                            .append(escape(label)).append("</a>")
+                        pChildren.put(
+                            JSONObject().put("type", "link").put(
+                                "attrs",
+                                JSONObject()
+                                    .put("href", b.url)
+                                    .put("target", "_blank")
+                                    .put("title", label),
+                            ),
+                        )
+                    }
+                }
+
                 is Block.Vote -> {
                     hasVote = true
+                    flushPara()
                     content.append("<p>[vote]").append(b.voteId).append("[/vote]</p>")
                     htmlV3.append("<div data-hupu-node=\"vote\" data-hupu-data=\"")
                         .append(escapeAttr(voteDataJson(b)))
@@ -155,9 +227,10 @@ object HupuBlocks {
                 }
             }
         }
-
-        if (!hasVote) return Payload(content.toString(), null)
-
+        flushPara()
+        // 1.226：链接必须带 format（官方把行内链接/卡片都写进 jsonV3），
+        // 否则服务端会把它们整段丢掉 —— 这就是"发出去链接消失"的原因。
+        if (!hasVote && !hasLink) return Payload(content.toString(), null)
         val format = JSONObject()
             .put("htmlV3", htmlV3.toString())
             .put("jsonV3", JSONObject().put("type", "doc").put("content", v3))
@@ -166,6 +239,7 @@ object HupuBlocks {
             .toString()
         return Payload(content.toString(), format)
     }
+
 
     /** htmlV3 里投票块携带的数据（官方同款字段序：choices/limit/title/type） */
     private fun voteDataJson(b: Block.Vote): String = JSONObject()
@@ -201,9 +275,52 @@ object HupuBlocks {
                 val node = arr.optJSONObject(i) ?: continue
                 when (node.optString("type")) {
                     "paragraph" -> {
-                        val txt = paragraphText(node)
-                        if (textBuf.isNotEmpty()) textBuf.append("\n")
-                        textBuf.append(txt)
+                        // 1.226：段落里可能有行内 link 子节点，要拆成独立链接块
+                        val kids = node.optJSONArray("content")
+                        if (kids == null) {
+                            val txt = paragraphText(node)
+                            if (textBuf.isNotEmpty()) textBuf.append("\n")
+                            textBuf.append(txt)
+                        } else {
+                            if (textBuf.isNotEmpty()) textBuf.append("\n")
+                            for (k in 0 until kids.length()) {
+                                val child = kids.optJSONObject(k) ?: continue
+                                when (child.optString("type")) {
+                                    "link" -> {
+                                        flushText()
+                                        val a = child.optJSONObject("attrs")
+                                        val href = a?.optString("href", "").orEmpty()
+                                        if (href.isNotEmpty()) {
+                                            out.add(
+                                                Block.Link(
+                                                    id = nextId(),
+                                                    url = href,
+                                                    text = a?.optString("title", "").orEmpty(),
+                                                    card = false,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    else -> textBuf.append(child.optString("text", ""))
+                                }
+                            }
+                        }
+                    }
+
+                    "cardLink" -> {
+                        flushText()
+                        val a = node.optJSONObject("attrs")
+                        val href = a?.optString("href", "").orEmpty()
+                        if (href.isNotEmpty()) {
+                            out.add(
+                                Block.Link(
+                                    id = nextId(),
+                                    url = href,
+                                    text = a?.optString("title", "").orEmpty(),
+                                    card = true,
+                                ),
+                            )
+                        }
                     }
 
                     "image" -> {

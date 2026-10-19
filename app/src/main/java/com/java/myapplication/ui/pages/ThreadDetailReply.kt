@@ -493,7 +493,15 @@ internal fun ReplyRow(
                 )
             }
         }
-        HtmlContent(r.contentHtml, onImageClick = onImageClick)
+        HtmlContent(
+            r.contentHtml,
+            onImageClick = onImageClick,
+            // 1.224p：评论视频 / 语音（JSON 字段，不在 HTML 里）
+            videoUrl = r.videoUrl,
+            videoCover = r.videoCover,
+            audioUrl = r.audioUrl,
+            audioDurationSec = r.audioDurationSec,
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (r.location.isNotBlank()) {
                 Text(r.location, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

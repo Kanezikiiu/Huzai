@@ -33,6 +33,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 
 /**
  * 1.155 首次启动免责声明门禁。
@@ -140,14 +144,16 @@ fun DisclaimerGate(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .clickable { onExit() }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
+                // 1.224o：门禁页两颗按钮升级为**玻璃底**（与全站按钮同语言、同按压手感）
+                val gateDark = isAppDarkTheme()
+                LiquidButton(
+                    onClick = { onExit() },
+                    fill = buttonFill(gateDark),
+                    border = buttonBorder(gateDark),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    height = 44.dp,
+                    contentPadding = 0.dp,
                 ) {
                     Text(
                         "不同意",
@@ -157,23 +163,22 @@ fun DisclaimerGate(
                     )
                 }
                 val canAgree = appeared && readToBottom
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            if (canAgree) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                        .clickable(enabled = canAgree) { onAgree() }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
+                LiquidButton(
+                    onClick = { if (canAgree) onAgree() },
+                    fill = buttonFill(gateDark),
+                    // 1.224o：描边统一为**标准描边**（与其它玻璃按钮一致），可用性只用文字颜色表达
+                    border = buttonBorder(gateDark),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    height = 44.dp,
+                    contentPadding = 0.dp,
+                    isInteractive = canAgree,
                 ) {
                     Text(
                         if (readToBottom) "同意并继续" else "请先滑动到底部",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (canAgree) MaterialTheme.colorScheme.onPrimary
+                        color = if (canAgree) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

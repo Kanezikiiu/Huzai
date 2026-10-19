@@ -3,6 +3,7 @@ package com.java.myapplication.ui.pages
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.PredictiveBackHandler
@@ -48,6 +49,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import com.java.myapplication.data.HupuApi
 import com.java.myapplication.data.HupuEmbed
+import com.java.myapplication.data.HupuLinks
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.tapGuard
@@ -55,6 +57,20 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.Role
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.glass.liquidPressTransform
+import com.java.myapplication.ui.glass.rememberLiquidHighlight
+import com.java.myapplication.ui.theme.isAppDarkTheme
 
 /**
  * 1.178: 结构化正文（赛事战报等）的承载页——盖入式二级页内嵌 WebView。
@@ -64,7 +80,23 @@ import com.java.myapplication.ui.components.LiquidBackButton
  * 把 WebView 隔离在「点开之后」，不打扰帖子列表的滚动性能。
  */
 @Composable
-internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
+internal fun EmbedWebPage(
+    embed: HupuEmbed,
+    /**
+     * 1.224o：页面里的链接交给父级**在应用内**处理（开帖 / 评分页 / 用户主页）。
+     * 返回 true 表示已消费；false 时按「网页就地加载 / 外链浏览器」处理。
+     */
+    onLink: ((HupuLinks.Target) -> Boolean)? = null,
+    /**
+     * 1.225g：本页是否接管系统返回。
+     *
+     * 战报页里点开的帖子 / 评分 / 用户主页是**叠在本页之上**的浮层，而它们不一定各自注册了
+     * 返回处理（例如 `PmThreadViewer` 只有顶栏返回键）—— 如果不加这个开关，在上层按系统返回
+     * 会命中本页的 `PredictiveBackHandler`，把**战报页**关掉。
+     */
+    backEnabled: Boolean = true,
+    onClose: () -> Unit,
+) {
     val context = LocalContext.current
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -90,7 +122,7 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
             onClose()
         }
     }
-    PredictiveBackHandler { events ->
+    PredictiveBackHandler(enabled = backEnabled) { events ->
         if (closing) {
             events.collect { }
             return@PredictiveBackHandler
@@ -152,6 +184,7 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
                 EmbedWebView(
                     url = embed.url,
                     onLoaded = { webLoaded = true },
+                    onLink = onLink,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -168,61 +201,167 @@ internal fun EmbedWebPage(embed: HupuEmbed, onClose: () -> Unit) {
     }
 }
 
-/** 1.178: 结构化正文卡片（点击进入 EmbedWebPage）。 */
+/**
+ * 1.225e：结构化正文入口卡（点击进入 EmbedWebPage）。
+ *
+ * 视觉升级为全站统一的**玻璃卡**：玻璃底 + 标准描边 + 圆角16，
+ * 左侧主题色淡底徽标、右侧圆形箭头，标题 15sp SemiBold，副标题 13sp 次要色。
+ */
 @Composable
 internal fun EmbedCard(embed: HupuEmbed, onClick: () -> Unit) {
+    val dark = isAppDarkTheme()
+    val shape = RoundedCornerShape(16.dp)
+    val primary = MaterialTheme.colorScheme.primary
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val variant = MaterialTheme.colorScheme.onSurfaceVariant
+    // 与全站玻璃按钮**同源**的按压手感：按下处流体高光 + 常量形变 + 落影
+    val highlight = rememberLiquidHighlight()
+
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .liquidPressTransform(highlight)
+            .liquidElevation(shape, dark)
+            .clip(shape)
+            .background(buttonFill(dark))
+            .border(0.6.dp, buttonBorder(dark), shape)
+            .clickable(
+                interactionSource = null,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .then(highlight.modifier)
+            .then(highlight.gestureModifier)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 1.225f：去掉主题色底块（真机反馈"难看就难看在那个色块上"），只留放大的文稿线条图标
         Box(
-            Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                .padding(horizontal = 8.dp, vertical = 5.dp),
+            Modifier.size(30.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                embed.badge,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Canvas(Modifier.size(26.dp)) {
+                val w = size.width
+                val h = size.height
+                val stroke = w * 0.085f
+                // 文稿外框（左下留白，右上折角）
+                drawPath(
+                    path = Path().apply {
+                        moveTo(w * 0.14f, h * 0.10f)
+                        lineTo(w * 0.66f, h * 0.10f)
+                        lineTo(w * 0.86f, h * 0.30f)
+                        lineTo(w * 0.86f, h * 0.90f)
+                        lineTo(w * 0.14f, h * 0.90f)
+                        close()
+                    },
+                    color = primary,
+                    style = Stroke(width = stroke, join = StrokeJoin.Round),
+                )
+                // 三条内容线
+                listOf(0.42f, 0.56f, 0.70f).forEachIndexed { i, y ->
+                    drawLine(
+                        color = primary,
+                        start = Offset(w * 0.28f, h * y),
+                        end = Offset(w * (if (i == 2) 0.62f else 0.72f), h * y),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 embed.title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurface,
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 embed.subtitle,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.5.sp,
+                color = variant,
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         Icon(
             Icons.AutoMirrored.Rounded.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
+            tint = variant,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
+/** 1.224o：页面美化 + 链接接管（只在页面加载完成后注入一次） */
+private const val POLISH_JS = """(function(){
+  try{
+    if(!document.getElementById('huzai-polish')){
+      var s=document.createElement('style'); s.id='huzai-polish';
+      s.textContent='html,body{background:transparent!important;margin:0!important;padding:0!important;}'
+        +'img,video,iframe{max-width:100%!important;height:auto!important;}'
+        +'[class*=header],[class*=footer],[class*=navbar],[class*=banner],[class*=advert]'
+        +',[class*=download],[id*=download],[class*=app-guide],[class*=openapp]{display:none!important;}';
+      (document.head||document.documentElement).appendChild(s);
+    }
+    if(!window.__huzaiClickHook){
+      window.__huzaiClickHook=1;
+      document.addEventListener('click',function(e){
+        var a=e.target&&e.target.closest?e.target.closest('a'):null;
+        if(!a) return;
+        var h=a.getAttribute('href')||a.href||'';
+        if(!h||h==='#'||h.indexOf('javascript:')===0) return;
+        e.preventDefault(); e.stopPropagation();
+        try{ HuzaiLink.open(h); }catch(err){}
+      },true);
+    }
+  }catch(err){}
+})();"""
+
+@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 @Composable
-private fun EmbedWebView(url: String, onLoaded: () -> Unit, modifier: Modifier) {
+private fun EmbedWebView(
+    url: String,
+    onLoaded: () -> Unit,
+    /**
+     * 1.224o：页面内链接的应用内处理入口。
+     * 返回 true = 父级已消费（例如开帖 / 开评分页 / 开用户主页），我们不再管；
+     * 返回 false = 父级不处理，则按「网页→就地加载，外链→浏览器」处理。
+     */
+    onLink: ((HupuLinks.Target) -> Boolean)? = null,
+    modifier: Modifier,
+) {
+    val context = LocalContext.current
+    val bgColor = MaterialTheme.colorScheme.background
+    // 页面内所有链接统一走这里。注意：**自定义 scheme 绝不再外抛** ——
+    // 之前评分/用户类链接落进 startActivity，系统又交给了虎扑官方客户端（真机反馈"还是外抛了"）。
+    fun handleLink(u: String, wv: WebView?) {
+        val target = HupuLinks.resolve(u)
+        if (target == null) {
+            // 裸外链（http/https）才交给浏览器；其它 scheme 一律吞掉，不外抛
+            if (u.startsWith("http://", true) || u.startsWith("https://", true)) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(u))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            }
+            return
+        }
+        if (onLink?.invoke(target) == true) return
+        when (target) {
+            is HupuLinks.Target.Web -> wv?.loadUrl(target.url)
+            is HupuLinks.Target.Thread -> wv?.loadUrl("https://bbs.hupu.com/${target.tid}.html")
+            // 其余类型父级没接管（理论上不会发生）→ 吞掉，避免外抛到官方客户端
+            else -> Unit
+        }
+    }
+
     AndroidView(
-        modifier = modifier.background(MaterialTheme.colorScheme.background),
+        modifier = modifier.background(bgColor),
         factory = { ctx ->
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
@@ -232,9 +371,47 @@ private fun EmbedWebView(url: String, onLoaded: () -> Unit, modifier: Modifier) 
                 // 背景透明 + 硬件层：避免加载间隙白闪（同登录页 WebView 的处理）
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 setLayerType(android.webkit.WebView.LAYER_TYPE_HARDWARE, null)
+                // 1.224o：JS 桥上抛「被点中的 href」—— 页面自己的路由在 WebView 里经常是死的，
+                // 由我们在原生侧统一决定打开方式（帖子/评分在应用内，其余走浏览器）。
+                addJavascriptInterface(
+                    object {
+                        @android.webkit.JavascriptInterface
+                        fun open(u: String) {
+                            // 回调发生在 WebView 的 JS 线程 → 切回主线程再操作 UI/Compose 状态
+                            this@apply.post { handleLink(u, this@apply) }
+                        }
+                    },
+                    "HuzaiLink",
+                )
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         onLoaded()
+                        // 1.224o：页面美化（背景透明 / 隐藏它自己的顶栏底栏与引导下载条 / 图片自适应）
+                        view?.evaluateJavascript(POLISH_JS, null)
+                    }
+
+                    /**
+                     * 1.224o：**绝不把自定义 scheme 抛给系统**。
+                     *
+                     * 官方这些页面（评分详情等）里带 JS，会自己 `location.href = "huputiyu://…"`；
+                     * 一旦由 WebView 外抛，系统就把它交给**虎扑官方客户端**。
+                     * 这里改为：能还原成网页的就地加载 / 帖子交回父级原生打开，其余吞掉。
+                     */
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                    ): Boolean = interceptNonHttp(request?.url?.toString(), view)
+
+                    @Deprecated("兼容只走旧回调的页面/机型")
+                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
+                        interceptNonHttp(url, view)
+
+                    /** 返回 true = 由我们消费（不外抛）；false = 让 WebView 继续按网页加载 */
+                    fun interceptNonHttp(url: String?, view: WebView?): Boolean {
+                        val u = url ?: return false
+                        if (u.startsWith("http://", true) || u.startsWith("https://", true)) return false
+                        handleLink(u, view)
+                        return true
                     }
                 }
                 loadUrl(url)

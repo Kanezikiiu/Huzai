@@ -1108,13 +1108,16 @@ private fun FollowButton(
 ) {
     val dark = isAppDarkTheme()
     val bg = buttonFill(dark)
-    val fg = if (followed) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
-    // 1.192e: 关注按钮 → 液态玻璃按钮（未关注 = 主题色；已关注 = 浅灰玻璃）
+    // 1.224o：**关注按钮统一为玻璃底**（真机反馈：实心主题色与整体风格不搭）。
+    // 未关注 → 玻璃底 + 主题色文字/图标；已关注 → 玻璃底 + 次要色（保持可读性差异）。
+    val fg = if (followed) MaterialTheme.colorScheme.onSurfaceVariant
+    else MaterialTheme.colorScheme.primary
+    // 1.192e: 关注按钮 → 液态玻璃按钮
     LiquidButton(
         onClick = { if (!busy) onClick() },
         isInteractive = !busy,
-        fill = if (followed) bg else MaterialTheme.colorScheme.primary,
-        border = if (followed) buttonBorder(dark) else Color.Transparent,
+        fill = bg,
+        border = buttonBorder(dark),
         modifier = modifier,
         // 1.206（真机反馈）：与「私信」同步 38 → 42dp
         height = 42.dp,

@@ -329,7 +329,14 @@ internal fun FloorSheet(
                                                 )
                                             }
                                         }
-                                        HtmlContent(parent.contentHtml, onImageClick = onImageClick)
+                                        HtmlContent(
+                                            parent.contentHtml,
+                                            onImageClick = onImageClick,
+                                            videoUrl = parent.videoUrl,
+                                            videoCover = parent.videoCover,
+                                            audioUrl = parent.audioUrl,
+                                            audioDurationSec = parent.audioDurationSec,
+                                        )
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 "全部回复 ${parent.totalReplies}",
@@ -486,7 +493,13 @@ internal fun SubReplyRow(sub: HupuSubReply, onExpand: () -> Unit, onImageClick: 
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-        HtmlContent(sub.contentHtml, onImageClick = onImageClick)
+        HtmlContent(
+            sub.contentHtml,
+            onImageClick = onImageClick,
+            // 视频在 content 的 <video> 标签里（由 HTML 解析层提出），这里只补语音
+            audioUrl = sub.audioUrl,
+            audioDurationSec = sub.audioDurationSec,
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (sub.createdAtText.isNotBlank()) {
                 Text(sub.createdAtText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

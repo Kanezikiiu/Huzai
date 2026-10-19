@@ -35,7 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -310,18 +312,49 @@ private fun CommonHeader(t: HupuCommonTree, onBack: () -> Unit) {
         subtitle = "${formatCount(t.scorePersonCount)}人评分",
     )
     if (t.desc.isNotBlank()) {
-        Text(
-            t.desc,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 18.sp,
-            // 顶栏移出列表后不再吃 contentPadding，水平边距需自带（与子项流 16dp 左缘对齐）
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
-        )
+        // 1.224o：简介从"直接摊在页面上"改为**卡片**（与页面子项卡同款：14dp 圆角 + surface 底 + 12dp 内衬）。
+        // 1.224o：同时不再硬截断到 3 行 —— 默认收起到 4 行，超出时给一个「展开 / 收起」（原先真机看到的
+        //         是把长简介切掉只剩省略号的观感）；卡片下方补 4dp，与列表顶部 8dp 合计 12dp，
+        //         和列表内条目间距（10dp）同一量级，不再"贴着下一张卡"。
+        var expanded by remember(t.desc) { mutableStateOf(false) }
+        var overflows by remember(t.desc) { mutableStateOf(false) }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 2.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(12.dp),
+        ) {
+            Text(
+                t.desc,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) Int.MAX_VALUE else DESC_COLLAPSED_LINES,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { r -> if (!expanded) overflows = r.hasVisualOverflow },
+            )
+            if (overflows) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (expanded) "收起" else "展开",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
+
+/** 1.224o：简介收起时的行数（展开后不限） */
+private const val DESC_COLLAPSED_LINES = 4
 
 /** 子项行（评分对象）：头像 + 名称/说明 + 均分（人数在分数下方） + 热评（头像下方另起一行） */
 @Composable

@@ -65,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -109,6 +110,7 @@ import android.app.Activity
 import coil.compose.AsyncImage
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.offset
@@ -849,10 +851,26 @@ fun ThreadDetailOverlay(
                 progress.animateTo(0f, tween(120))
                 onBack()
             } catch (e: CancellationException) {
-                // 未过阈值松手 → 弹回原位
-                progress.animateTo(1f, tween(200))
+                // 未过阈值松手 → 弹回原位。
+                // 1.225l（真机反馈：偶发「左侧一条白边 + 整页右移不居中」）：
+                // 这里的回弹是 `animateTo`，如果这期间又发生一次返回手势/其它挂起操作，
+                // 回弹动画会被**取消**，progress 就永久停在 0.99x →
+                // 页面 `translationX = (1-progress)*width` 残留几个像素的右移，
+                // 于是左边露出下层白底、内容看着不居中。改为在 NonCancellable 里**直接置位**。
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    progress.snapTo(1f)
+                }
                 throw e
             }
+        }
+    }
+    // 兜底：任何浮层（楼中楼 / 图片查看器 / 编辑页…）打开时，页面必须处于「完全归位」态。
+    // 上面的手势动画若被中断，这里保证不会把半透明的右移状态带到浮层下面。
+    LaunchedEffect(floorStack.isNotEmpty(), imageViewer != null, editingTid != null) {
+        if ((floorStack.isNotEmpty() || imageViewer != null || editingTid != null) &&
+            progress.value < 1f
+        ) {
+            progress.snapTo(1f)
         }
     }
 
@@ -875,13 +893,70 @@ fun ThreadDetailOverlay(
 // 避免给承载视频 SurfaceView 的层级长期挂着 `graphicsLayer`
 //（真机崩溃报告里出现过框架的 surface 位置/缩放事务 → libgui.so）。
     val pageAnimating = progress.value < 0.999f
+
+    // 1.224o：正文里的**超链接**点击出口。
+    // · 虎扑站内帖子（bbs.hupu.com/123.html、hupu://bbs/topic/123）→ **应用内**再盖一篇
+    //   （PmThreadViewer 自带加载/翻页/楼中楼；它内部同样 provide 本处理器，所以能一直嵌下去）；
+    // · 站内网页 / 官方深链（huputiyu://score/detail、huputiyu://general/live、
+    //   huputiyu://webview/openencodeurl）→ **应用内 WebView 承载**（复用 embedPage 通道）。
+    //   ⚠️ 以前这些深链被直接丢给系统 → 被**官方客户端**接管（真机反馈）；
+    // · 其它外链 → 交给系统浏览器。
+    // 用 CompositionLocal 下发，主楼 / 一级回复 / 楼中楼四处共用，不必逐层传参。
+    var nestedTid by remember { mutableStateOf<String?>(null) }
+    // 1.224o：正文里的评分链接 → **在帖子页内**内嵌一层原生评分页（不切 Tab；
+    // 返回只回帖子，二级页计数天然正确）。null = 未打开。
+    var scoreEmbedded by remember {
+        mutableStateOf<com.java.myapplication.data.HupuUiSignals.ScoreDeepLink?>(null)
+    }
+    val handlePostLink: (String) -> Unit = { url ->
+        when (val target = com.java.myapplication.data.HupuLinks.resolve(url)) {
+            is com.java.myapplication.data.HupuLinks.Target.Thread -> nestedTid = target.tid
+            is com.java.myapplication.data.HupuLinks.Target.Web -> {
+                embedPage = com.java.myapplication.data.HupuEmbed(
+                    type = target.embedType,
+                    url = target.url,
+                    matchId = "",
+                )
+            }
+            is com.java.myapplication.data.HupuLinks.Target.User -> {
+                // 正文里的「@某人」（huputiyu://people/{id}）→ 应用内用户主页
+                if (HupuAccount.isLoggedIn) userPageStack.add(target.uid)
+                else HuzaiToast.show("请先在「我的」页登录")
+            }
+            is com.java.myapplication.data.HupuLinks.Target.ScoreItem -> {
+                // 评分对象详情（选手 / 条目）→ **就在帖子页内**盖一层原生评分页（内嵌模式）
+                scoreEmbedded = com.java.myapplication.data.HupuUiSignals.ScoreDeepLink.Item(
+                    bizType = target.bizType,
+                    bizNo = target.bizNo,
+                )
+            }
+            is com.java.myapplication.data.HupuLinks.Target.ScoreMatch -> {
+                // 对局评分 → 同上（内嵌页会自己用 matchId 在赛程里换算评分钥匙）
+                scoreEmbedded = com.java.myapplication.data.HupuUiSignals.ScoreDeepLink.Match(
+                    matchId = target.matchId,
+                    channel = target.channel,
+                )
+            }
+            null -> runCatching {
+                ctx.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.onFailure { HuzaiToast.show("无法打开链接") }
+        }
+    }
+    CompositionLocalProvider(LocalPostLinkClick provides handlePostLink) {
     Box(
         Modifier
             .fillMaxSize()
             .zIndex(2f)
             .then(
                 if (pageAnimating) {
-                    Modifier.graphicsLayer { translationX = (1f - progress.value) * size.width }
+                    Modifier.graphicsLayer {
+                        // 1.225l：亚像素级残留也会在左边露出一条白边，这里把「几乎归位」直接吸到 0
+                        val off = (1f - progress.value) * size.width
+                        translationX = if (kotlin.math.abs(off) < 8f) 0f else off
+                    }
                 } else {
                     Modifier
                 },
@@ -1639,7 +1714,47 @@ item(key = "r-count") {
         // 1.178: 结构化正文（赛事战报等）承载页——盖入式二级页，按 url 键控（重开重建 WebView）
         embedPage?.let { e ->
             androidx.compose.runtime.key(e.url) {
-                EmbedWebPage(e) { embedPage = null }
+                // 1.224o：战报页里的链接一律**在应用内**处理（帖子 / 评分页 / 用户主页），别再外抛
+                EmbedWebPage(
+                    embed = e,
+                    onLink = { t ->
+                        // 1.225d：**不要先关掉战报页**。
+                        // 之前每个分支都 `embedPage = null`，于是 Compose 先渲染回帖子页、再盖新层，
+                        // 表现为"先闪回帖子，然后才跳转"。现在保持战报页在下面，目标直接叠在它上面
+                        // （帖子 z1200 / 评分 z1210 都高于战报页 z2），返回时自然回到战报页。
+                        val handled = when (t) {
+                            is com.java.myapplication.data.HupuLinks.Target.Thread -> {
+                                nestedTid = t.tid
+                                true
+                            }
+                            is com.java.myapplication.data.HupuLinks.Target.ScoreItem -> {
+                                scoreEmbedded = com.java.myapplication.data.HupuUiSignals.ScoreDeepLink.Item(
+                                    bizType = t.bizType,
+                                    bizNo = t.bizNo,
+                                )
+                                true
+                            }
+                            is com.java.myapplication.data.HupuLinks.Target.ScoreMatch -> {
+                                scoreEmbedded = com.java.myapplication.data.HupuUiSignals.ScoreDeepLink.Match(
+                                    matchId = t.matchId,
+                                    channel = t.channel,
+                                )
+                                true
+                            }
+                            is com.java.myapplication.data.HupuLinks.Target.User -> {
+                                if (HupuAccount.isLoggedIn) userPageStack.add(t.uid)
+                                else HuzaiToast.show("请先在「我的」页登录")
+                                true
+                            }
+                            else -> false
+                        }
+                        handled
+                    },
+                                    // 1.225g：上层有浮层（帖子查看器 / 评分详情 / 用户主页 / 图片查看器 / 编辑页）时，
+                    // 系统返回**不应**由战报页处理，否则会把战报页关掉。
+                    backEnabled = nestedTid == null && scoreEmbedded == null &&
+                        userPageStack.isEmpty() && imageViewer == null && editingTid == null,
+                ) { embedPage = null }
             }
         }
         // 1.112: 编辑页（盖入式，与用户主页同级的嵌套二级页）
@@ -1654,5 +1769,23 @@ item(key = "r-count") {
                 },
             )
         }
+
+        // 1.224o：正文里点开的「站内帖子」链接 —— 盖入式查看器。
+        // zIndex 1200：盖住本页所有浮层（回复框 1000 / 面板 998 / 编辑页 999…）。
+        // 它内部同样 provide LocalPostLinkClick（递归），所以帖子套帖子可以一直点下去。
+        nestedTid?.let { tid ->
+            PmThreadViewer(tid, zIndex = 1200f) { nestedTid = null }
+        }
+
+        // 1.224o：正文里的「评分链接」→ **内嵌原生评分页**（ScorePage 内嵌模式）。
+        // 只渲染选手/对局详情浮层，不渲染评分首页，也不切 Tab；关闭后自动卸载。
+        scoreEmbedded?.let { req ->
+            ScorePage(
+                modifier = Modifier.fillMaxSize().zIndex(1210f),
+                embedded = req,
+                onEmbeddedClosed = { scoreEmbedded = null },
+            )
+        }
+    }
     }
 }

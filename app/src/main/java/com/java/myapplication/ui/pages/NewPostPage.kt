@@ -50,6 +50,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import com.java.myapplication.ui.components.huzaiFieldColors
 import androidx.compose.material3.Text
@@ -103,6 +104,13 @@ import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.HuzaiToast
+import com.java.myapplication.ui.glass.GlassSwitch
+import com.java.myapplication.ui.glass.LiquidGlassButton
+import com.java.myapplication.ui.glass.liquidElevation
+import androidx.compose.foundation.border
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.java.myapplication.ui.glass.LiquidGlassCard
 
 /**
  * 1.107: 发帖页（盖入式二级页，从「我的」页右上角铅笔进入）。
@@ -157,6 +165,11 @@ fun NewPostPage(
     val bodyState = remember { TextFieldState("") }
     val attachments = remember { mutableStateListOf<HupuDraft.Attachment>() }
     var showVoteSheet by remember { mutableStateOf(false) }
+    // 1.226：插入链接（两种形态由「卡片显示」决定）
+    var showLinkDialog by remember { mutableStateOf(false) }
+    var linkUrl by remember { mutableStateOf("") }
+    var linkText by remember { mutableStateOf("") }
+    var linkCard by remember { mutableStateOf(false) }
     var voteCreating by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(0) }
     var publishing by remember { mutableStateOf(false) }
@@ -232,17 +245,52 @@ fun NewPostPage(
 
     /** 移除全部图片 / 投票（选视频时与媒体互斥）：清空附件并把正文里的占位符一并抹掉 */
     fun removeAllMedia() {
+        // 1.226：只清「图片/投票」——链接不是媒体，**必须保留**
+        // （真机反馈：先插链接再插视频，链接会全部消失，原因就是这里把正文里
+        //   所有占位符字符都抹掉了，连链接的 token 一起删了）
+        val removed = attachments
+            .filter { it is HupuDraft.Attachment.Image || it is HupuDraft.Attachment.Vote }
+            .map { it.token }
+            .toSet()
         attachments.removeAll { it is HupuDraft.Attachment.Image || it is HupuDraft.Attachment.Vote }
+        if (removed.isEmpty()) return
         bodyState.edit {
             val txt = asCharSequence().toString()
             for (i in txt.length - 1 downTo 0) {
-                if (HupuDraft.isToken(txt[i])) replace(i, i + 1, "")
+                if (txt[i] in removed) replace(i, i + 1, "")
             }
         }
     }
 
     fun addImageBlock(url: String) {
         insertAttachment(HupuDraft.Attachment.Image(HupuDraft.nextToken(), url))
+    }
+
+    /**
+     * 1.226：插入链接。
+     *
+     * · **不勾卡片** → 与图片一样插在**光标处**，正文里就是一句可点的文字（位置可自由决定）。
+     * · **勾卡片** → 官方把它当独立卡片展示，所以固定追加到**正文末尾**（不受光标影响）。
+     */
+    fun insertLink(rawUrl: String, text: String, card: Boolean) {
+        // 1.226：补全协议（`www.baidu.com` → `https://www.baidu.com`），
+        // 否则服务端/浏览器会按相对路径拼成 `https://bbs.hupu.com/www.baidu.com`
+        val url = HupuDraft.normalizeUrl(rawUrl)
+        if (url.isEmpty()) return
+        val show = text.trim().ifEmpty { url }
+        val token = HupuDraft.nextToken()
+        val att = HupuDraft.Attachment.Link(token, url, show, card)
+        if (card) {
+            attachments.add(att)
+            val txt = bodyState.text.toString()
+            // 卡片固定在末尾：先断开现有最后一行，再写入占位符
+            val needBreak = txt.isNotEmpty() && !txt.endsWith("\n")
+            bodyState.edit {
+                replace(length, length, (if (needBreak) "\n" else "") + token.toString())
+            }
+        } else {
+            insertAttachment(att)
+        }
     }
 
     // ---------- 1.117: 占位符的显示层 ----------
@@ -421,7 +469,11 @@ fun NewPostPage(
             val html: String
             var fmt: String? = null
             if (isVideo) {
-                html = HupuPostApi.buildContent(plainText(), emptyList())
+                // 1.226：视频帖也要带上正文的富节点（链接/图片）——
+                // 之前这里用纯文本 content，链接被整段丢掉（真机反馈：先插链接再插视频，链接消失）
+                val payload = HupuBlocks.serialize(HupuDraft.toBlocks(bodyText(), attachments))
+                html = payload.contentHtml
+                fmt = payload.formatJson
             } else {
                 val payload = HupuBlocks.serialize(HupuDraft.toBlocks(bodyText(), attachments))
                 html = payload.contentHtml
@@ -477,9 +529,16 @@ fun NewPostPage(
         }
     }
 
+    // 1.226b：给「插入链接」弹窗准备毛玻璃采样源（与「我的」页弹窗同一套做法）
+    val dialogBg = MaterialTheme.colorScheme.background
+    val dialogBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop {
+        drawRect(dialogBg)
+        drawContent()
+    }
     Box(
         Modifier
             .fillMaxSize()
+            .layerBackdrop(dialogBackdrop)
             .zIndex(1f)
             .graphicsLayer { translationX = (1f - progress.value) * size.width }
             .background(MaterialTheme.colorScheme.background)
@@ -505,8 +564,10 @@ fun NewPostPage(
                         val dark = isAppDarkTheme()
                         LiquidButton(
                             onClick = { publish() },
-                            fill = if (canPub) MaterialTheme.colorScheme.primary else buttonFill(dark),
-                            border = if (canPub) Color.Transparent else buttonBorder(dark),
+                            // 1.224o：发布 / 保存统一为**玻璃底 + 标准描边**（与「关注/创建投票/完成」等按钮完全一致）——
+// 之前给它加了主题色描边，显得和其它按钮不是一套；可用性只用**文字颜色**表达。
+                            fill = buttonFill(dark),
+                            border = buttonBorder(dark),
                             // 1.223d: 圆角 16 → 20dp（真机反馈「稍微增加一点点」）
                             shape = RoundedCornerShape(20.dp),
                             height = 40.dp,
@@ -516,7 +577,7 @@ fun NewPostPage(
                                 if (editTid != null) "保存" else "发布",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (canPub) MaterialTheme.colorScheme.onPrimary
+                                color = if (canPub) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -885,6 +946,13 @@ fun NewPostPage(
                                     limit = att.limit,
                                     onRemove = { removeAttachment(att) },
                                 )
+                                // 1.226：链接附件卡（卡片模式下带「卡片」角标）
+                                is HupuDraft.Attachment.Link -> LinkBlockCard(
+                                    text = att.text,
+                                    url = att.url,
+                                    card = att.card,
+                                    onRemove = { removeAttachment(att) },
+                                )
                             }
                         }
                     }
@@ -966,6 +1034,20 @@ fun NewPostPage(
                                else MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.width(10.dp))
+                    // 1.226：插入链接（视频帖也允许，官方同款）
+                    LiquidIconButton(
+                        icon = HupuIcons.Globe,
+                        contentDescription = "插入链接",
+                        onClick = {
+                            linkUrl = ""
+                            linkText = ""
+                            linkCard = false
+                            showLinkDialog = true
+                        },
+                        iconSize = 22.dp,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         when {
                             hasVideo -> "视频帖不支持图片 / 投票"
@@ -978,7 +1060,7 @@ fun NewPostPage(
 
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "提示：图片 / 投票会插到光标处（正文里显示为〔图片N〕/〔投票N〕标记）；删掉标记会一并删除该内容",
+                    "提示：图片 / 投票 / 链接会插到光标处（正文里显示为〔图片N〕/〔投票N〕/链接文字标记）；勾选「卡片显示」的链接固定在正文末尾；删掉标记会一并删除该内容",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                 )
@@ -1099,4 +1181,179 @@ fun NewPostPage(
             },
         onDismiss = { if (!voteCreating) showVoteSheet = false },
     )
+    // 1.226b：插入链接面板 —— 直接复用「退出登录」那套毛玻璃弹窗
+    // （LiquidGlassCard：弹性入场 + 淡出出场、点遮罩/返回可关，与全站确认弹窗完全同源）
+    if (showLinkDialog) {
+        LiquidGlassCard(
+            backdrop = dialogBackdrop,
+            onDismiss = { showLinkDialog = false },
+        ) { close ->
+            Text(
+                "插入链接",
+                Modifier.padding(24.dp, 24.dp, 24.dp, 10.dp),
+                style = androidx.compose.ui.text.TextStyle(
+                    MaterialTheme.colorScheme.onSurface,
+                    20.sp,
+                    FontWeight.Medium,
+                ),
+            )
+            Column(
+                Modifier.padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                GlassField(
+                    value = linkUrl,
+                    onValueChange = { linkUrl = it },
+                    placeholder = "链接地址（https://…）",
+                )
+                GlassField(
+                    value = linkText,
+                    onValueChange = { linkText = it },
+                    placeholder = "显示文字（可留空）",
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GlassSwitch(checked = linkCard, onCheckedChange = { linkCard = it })
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "卡片显示",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Text(
+                    if (linkCard) "将作为卡片插入到正文末尾"
+                    else "将作为普通文字插入到当前光标位置",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                Modifier
+                    .padding(24.dp, 16.dp, 24.dp, 24.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LiquidGlassButton(
+                    text = "取消",
+                    accent = false,
+                    modifier = Modifier.weight(1f),
+                    onClick = { close() },
+                )
+                LiquidGlassButton(
+                    text = "插入",
+                    accent = true,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (linkUrl.trim().isEmpty()) {
+                            com.java.myapplication.ui.components.HuzaiToast.show("请填写链接地址")
+                            return@LiquidGlassButton
+                        }
+                        insertLink(linkUrl, linkText, linkCard)
+                        com.java.myapplication.ui.components.HuzaiToast.show(
+                            if (linkCard) "链接卡片已添加到正文末尾" else "链接已插入",
+                        )
+                        close()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 1.226：编辑器里的「链接」附件卡。
+ * 卡片模式带角标提示它会被放到正文末尾；普通模式则随光标就地插入。
+ */
+@androidx.compose.runtime.Composable
+private fun LinkBlockCard(
+    text: String,
+    url: String,
+    card: Boolean,
+    onRemove: () -> Unit,
+) {
+    Column(
+        Modifier
+            .width(240.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            .padding(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                HupuIcons.Globe,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (card) "链接卡片" else "链接",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                HupuIcons.Close,
+                contentDescription = "移除链接",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(16.dp)
+                    .clickable { onRemove() },
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text.ifBlank { url },
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            url,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 1.226：与全站一致的玻璃输入框（链接面板用） */
+@androidx.compose.runtime.Composable
+private fun GlassField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (value.isEmpty()) {
+            Text(
+                placeholder,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = androidx.compose.material3.LocalTextStyle.current.copy(
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }

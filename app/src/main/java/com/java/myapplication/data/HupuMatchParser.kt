@@ -249,7 +249,10 @@ object HupuMatchParser {
             for (k in 0 until subArr.length()) {
                 val s = subArr.optJSONObject(k) ?: continue
                 val sc = s.optString("commentContent")
-                if (sc.isEmpty() || sc == "null") continue
+                // 1.225j：纯语音子评论的正文可能为空（内容都在语音里），不能因此丢掉
+                val subAudio = HupuParser.audioFromComment(s)
+                val hasOther = s.optJSONArray("commentContentImages")?.length()?.let { it > 0 } == true
+                if ((sc.isEmpty() || sc == "null") && subAudio.first.isBlank() && !hasOther) continue
                 // 递归：子回复自己的 subCommentList 是「回复的回复」（孙评论，descendantCount>0 时内嵌），
                 // 官方楼中楼将其缩进挂在该子回复下方——解析层保留完整层级，渲染层决定展示深度
                 subs += parseScoreComment(s)
@@ -261,14 +264,23 @@ object HupuMatchParser {
                 arr.optJSONObject(k)?.optString("commentContent")?.takeIf { it.isNotBlank() && it != "null" }
             }
         } ?: emptyList()
+        // 1.224p：语音评论（commentAncillaryContents[] 中 commentContentType=AUDIO）。
+        // 官方在正文里留一个 "[语音]" 占位，语音条已单独渲染 → 去掉这段占位文字，避免重复。
+        // 1.225j：兼容两种键名 + 直接字段（楼中楼子评论常见 `ancillaryContents`）
+        val (audioUrl, audioDur) = HupuParser.audioFromComment(c)
+        val rawContent = clean(c.optString("commentContent"))
+        val content = if (audioUrl.isNotBlank()) HupuParser.stripAudioPlaceholder(rawContent) else rawContent
         return HupuScoreComment(
             commentId = clean(c.optString("commentId")),
             userName = clean(c.optString("commentUserName")).ifEmpty { "虎扑JR" },
             userHead = clean(c.optString("commentUserHeadImg")).ifEmpty { null },
             // 1.163: 评论作者数字 id（点作者头像/昵称进用户主页用；官方 JSON 字段 commentUserId）
             userId = clean(c.optString("commentUserId")),
-            content = clean(c.optString("commentContent")),
+            content = content,
             images = imgs,
+            // 1.224p：语音附件（见上）
+            audioUrl = audioUrl,
+            audioDurationSec = audioDur,
             score = c.optInt("score", 0),
             lightCount = c.optLong("lightCount", 0L),
             date = clean(c.optString("commentDate")),
@@ -297,7 +309,10 @@ object HupuMatchParser {
             for (i in 0 until arr.length()) {
                 val c = arr.optJSONObject(i) ?: continue
                 val content = c.optString("commentContent")
-                if (content.isEmpty() && c.optJSONArray("commentContentImages") == null) continue
+                // 1.225j：纯语音评论正文可能为空，不能因正文空就丢掉
+                if (content.isEmpty() && c.optJSONArray("commentContentImages") == null &&
+                    HupuParser.audioFromComment(c).first.isBlank()
+                ) continue
                 out += parseScoreComment(c)
             }
             ScoreCommentState(
@@ -321,7 +336,9 @@ object HupuMatchParser {
             val out = mutableListOf<HupuScoreComment>()
             for (i in 0 until arr.length()) {
                 val c = arr.optJSONObject(i) ?: continue
-                if (c.optString("commentContent").isEmpty() && c.optJSONArray("commentContentImages") == null) continue
+                if (c.optString("commentContent").isEmpty() && c.optJSONArray("commentContentImages") == null &&
+                    HupuParser.audioFromComment(c).first.isBlank()
+                ) continue
                 out += parseScoreComment(c)
             }
             out
@@ -357,7 +374,9 @@ object HupuMatchParser {
             val out = mutableListOf<HupuScoreComment>()
             for (i in 0 until arr.length()) {
                 val c = arr.optJSONObject(i) ?: continue
-                if (c.optString("commentContent").isEmpty() && c.optJSONArray("commentContentImages") == null) continue
+                if (c.optString("commentContent").isEmpty() && c.optJSONArray("commentContentImages") == null &&
+                    HupuParser.audioFromComment(c).first.isBlank()
+                ) continue
                 out += parseScoreComment(c)
             }
             ScoreCommentState(

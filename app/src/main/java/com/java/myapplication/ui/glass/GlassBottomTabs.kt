@@ -3,13 +3,18 @@ package com.java.myapplication.ui.glass
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +22,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -28,12 +34,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
@@ -56,7 +65,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
-
 @Composable
 fun GlassBottomTabs(
     selectedTabIndex: () -> Int,
@@ -65,6 +73,9 @@ fun GlassBottomTabs(
     backdrop: Backdrop,
     tabsCount: Int,
     modifier: Modifier = Modifier,
+    /** 1.224o：诊断用——外部（MainActivity）把 Tab 栏的隐藏进度透进来，
+     *  用来判断「整栏被向下平移、底部被屏幕裁掉」这种"看起来变矮"。非诊断包不使用。 */
+    debugTabProgress: Float = 0f,
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = !isAppDarkTheme()
@@ -77,8 +88,14 @@ fun GlassBottomTabs(
         else Color(0xFF121212).copy(0.4f)
     val tabsBackdrop = rememberLayerBackdrop()
 
+    // 1.224o（诊断开关）：true 时在 Tab 栏上方叠加一行实测数据。
+    // 目的：把「莫名缩短」从猜测变成数据 —— 到底是整栏高度/宽度变了，还是胶囊/内容被缩放带偏，
+    // 哪个状态量（pressProgress / scale / panelOffset / constraints）在异常区间。
+    // 定位完把这里改成 false 即可（不改动任何布局代码，零残留）。
+    var dbgSize by remember { mutableStateOf(IntSize.Zero) }
+
     BoxWithConstraints(
-        modifier,
+        modifier.onSizeChanged { dbgSize = it },
         // 1.200：内容若比容器窄（宽屏 480dp 上限生效等）会贴左，看起来就是「Tab 栏左移」
         // → 改为居中；但胶囊 Box 的基准位置必须显式钉在左侧（见下方 .align），
         // 否则它会跟着一起居中（1.199 踩过：胶囊右移约 1.5 格）
@@ -332,5 +349,53 @@ fun GlassBottomTabs(
                 .height(56f.dp)
                 .fillMaxWidth(1f / tabsCount)
         )
+
+        // 1.224o（诊断浮层）：仅 TAB_BAR_DEBUG 时显示。真机出现「缩短」时截一张图即可定位：
+        //  · bar 高度应为 64dp（若显示 56 或被压小 → 是整栏被缩放/裁剪）
+        //  · maxW 与 slot 可判断宽度/格子是否被重新约束
+        //  · press / scale 应为 0.00 / 1.00（若停在别的值 → 动画未归位）
+        if (TAB_BAR_DEBUG) {
+            Text(
+                buildString {
+                    append("bar ")
+                    append(with(density) { dbgSize.width.toDp().value.toInt() })
+                    append("×")
+                    append(with(density) { dbgSize.height.toDp().value.toInt() })
+                    append("dp  maxW ")
+                    append(with(density) { constraints.maxWidth.toDp().value.toInt() })
+                    append("  slot ")
+                    append("%.1f".format(with(density) { tabWidth.toDp().value }))
+                    append("\npress ")
+                    append("%.2f".format(dampedDragAnimation.pressProgress))
+                    append("  scale ")
+                    append("%.2f".format(dampedDragAnimation.scaleX))
+                    append("/")
+                    append("%.2f".format(dampedDragAnimation.scaleY))
+                    append("  idx ")
+                    append(currentIndex)
+                    append("  off ")
+                    append("%.1f".format(panelOffset / density.density))
+                    append("  tp ")
+                    append("%.3f".format(debugTabProgress))
+                },
+                color = Color.White,
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+        }
     }
 }
+
+/**
+ * 1.224o：Tab 栏诊断浮层开关。
+ *
+ * **当前为 false（不显示）** —— 「Tab 栏莫名缩短」是低频问题（真机一时复现不出来），
+ * 已把诊断能力留在代码里：需要取证时把这里改成 true，出一个包即可在栏上方看到
+ * `bar 尺寸 / maxW / slot / press / scale / off / tp` 一行数据。
+ * 定位思路见该浮层处的注释（每个字段对应一条可疑链路）。
+ */
+private const val TAB_BAR_DEBUG = false

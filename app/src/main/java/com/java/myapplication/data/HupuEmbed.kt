@@ -26,6 +26,9 @@ data class HupuEmbed(
     val title: String
         get() = when (type) {
             "iframe-match" -> "比赛战报"
+            // 1.224o：正文超链接被解析成「应用内网页」时复用本承载页，按落点给合适的顶栏文案
+            "score" -> "评分详情"
+            "link" -> "网页"
             else -> "嵌入内容"
         }
 
@@ -33,6 +36,8 @@ data class HupuEmbed(
     val subtitle: String
         get() = when (type) {
             "iframe-match" -> "点击查看完整战报"
+            "score" -> "点击查看评分详情"
+            "link" -> "点击查看"
             else -> "点击查看"
         }
 
@@ -40,6 +45,8 @@ data class HupuEmbed(
     val badge: String
         get() = when (type) {
             "iframe-match" -> "战报"
+            "score" -> "评分"
+            "link" -> "网页"
             else -> "嵌入"
         }
 }

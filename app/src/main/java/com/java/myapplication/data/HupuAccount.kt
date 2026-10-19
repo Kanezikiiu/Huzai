@@ -346,11 +346,21 @@ object HupuAccount {
     internal const val GAMES_SCORE_VERSION = "8.2.99"
     // 1.147: 版本段按官方 live bundle 分实例对齐——publish 走 ZP 固定实例 `/1/8.0.99`、
     // light/cancelLight 走 em() `/9/8.0.99`（保持原值，实测可发）；score/save 见 GAMES_SCORE_VERSION。
-    private fun gamesPost(path: String, body: JSONObject, prefix: Int = 1, version: String = "8.0.99"): JSONObject? {
+    private fun gamesPost(
+        path: String,
+        body: JSONObject,
+        prefix: Int = 1,
+        version: String = "8.0.99",
+        /** 1.224o：UA 可覆盖 —— 个别写接口（评论发布）对"是否客户端"更敏感 */
+        ua: String = HupuApi.DESKTOP_UA,
+    ): JSONObject? {
         return try {
             val req = Request.Builder()
                 .url("https://games.mobileapi.hupu.com/$prefix/$version/bplcommentapi" + path)
-                .header("User-Agent", HupuApi.DESKTOP_UA)
+                .header("User-Agent", ua)
+                // 1.224o：官方网页端每个请求都带 reqId（每次页面加载一个 UUID）——
+                // 评论发布对"客户端特征"更敏感，这里按同形态补上。
+                .header("reqId", java.util.UUID.randomUUID().toString())
                 .header("Cookie", loadCookieHeader())
                 .header("Referer", "https://m.hupu.com/score/detail.html")
                 .header("Origin", "https://m.hupu.com")
@@ -408,14 +418,16 @@ object HupuAccount {
         prefix: Int,
         family: String,
         baseVersion: String,
+        /** 1.224o：UA 可覆盖（评论发布对"是否客户端"更敏感） */
+        ua: String = HupuApi.DESKTOP_UA,
         bodyProvider: () -> JSONObject,
     ): JSONObject? {
         val stored = HupuPrefs.gamesVersionOf(family)
         val start = if (stored.isNotEmpty()) stored else baseVersion
-        var o = gamesPost(path, bodyProvider(), prefix, start)
+        var o = gamesPost(path, bodyProvider(), prefix, start, ua)
         if (!isVersionTooOld(o)) return o
         for (v in versionLadder(start)) {
-            val r = gamesPost(path, bodyProvider(), prefix, v)
+            val r = gamesPost(path, bodyProvider(), prefix, v, ua)
             if (r != null && !isVersionTooOld(r)) {
                 HupuPrefs.saveGamesVersion(family, v)
                 return r
@@ -498,18 +510,16 @@ object HupuAccount {
         images: List<String> = emptyList(),
     ): ScorePublishResult =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val body = buildScorePublishBody(bizType, bizNo, content, parentCommentId, subjectId, images)
-            val o = gamesWriteHealing("/bpl/comment/m/publish", 1, "publish", "8.0.99") { body }
-            val err = gamesErrOf(o)
-            if (err != null) return@withContext ScorePublishResult(err)
-            // 1.150: 官方回包 data.commentId / data.subjectId（bundle: C=g.data; I.commentId / I.subjectId）——
-            // 取真实 id 建乐观条目，服务端稍后返回同一条时按 id 去重，不再出现「两条我的回复」
-            val data = o?.optJSONObject("data")
-            ScorePublishResult(
-                error = null,
-                commentId = data?.optString("commentId").orEmpty(),
-                subjectId = data?.optString("subjectId").orEmpty(),
-            )
+            // 1.224o：**虎扑已把评分评论写入限制为官方客户端**。
+            // 服务端对非 App 请求恒回「评论发布失败，请使用客户端互动」；
+            // 已实测排除：前缀（/1/、/9/）× UA（桌面 / 移动 / "kanqiu" App WebView 形态）×
+            // 版本（8.0.99 / 8.2.99）全部被拒；官方网页 bundle 里也只有 App 环境（isHupu）
+            // 才带 `X-Hupu-Token` 发这条请求，浏览器点提交只会弹「打开虎扑APP 即刻参与评分」。
+            // 因此这里直接给出明确提示，不再发注定失败的请求（UI 侧也已隐藏所有写入入口）。
+            // ⚠️ 若将来虎扑放开：删除这段早退，恢复
+            //   gamesWriteHealing("/bpl/comment/m/publish", 1, "publish2_1", "8.2.99", 移动UA) { body }
+            // 的单次请求即可。
+            ScorePublishResult("评分评论与回复仅支持虎扑官方客户端（打分不受影响）")
         }
 
     /** 评分评论发布结果：error==null 即成功；commentId/subjectId 为服务端返回的新评论标识（可能为空串）。 */

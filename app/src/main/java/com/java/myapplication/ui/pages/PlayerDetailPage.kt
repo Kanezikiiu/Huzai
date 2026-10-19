@@ -520,6 +520,8 @@ fun PlayerDetailOverlay(
                 onClearDismiss = { stickerClearTarget = null },
             )
         }
+        // 1.224o：评分评论回复框整体停用（虎扑已限制为官方客户端，服务端会回"请使用客户端互动"）
+        if (SCORE_COMMENT_WRITE_ENABLED)
         replyTarget?.let { t ->
             // 覆盖式表情面板：贴屏底、高度 = 键盘峰值（微信式），键盘作为系统窗口盖其上方
             if (replyEmojiOpen) {

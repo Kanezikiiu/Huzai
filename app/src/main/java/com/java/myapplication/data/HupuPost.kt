@@ -381,7 +381,8 @@ object HupuPostApi {
             put("videoUrl", videoUrl)
             put("videoSnapshotUrl", videoCover ?: "")
             put("videoSource", "")
-            put("format", buildVideoFormat(videoUrl, videoCover, videoBaseName, contentText))
+            // 1.226：把正文里的链接/图片（format.jsonV3）一并合进视频帖的 format
+            put("format", buildVideoFormatWithRich(videoUrl, videoCover, videoBaseName, contentText, format))
         } else if (!format.isNullOrBlank()) {
             // 1.113: 投票帖的 format（含 jsonV3 投票节点）
             put("format", format)
@@ -495,6 +496,32 @@ object HupuPostApi {
      *   videoInfo:{ key, remoteUrl:播放地址, coverUrl:封面 } }
      * key = base64(视频文件名 + 毫秒时间戳)，仅作唯一标识（官方用 btoa(baseVideoName + Date.now())）。
      */
+    /**
+     * 1.226：视频帖的 format，**并把正文里的富节点（链接卡片/行内链接/图片）合并进去**。
+     *
+     * 视频帖原本只发 `slateValue + videoInfo`，正文里的链接因此没有 jsonV3 节点，
+     * 服务端会把它整段丢掉（真机反馈：先插链接再插视频，发出去链接全没了）。
+     */
+    internal fun buildVideoFormatWithRich(
+        videoUrl: String,
+        videoCover: String?,
+        videoBaseName: String?,
+        contentText: String,
+        richFormat: String?,
+    ): String {
+        val base = runCatching { JSONObject(buildVideoFormat(videoUrl, videoCover, videoBaseName, contentText)) }
+            .getOrElse { JSONObject() }
+        if (!richFormat.isNullOrBlank()) {
+            runCatching {
+                val r = JSONObject(richFormat)
+                r.optString("htmlV3").takeIf { it.isNotBlank() }?.let { base.put("htmlV3", it) }
+                r.optJSONObject("jsonV3")?.let { base.put("jsonV3", it) }
+                r.optJSONArray("imgList")?.let { base.put("imgList", it) }
+            }
+        }
+        return base.toString()
+    }
+
     private fun buildVideoFormat(
         videoUrl: String,
         videoCover: String?,

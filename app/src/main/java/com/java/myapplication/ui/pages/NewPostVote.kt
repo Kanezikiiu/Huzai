@@ -9,6 +9,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import com.java.myapplication.ui.components.SortBar
+import com.java.myapplication.ui.components.LiquidIconButton
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.java.myapplication.data.SortTab
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,7 +52,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +78,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -172,29 +177,27 @@ internal fun VoteBlockCard(
     }
 }
 
-/** 1.119: 「最多可选」步进按钮（− / + 文本，避免依赖扩展图标库） */
+/**
+ * 1.224o：「最多可选」步进按钮 —— 升级为 **kyant 液态玻璃按钮**（与发帖页工具按钮同源：
+ * 液体按压形变 + 落影 + 玻璃底 + 极淡描边），尺寸按面板内联场景收到 30dp。
+ * 不可用时只置灰 tint（与 LiquidIconButton 约定一致）。
+ */
 @Composable
-internal fun StepBtn(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(26.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 1f else 0.4f))
-            .clickable(enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        )
-    }
+internal fun StepBtn(icon: ImageVector, desc: String, enabled: Boolean, onClick: () -> Unit) {
+    LiquidIconButton(
+        icon = icon,
+        contentDescription = desc,
+        onClick = onClick,
+        size = 30.dp,
+        iconSize = 16.dp,
+        enabled = enabled,
+        tint = if (enabled) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+    )
 }
 
 /**
- * 1.113: 创建投票面板（自研半屏面板，2~10 个选项）。
+ * 1.113: 创建投票面板（自研半屏面板，2~30 个选项）。
  * 1.119: 支持单选（radio / limit 1）与多选（checkbox / limit N）。
  * 1.224f: 由 ModalBottomSheet 改为自研半屏面板（性能）。
  * 点击「创建投票」后先调 POST /api/v1/votes 拿 voteId，再由页面插入块。
@@ -242,11 +245,18 @@ internal fun VoteCreateSheet(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (multi) "多选 · 2~10 个选项，可同时选择多项" else "单选 · 2~10 个选项",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(Modifier.height(12.dp))
+            // 1.224o：**投票标题提到模式控件之上**。
+            // 理由：标题是公共字段（单选 / 多选都只是"选项怎么选"，与标题无关），
+            // 先填标题、再选模式、最后填选项，阅读与填写顺序更顺；切模式也不会打断标题。
+            OutlinedTextField(
+                colors = huzaiFieldColors(),
+                value = voteTitle,
+                onValueChange = { if (it.length <= 50) voteTitle = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("投票标题", fontSize = 15.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
             )
             Spacer(Modifier.height(12.dp))
             // 1.224n：单选 / 多选改为**与发帖页「类型」同款的分段控件**（iOS 式玻璃分段）。
@@ -277,7 +287,7 @@ internal fun VoteCreateSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.width(6.dp))
-                    StepBtn(label = "−", enabled = limit > 2) { limit-- }
+                    StepBtn(icon = HupuIcons.Remove, desc = "减少可选数量", enabled = limit > 2) { limit-- }
                     Text(
                         "$limit",
                         fontSize = 15.sp,
@@ -285,18 +295,15 @@ internal fun VoteCreateSheet(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 10.dp),
                     )
-                    StepBtn(label = "+", enabled = limit < maxLimit) { limit++ }
+                    StepBtn(icon = HupuIcons.Add, desc = "增加可选数量", enabled = limit < maxLimit) { limit++ }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                colors = huzaiFieldColors(),
-                value = voteTitle,
-                onValueChange = { if (it.length <= 50) voteTitle = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("投票标题", fontSize = 15.sp) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+            Spacer(Modifier.height(6.dp))
+            // 1.224o：模式说明紧贴模式行（它随单选/多选变化，放在标题上方会与标题抢主次）
+            Text(
+                if (multi) "多选 · 2~30 个选项，可同时选择多项" else "单选 · 2~30 个选项",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             choices.forEachIndexed { i, c ->
@@ -311,56 +318,85 @@ internal fun VoteCreateSheet(
                         shape = RoundedCornerShape(12.dp),
                     )
                     if (choices.size > 2) {
-                        IconButton(onClick = { choices.removeAt(i) }) {
-                            Icon(
-                                Icons.Rounded.Close,
-                                contentDescription = "删除选项",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Spacer(Modifier.width(8.dp))
+                        // 1.224o：删除选项 → kyant 液态玻璃按钮（与「添加选项 / 创建投票 / 加减」同源同款）
+                        LiquidIconButton(
+                            icon = Icons.Rounded.Close,
+                            contentDescription = "删除选项",
+                            onClick = { choices.removeAt(i) },
+                            size = 34.dp,
+                            iconSize = 18.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            if (choices.size < 10) {
-                Text(
-                    "+ 添加选项",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = !creating) { choices.add(""); addTick++ }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                )
+            if (choices.size < 30) {
+                // 1.224o：「添加选项」升级为 kyant 液态玻璃按钮（与发帖页工具按钮同源同款）
+                val addDark = isAppDarkTheme()
+                LiquidButton(
+                    onClick = { if (!creating) { choices.add(""); addTick++ } },
+                    fill = buttonFill(addDark),
+                    border = buttonBorder(addDark),
+                    shape = RoundedCornerShape(20.dp),
+                    height = 38.dp,
+                    contentPadding = 14.dp,
+                    isInteractive = !creating,
+                ) {
+                    Icon(
+                        HupuIcons.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        "添加选项",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (creating) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
             Spacer(Modifier.height(18.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (canSubmit) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-                    )
-                    .clickable(enabled = canSubmit) {
-                        onSubmit(voteTitle.trim(), picked(), modeType, modeLimit)
-                    }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center,
+            // 1.224o：「创建投票」升级为 kyant 液态玻璃按钮（主按钮：可用=主题色实心；
+            // 不可用=玻璃底 + 次要文字，与发帖页「发布」同一套状态语言）
+            //
+            // ⚠️ 状态判据必须把 `creating` 也算进"进行中"：canSubmit 里含 `!creating`，
+            // 点下去的同一帧它就会翻成 false —— 若只用 canSubmit 决定底色，
+            // 按钮会瞬间从实心主色切到近白玻璃底 + 白色转圈（白圈画在白底上＝看不见），
+            // 真机表现为"点一下闪白一下"（慢放截图已确认）。
+            val submitDark = isAppDarkTheme()
+            val submitActive = canSubmit || creating
+            LiquidButton(
+                onClick = {
+                    if (canSubmit) onSubmit(voteTitle.trim(), picked(), modeType, modeLimit)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                // 1.224o：**改为玻璃底**（真机反馈：填充主题色与整体风格不搭）——
+// 可提交时用主题色**文字**表达"能点"，而不是整块实心色。
+                fill = buttonFill(submitDark),
+                border = buttonBorder(submitDark),
+                shape = RoundedCornerShape(20.dp),
+                height = 44.dp,
+                contentPadding = 16.dp,
+                isInteractive = canSubmit,
             ) {
                 if (creating) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = Color.White,
+                        // 用主题色前景而非硬白：玻璃底上保持对比度
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
                     Text(
                         "创建投票",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
+                        color = if (submitActive) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

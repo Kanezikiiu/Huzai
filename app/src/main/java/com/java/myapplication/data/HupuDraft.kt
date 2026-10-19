@@ -13,6 +13,23 @@ package com.java.myapplication.data
  * 正文里出现的占位符按位置生成 image / vote 块，未定位附件追加到末尾。
  */
 object HupuDraft {
+    /**
+     * 1.226：链接地址规范化。
+     *
+     * 用户常直接输 `www.baidu.com`；若原样写进 `href`，浏览器/客户端会把它当**相对地址**，
+     * 拼成 `https://bbs.hupu.com/www.baidu.com`（真机反馈）。这里统一补全协议。
+     */
+    fun normalizeUrl(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return t
+        val lower = t.lowercase()
+        if (lower.startsWith("http://") || lower.startsWith("https://")) return t
+        if (t.startsWith("//")) return "https:" + t
+        // mailto:/tel:/其它 scheme 原样保留
+        if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(t)) return t
+        return "https://" + t
+    }
+
 
     /** 占位符字符池：BMP 私有使用区 E000..E7FF（2048 个，足够单帖 9 图 + 1 投票且不重复）。 */
     private const val TOKEN_START = 0xE000
@@ -49,6 +66,7 @@ object HupuDraft {
     fun labelOf(att: Attachment?, index: Int): String = when (att) {
         is Attachment.Image -> "〔图片$index〕"
         is Attachment.Vote -> "〔投票$index〕"
+        is Attachment.Link -> att.text.ifBlank { "〔链接$index〕" }
         null -> "〔附件$index〕"
     }
 
@@ -74,6 +92,20 @@ object HupuDraft {
         abstract val token: Char
 
         data class Image(override val token: Char, val url: String) : Attachment()
+        /**
+         * 1.226：正文里的**链接**。
+         *
+         * @param url  目标地址
+         * @param text 显示文本（不勾卡片时就是正文里那句可点的文字）
+         * @param card 是否「卡片显示」——勾选时官方把它当作独立卡片，
+         *             在正文里**固定排到末尾**（由插入逻辑保证位置），否则随光标就地插入
+         */
+        data class Link(
+            override val token: Char,
+            val url: String,
+            val text: String,
+            val card: Boolean,
+        ) : Attachment()
 
         data class Vote(
             override val token: Char,
@@ -143,6 +175,12 @@ object HupuDraft {
                     sb.append(t)
                     lastWasText = false
                 }
+                is HupuBlocks.Block.Link -> {
+                    val t = nextToken()
+                    atts.add(Attachment.Link(t, b.url, b.text, b.card))
+                    sb.append(t)
+                    lastWasText = false
+                }
 
                 is HupuBlocks.Block.Vote -> {
                     val t = nextToken()
@@ -173,6 +211,12 @@ object HupuDraft {
             choices = choices,
             limit = limit,
             voteType = voteType,
+        )
+        is Attachment.Link -> HupuBlocks.Block.Link(
+            id = HupuBlocks.nextId(),
+            url = url,
+            text = text,
+            card = card,
         )
     }
 }

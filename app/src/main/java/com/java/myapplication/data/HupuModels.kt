@@ -60,6 +60,14 @@ data class HupuReply(
      * 但楼中楼里同样能看到，造成重复；真一级评论（回复楼主/主题）**没有** quote 键。
      */
     val quotePid: String = "",
+    /** 1.224p：评论视频（SSR 的 `video` 字段；纯视频评论 content 为空） */
+    val videoUrl: String = "",
+    /** 评论视频封面（SSR 的 `videoCover`） */
+    val videoCover: String = "",
+    /** 1.224p：评论语音（SSR ancillaryContents 中 contentType=AUDIO 的附件） */
+    val audioUrl: String = "",
+    /** 评论语音时长（秒） */
+    val audioDurationSec: Int = 0,
 ) {
     /** 1.128：是否为子回复（最外层应过滤，只留真一级评论）。 */
     val isSubReply: Boolean get() = quotePid.isNotEmpty()
@@ -79,6 +87,10 @@ data class HupuSubReply(
     val quoteUser: String = "",
     /** 树层级：0=直接子楼层；>0 为「展开」递归加载的深层回复（渲染缩进用） */
     val depth: Int = 0,
+    /** 1.224p：评论语音（ancillaryContents 中 contentType=AUDIO 的附件） */
+    val audioUrl: String = "",
+    /** 评论语音时长（秒） */
+    val audioDurationSec: Int = 0,
 )
 
 /** 楼中楼数据包：父楼层 + 子回复分页 */
@@ -408,6 +420,10 @@ data class HupuScoreComment(
     val subjectId: String = "",
     /** 登录态：当前用户是否已点亮（hasLight；匿名恒 false） */
     val hasLight: Boolean = false,
+    /** 1.224p：评论语音（commentAncillaryContents 中 commentContentType=AUDIO 的附件） */
+    val audioUrl: String = "",
+    /** 评论语音时长（秒） */
+    val audioDurationSec: Int = 0,
 )
 /**
  * 服务端评论 ⊕ 本机乐观条目（1.151）。

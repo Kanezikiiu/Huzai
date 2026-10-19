@@ -60,6 +60,10 @@ import kotlinx.coroutines.launch
 import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
 import com.java.myapplication.ui.components.HuzaiToast
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 
 /**
  * 登录页（盖入式二级页）：WebView 加载虎扑官方登录页。
@@ -398,22 +402,24 @@ private fun HintButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier
-            .height(42.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (primary) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surface
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    // 1.224o：提示卡里的两颗按钮升级为**玻璃底**（与全站按钮同语言/同按压手感）。
+    // 主/次不再靠实心色区分，而是靠**文字颜色**（主=主题色，次=onSurface）。
+    val hbDark = isAppDarkTheme()
+    LiquidButton(
+        onClick = onClick,
+        fill = buttonFill(hbDark),
+        // 1.224o：描边统一为标准描边（与其它玻璃按钮一致），主/次只看文字颜色
+        border = buttonBorder(hbDark),
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        height = 42.dp,
+        contentPadding = 0.dp,
     ) {
         Text(
             text,
             fontSize = 14.sp,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-            color = if (primary) MaterialTheme.colorScheme.onPrimary
+            color = if (primary) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurface,
         )
     }

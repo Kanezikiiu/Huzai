@@ -1,6 +1,8 @@
 package com.java.myapplication.ui.player
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import androidx.activity.ComponentActivity
@@ -614,7 +616,7 @@ internal fun FullscreenVideo(
         onDispose { player.removeListener(listener) }
     }
     LaunchedEffect(portraitVideo) {
-        val activity = context as? Activity ?: return@LaunchedEffect
+        val activity = context.findActivity() ?: return@LaunchedEffect
         activity.requestedOrientation = if (portraitVideo) {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         } else {
@@ -622,7 +624,7 @@ internal fun FullscreenVideo(
         }
     }
     DisposableEffect(Unit) {
-        val activity = context as? Activity
+        val activity = context.findActivity()
         val w = activity?.window
         if (w != null) {
             val c = WindowInsetsControllerCompat(w, view)
@@ -683,8 +685,7 @@ private fun PlayerStage(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
-
+    val activity = context.findActivity()
     // ── 控件显隐
     var controlsVisible by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -1636,4 +1637,17 @@ private fun HudOverlay(kind: Int, value: Int, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(4.dp))
         Text("$value%", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
     }
+}
+
+/**
+ * 1.224q：从（可能被包装的）Context 里挖出 Activity。
+ *
+ * Dialog 里的 `LocalContext` 是 `ContextThemeWrapper`，直接 `as? Activity` 会得到 null ——
+ * 评论视频用对话框承载全屏时正是这样：`requestedOrientation` 那段被整体跳过，
+ * 于是无论视频是横是竖，全屏都锁在竖屏。这里沿 baseContext 链回溯。
+ */
+internal tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

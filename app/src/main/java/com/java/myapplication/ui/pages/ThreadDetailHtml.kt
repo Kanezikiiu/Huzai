@@ -78,7 +78,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.buildAnnotatedString
@@ -168,11 +172,23 @@ import com.java.myapplication.data.HupuAccount
 import com.java.myapplication.data.HupuSticker
 import com.java.myapplication.data.HupuAuthor
 import kotlinx.coroutines.launch
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.glass.liquidPressTransform
+import com.java.myapplication.ui.glass.rememberLiquidHighlight
+import com.java.myapplication.ui.theme.isAppDarkTheme
 
 /** HTML 内容块 */
 internal sealed class HtmlBlock {
     data class Text(val text: String, val spans: List<HtmlSpan>) : HtmlBlock()
     data class Image(val url: String) : HtmlBlock()
+    /** 1.224p: 正文里的 `<video src poster>`（楼中楼评论视频即此形态） */
+    data class Video(val url: String, val cover: String) : HtmlBlock()
+    /** 1.225h: 正文里的 `<audio src>`（语音评论的另一种形态） */
+    data class Audio(val url: String) : HtmlBlock()
+    /** 1.226: 链接卡片（`data-type="card-link"`，官方 App 的卡片形态） */
+    data class LinkCard(val url: String, val title: String) : HtmlBlock()
     /** 1.122: 正文里的投票占位（<span data-type="vote" data-vote-id="...">），内联渲染投票卡 */
     data class Vote(val voteId: Int) : HtmlBlock()
 }
@@ -191,6 +207,9 @@ internal fun parseHtmlBlocks(html: String): List<HtmlBlock> {
         when (t) {
             is HupuParser.ContentToken.Text -> appendTextBlocks(blocks, t.html)
             is HupuParser.ContentToken.Image -> blocks += HtmlBlock.Image(t.url)
+            is HupuParser.ContentToken.Video -> blocks += HtmlBlock.Video(t.url, t.cover)
+            is HupuParser.ContentToken.Audio -> blocks += HtmlBlock.Audio(t.url)
+            is HupuParser.ContentToken.LinkCard -> blocks += HtmlBlock.LinkCard(t.url, t.title)
             is HupuParser.ContentToken.Vote -> blocks += HtmlBlock.Vote(t.voteId)
         }
     }
@@ -393,6 +412,46 @@ internal fun CommentImage(
     }
 }
 
+/**
+ * 1.224o：帖子正文里**超链接**的点击出口（CompositionLocal）。
+ *
+ * 为什么用 CompositionLocal 而不是逐层传参：`HtmlContent` 被主楼 / 一级回复 / 楼中楼（母+子）
+ * 四处使用，中间还隔着 `MainPost`、`ReplyRow`、`SubReplyRow` 等复合组件 —— 逐层加参数要改
+ * 十来个调用点。由页面在顶层 provide，四处天生共用同一套跳转逻辑。
+ *
+ * 默认实现是空操作（例如在无导航能力的地方渲染时）。
+ */
+internal val LocalPostLinkClick = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/**
+ * 1.224o：把一个链接区间写成 **`LinkAnnotation`** —— 这是「逐链接跳转」的关键：
+ * 每个 `<a>` 各自成为一个可点区域，点谁跳谁（一个正文里有多个帖子链接也互不干扰），
+ * 而不是像私信聊天页那样「点整条正文 = 判定为那条链接」。
+ *
+ * 样式：显式给出 `styles` 并 **关掉下划线** —— 不给 styles 时 Compose 会按默认链接样式
+ * 画一条下划线（真机反馈：不好看）；颜色沿用主题色，与正文原有观感一致。
+ */
+private fun AnnotatedString.Builder.addPostLink(
+    url: String,
+    color: Color,
+    start: Int,
+    end: Int,
+    onClick: (String) -> Unit,
+) {
+    if (start < 0 || end <= start || start >= length) return
+    addLink(
+        LinkAnnotation.Url(
+            url = url,
+            styles = TextLinkStyles(
+                style = SpanStyle(color = color, textDecoration = TextDecoration.None),
+            ),
+            linkInteractionListener = { onClick(url) },
+        ),
+        start,
+        end.coerceAtMost(length),
+    )
+}
+
 /** HTML 内容渲染：文本块 AnnotatedString + 图片块 AsyncImage（保序）；图片可点击全屏查看 */
 @Composable
 internal fun HtmlContent(
@@ -403,20 +462,42 @@ internal fun HtmlContent(
     /** 1.122: 正文内联投票（主楼传入；回复 HTML 不传） */
     vote: HupuVote? = null,
     onToast: (String) -> Unit = {},
+    /** 1.224p: 评论视频（JSON 独立字段：帖子评论的 `video` / `videoCover`） */
+    videoUrl: String = "",
+    videoCover: String = "",
+    /** 1.224p: 评论语音（ancillaryContents 里的 AUDIO 附件） */
+    audioUrl: String = "",
+    audioDurationSec: Int = 0,
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val primary = MaterialTheme.colorScheme.primary
+    // 1.224o：正文里超链接的点击出口（由所在页面 provide；无导航能力时为空操作）
+    val onPostLink = LocalPostLinkClick.current
     val fs = remember(HupuPrefs.fontScaleVersion) { HupuPrefs.loadFontScale() }
     val blocks = remember(html) { parseHtmlBlocks(html) }
     // 1.186: 本条消息内的全部图片（与正文渲染同序）——全屏查看时可在其中左右切换
     val imageUrls = remember(blocks) { blocks.filterIsInstance<HtmlBlock.Image>().map { it.url } }
-
+    // 1.225h：有语音（独立字段或正文 <audio>）时，正文里的占位文案就不再显示
+    val hasAudio = audioUrl.isNotBlank() || blocks.any { it is HtmlBlock.Audio }
+    val shownBlocks = remember(blocks, hasAudio) {
+        if (!hasAudio) blocks else blocks.filterNot { b ->
+            b is HtmlBlock.Text && b.text.trim().let { it == "[语音]" || it == "升级新版本后体验" }
+        }
+    }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEachIndexed { bi, b ->
+        // 1.224p：评论视频（官方把视频放在 content 之前的独立字段里）
+        if (videoUrl.isNotBlank()) ReplyVideoCard(url = videoUrl, cover = videoCover)
+        shownBlocks.forEachIndexed { bi, b ->
             when (b) {
+                // 1.224p：正文内嵌 <video>（楼中楼 API 的评论视频）
+                is HtmlBlock.Video -> ReplyVideoCard(url = b.url, cover = b.cover)
+                // 1.225h：正文内嵌 <audio>（语音评论的另一种形态，时长未知）
+                is HtmlBlock.Audio -> VoiceBubble(url = b.url, durationSec = 0)
+                // 1.226：链接卡片（官方 App 那种卡片；网页端只显示为超链接）
+                is HtmlBlock.LinkCard -> LinkCardRow(b.url, b.title, onPostLink)
                 is HtmlBlock.Image -> {
                     // 1.186: 被点图片在本条消息图片集合中的下标（供多图全屏左右切换）
-                    val imgIndex = blocks.subList(0, bi).count { it is HtmlBlock.Image }
+                    val imgIndex = shownBlocks.subList(0, bi).count { it is HtmlBlock.Image }
                     // 图片自适应：虎扑 CDN 图片 URL 自带真实像素尺寸（…_o_w_107_h_132_…），
                     // 直接从 URL 解析出固有宽高（无需等待网络加载），按内容宽度等比缩放：
                     // - 小图/表情包按真实尺寸显示（不放大到全宽）
@@ -475,7 +556,7 @@ internal fun HtmlContent(
                 is HtmlBlock.Text -> {
                     val emojiSegs = remember(b.text) { splitEmoji(b.text) }
                     if (emojiSegs.none { it.isEmoji }) {
-                        val annotated = remember(b.text, b.spans) {
+                        val annotated = remember(b.text, b.spans, primary, onSurface, onPostLink) {
                             buildAnnotatedString {
                                 append(b.text)
                                 for (sp in b.spans) {
@@ -484,6 +565,8 @@ internal fun HtmlContent(
                                         color = if (sp.link != null) primary else onSurface,
                                     )
                                     addStyle(style, sp.start, sp.end)
+                                    // 1.224o：链接区间各自挂可点 —— 一个正文里有多个帖子链接时点谁跳谁
+                                    sp.link?.let { addPostLink(it, primary, sp.start, sp.end, onPostLink) }
                                 }
                             }
                         }
@@ -510,6 +593,8 @@ internal fun HtmlContent(
                                                     ),
                                                     s2, e2,
                                                 )
+                                                // 1.224o：表情分段后的链接区间同样挂可点（坐标已平移到本段）
+                                                sp.link?.let { addPostLink(it, primary, s2, e2, onPostLink) }
                                             }
                                         }
                                     }
@@ -522,7 +607,69 @@ internal fun HtmlContent(
                 }
             }
         }
+        // 1.224p：评论语音（官方渲染在正文之后，播放条 + 时长）
+        if (audioUrl.isNotBlank()) VoiceBubble(url = audioUrl, durationSec = audioDurationSec)
     }
 }
-
 // ---------- 视频播放器 ----------
+
+/**
+ * 1.226：链接卡片（`data-type="card-link"`）。
+ *
+ * 与「战报入口卡」(EmbedCard) 同款视觉：玻璃底 + 标准描边 + 16dp 圆角 + 落影 + 按压形变；
+ * 左侧只有放大的地球线框图标（不带主题色底块），右侧标题 + 域名 + 箭头。
+ */
+@androidx.compose.runtime.Composable
+private fun LinkCardRow(url: String, title: String, onLink: (String) -> Unit) {
+    val dark = isAppDarkTheme()
+    val shape = RoundedCornerShape(16.dp)
+    val primary = MaterialTheme.colorScheme.primary
+    val variant = MaterialTheme.colorScheme.onSurfaceVariant
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val hl = rememberLiquidHighlight()
+    val host = runCatching { android.net.Uri.parse(url).host.orEmpty() }.getOrDefault("")
+    androidx.compose.foundation.layout.Row(
+        Modifier
+            .fillMaxWidth()
+            .liquidPressTransform(hl)
+            .liquidElevation(shape, dark)
+            .clip(shape)
+            .background(buttonFill(dark))
+            .border(0.6.dp, buttonBorder(dark), shape)
+            .clickable { onLink(url) }
+            .then(hl.modifier)
+            .then(hl.gestureModifier)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            com.java.myapplication.ui.components.HupuIcons.Globe,
+            contentDescription = null,
+            tint = primary,
+            modifier = Modifier.size(26.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title.ifBlank { url },
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (host.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    host,
+                    fontSize = 12.5.sp,
+                    color = variant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Text("›", fontSize = 20.sp, color = variant)
+    }
+}

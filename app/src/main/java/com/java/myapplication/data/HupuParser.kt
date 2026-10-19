@@ -190,9 +190,12 @@ object HupuParser {
         val replies = mutableListOf<HupuReply>()
         for (i in 0 until (repList?.length() ?: 0)) {
             val o = repList?.optJSONObject(i) ?: continue
+            // 1.224p：语音附件先取出来，正文里的占位文案据此决定是否剥掉
+            val audio = audioFrom(o.optJSONArray("ancillaryContents"))
+            val rawHtml = o.optString("content")
             replies += HupuReply(
                 pid = o.optString("pid"),
-                contentHtml = o.optString("content"),
+                contentHtml = if (audio.first.isNotBlank()) stripAudioPlaceholder(rawHtml) else rawHtml,
                 floor = (page - 1) * 20 + i + 1,
                 lights = o.optInt("allLightCount", 0),
                 // 子回复数：replyNum（实测与 bbs-reply-detail API 的实际子回复数一致）。
@@ -208,6 +211,11 @@ object HupuParser {
                     ?.optString("pid")
                     ?.takeIf { it.isNotEmpty() && it != "" }
                     ?: "",
+                // 1.224p：评论视频/语音（官方页面同样把视频放在独立字段，content 为空）
+                videoUrl = o.optString("video").takeIf { it.isNotBlank() } ?: "",
+                videoCover = o.optString("videoCover").takeIf { it.isNotBlank() } ?: "",
+                audioUrl = audio.first,
+                audioDurationSec = audio.second,
             )
         }
 
@@ -276,9 +284,11 @@ object HupuParser {
             val o = repArr.optJSONObject(i) ?: continue
             val user = o.optJSONObject("user")
             val quote = o.optJSONObject("quote")
+            val audio = audioFrom(o.optJSONArray("ancillaryContents"))
+            val rawHtml = o.optString("content")
             subs += HupuSubReply(
                 pid = o.optString("pid"),
-                contentHtml = o.optString("content"),
+                contentHtml = if (audio.first.isNotBlank()) stripAudioPlaceholder(rawHtml) else rawHtml,
                 lights = o.optInt("lights", o.optInt("allLightCount", 0)),
                 nestedCount = o.optString("replies").toIntOrNull() ?: 0,
                 createdAtText = user?.optString("createDt") ?: "",
@@ -286,6 +296,9 @@ object HupuParser {
                 location = o.optString("location"),
                 author = subAuthorFrom(user),
                 quoteUser = quote?.optString("username") ?: "",
+                // 1.224p：楼中楼的语音附件（视频在 content 的 <video> 标签里，由渲染层解析）
+                audioUrl = audio.first,
+                audioDurationSec = audio.second,
             )
         }
 
@@ -562,12 +575,87 @@ object HupuParser {
         )
     }
 
-    // ---------- 正文 HTML 顺序切分（1.122 内联投票） ----------
+    /**
+ * 1.224p：从附件数组里取「语音」。
+ *
+ * 两套 schema 同时支持（字段名不同、语义一致）：
+ *  - 帖子评论：`ancillaryContents[]`，类型键 `contentType`
+ *  - 评分评论：`commentAncillaryContents[]`，类型键 `commentContentType`
+ * URL 在 `content` / `commentContent`，时长在 `durationInSec`。
+ *
+ * @return (语音地址, 时长秒)；无语音返回 ("", 0)
+ */
+internal fun audioFrom(arr: org.json.JSONArray?): Pair<String, Int> {
+    if (arr == null) return "" to 0
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        val type = (o.optString("contentType").ifBlank { o.optString("commentContentType") }).uppercase()
+        val url = listOf(
+            "content", "commentContent", "url", "audioUrl", "voiceUrl", "voice", "audio", "mediaUrl",
+        ).map { o.optString(it) }.firstOrNull { it.startsWith("http") } ?: continue
+        // 类型字段缺失时，只要地址像音频也认（语音附件在部分接口里没有 type 字段）
+        val looksAudio = url.contains(".mp3", true) || url.contains(".m4a", true) ||
+            url.contains(".aac", true) || url.contains("audio", true)
+        if (type != "AUDIO" && !(type.isEmpty() && looksAudio)) continue
+        return url to o.optInt("durationInSec", o.optInt("duration", 0))
+    }
+    return "" to 0
+}
 
-    /** 正文 HTML 顺序 token：普通文本片段 / 图片 / 投票占位 */
+/**
+ * 1.225j：从**一条评论对象**里取语音（评分评论的楼中楼有两种键名）。
+ *
+ * 主评论用 `commentAncillaryContents`，而楼中楼的子评论在部分响应里只有
+ * `ancillaryContents`；还有的直接给 `audioUrl` / `voiceUrl` / `audio:{url}`。
+ */
+internal fun audioFromComment(o: org.json.JSONObject): Pair<String, Int> {
+    for (key in listOf("commentAncillaryContents", "ancillaryContents")) {
+        val arr = o.optJSONArray(key) ?: continue
+        val r = audioFrom(arr)
+        if (r.first.isNotBlank()) return r
+    }
+    val direct = listOf("audioUrl", "voiceUrl", "voice", "audio", "mediaUrl")
+        .map { o.optString(it) }
+        .firstOrNull { it.startsWith("http") }
+    if (direct != null) {
+        return direct to o.optInt("durationInSec", o.optInt("duration", 0))
+    }
+    val obj = o.optJSONObject("audio") ?: return "" to 0
+    val url = listOf("url", "src", "audioUrl").map { obj.optString(it) }
+        .firstOrNull { it.startsWith("http") } ?: return "" to 0
+    return url to obj.optInt("durationInSec", obj.optInt("duration", 0))
+}
+
+/** 语音评论正文里的占位文案（官方模板，不是用户内容） */
+private val AUDIO_PLACEHOLDERS = listOf("[语音]", "升级新版本后体验")
+
+/**
+ * 1.224p：剥掉语音评论正文里的占位文字。
+ *
+ * 官方语音评论的 `content` 形如 `[语音]升级新版本后体验`（升级提示也是模板的一部分），
+ * 语音条已单独渲染，这些字留着就是重复噪音。
+ */
+internal fun stripAudioPlaceholder(s: String): String {
+    var out = s
+    for (p in AUDIO_PLACEHOLDERS) out = out.replace(p, "")
+    return out.trim()
+}
+
+// ---------- 正文 HTML 顺序切分（1.122 内联投票） ----------
+
+    /** 正文 HTML 顺序 token：普通文本片段 / 图片 / 视频 / 投票占位 */
     sealed class ContentToken {
         data class Text(val html: String) : ContentToken()
         data class Image(val url: String) : ContentToken()
+        /** 1.224p：正文里的 `<video src poster>`（楼中楼 API 的评论视频就是以标签形式内嵌） */
+        data class Video(val url: String, val cover: String) : ContentToken()
+        /** 1.225h：正文里的 `<audio src>`（语音评论的另一种承载形态） */
+        data class Audio(val url: String) : ContentToken()
+        /**
+         * 1.226：**链接卡片**（`<a data-type="card-link" data-name="标题" href="…">`）。
+         * 官方 App 把它渲染成一张卡片；网页端只当普通超链接。
+         */
+        data class LinkCard(val url: String, val title: String) : ContentToken()
         data class Vote(val voteId: Int) : ContentToken()
     }
 
@@ -583,20 +671,57 @@ object HupuParser {
         val out = mutableListOf<ContentToken>()
         if (html.isNullOrBlank()) return out
         val tokenRe = Regex(
-            """(<img[^>]*?src\s*=\s*["']([^"']+)["'][^>]*?>)|(<span[^>]*?data-type\s*=\s*["']vote["'][^>]*?>)""",
+            """(<img[^>]*?src\s*=\s*["']([^"']+)["'][^>]*?>)|(<video[^>]*?>)|(<audio[^>]*?>)|(<span[^>]*?data-type\s*=\s*["']vote["'][^>]*?>)|(<a[^>]*?data-type\s*=\s*["']card-link["'][^>]*?>(.*?)</a>)""",
             RegexOption.IGNORE_CASE,
         )
         val voteIdRe = Regex("""data-vote-id\s*=\s*["'](\d+)["']""", RegexOption.IGNORE_CASE)
+        val videoSrcRe = Regex("""\bsrc\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val hrefRe = Regex("""\bhref\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val dataNameRe = Regex("""\bdata-name\s*=\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
+        val videoPosterRe = Regex("""\bposter\s*=\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
         var cursor = 0
         for (m in tokenRe.findAll(html)) {
             if (m.range.first > cursor) out += ContentToken.Text(html.substring(cursor, m.range.first))
             cursor = m.range.last + 1
             val imgSrc = m.groups[2]?.value
-            if (imgSrc != null) {
-                out += ContentToken.Image(imgSrc)
-            } else {
-                val vid = voteIdRe.find(m.value)?.groupValues?.get(1)?.toIntOrNull()
-                if (vid != null && vid > 0) out += ContentToken.Vote(vid)
+            when {
+                imgSrc != null -> out += ContentToken.Image(imgSrc)
+                m.value.startsWith("<video", ignoreCase = true) -> {
+                    val src = videoSrcRe.find(m.value)?.groupValues?.get(1)
+                    if (!src.isNullOrBlank()) {
+                        out += ContentToken.Video(
+                            url = src,
+                            cover = videoPosterRe.find(m.value)?.groupValues?.get(1).orEmpty(),
+                        )
+                    }
+                    // `<video>…</video>` 内部是浏览器的降级提示文案（"视频无法播放…"），
+                    // 整段跳过，否则会当成正文显示出来。
+                    val close = html.indexOf("</video>", cursor, ignoreCase = true)
+                    if (close > 0) cursor = close + "</video>".length
+                }
+                m.groups[6] != null -> {
+                    // 链接卡片
+                    val href = hrefRe.find(m.value)?.groupValues?.get(1)
+                    if (!href.isNullOrBlank()) {
+                        val name = dataNameRe.find(m.value)?.groupValues?.get(1)
+                            ?.takeIf { it.isNotBlank() }
+                        val inner = m.groups[7]?.value
+                            ?.replace(Regex("<[^>]+>"), "")
+                            ?.trim()
+                            .orEmpty()
+                        out += ContentToken.LinkCard(href, name ?: inner)
+                    }
+                }
+                m.value.startsWith("<audio", ignoreCase = true) -> {
+                    val src = videoSrcRe.find(m.value)?.groupValues?.get(1)
+                    if (!src.isNullOrBlank()) out += ContentToken.Audio(src)
+                    val close = html.indexOf("</audio>", cursor, ignoreCase = true)
+                    if (close > 0) cursor = close + "</audio>".length
+                }
+                else -> {
+                    val vid = voteIdRe.find(m.value)?.groupValues?.get(1)?.toIntOrNull()
+                    if (vid != null && vid > 0) out += ContentToken.Vote(vid)
+                }
             }
         }
         if (cursor < html.length) out += ContentToken.Text(html.substring(cursor))

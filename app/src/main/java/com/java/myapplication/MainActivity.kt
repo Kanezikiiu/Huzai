@@ -163,6 +163,9 @@ fun PocketLedgerApp() {
     }
     // 1.182: 默认启动页（设置页可选；冷启动读取）
     var selectedTab by remember { mutableIntStateOf(HupuPrefs.loadStartTab()) }
+    // 1.224o：正文里的评分链接现在是「在帖子页内盖一层原生评分页」（ScorePage 内嵌模式），
+    // 不再切 Tab —— 所以这里原先的「切到评分 Tab / 自动切回」两段逻辑已移除。
+    // （返回只回帖子、二级页计数天然正确）
     // 1.181: 每次冷启动静默检查更新（10min 去重；有新版才弹窗，其余完全静默）
     val autoUpdateCtx = LocalContext.current
     var autoUpdateInfo by remember { mutableStateOf<HupuUpdateInfo?>(null) }
@@ -318,6 +321,8 @@ fun PocketLedgerApp() {
                 },
                 backdrop = backdrop,
                 tabsCount = 4,
+                // 1.224o：把隐藏进度透给栏内诊断浮层（仅诊断包可见）
+                debugTabProgress = tabProgress,
                 modifier = Modifier.padding(horizontal = 20.dp).widthIn(max = 480.dp)
             ) {
                 val tabs = listOf(

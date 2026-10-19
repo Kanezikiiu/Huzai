@@ -141,6 +141,9 @@ class HupuVoteTest {
             when (it) {
                 is HupuParser.ContentToken.Text -> "T"
                 is HupuParser.ContentToken.Image -> "I"
+                is HupuParser.ContentToken.Video -> "D"
+                is HupuParser.ContentToken.Audio -> "A"
+                is HupuParser.ContentToken.LinkCard -> "L"
                 is HupuParser.ContentToken.Vote -> "V"
             }
         }

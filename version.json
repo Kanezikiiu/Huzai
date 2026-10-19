@@ -1,8 +1,8 @@
 {
-  "versionCode": 212,
-  "versionName": "1.202",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.202/huzai-1.202-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.202",
-  "changelog": "· 修复对局评分页「趣评」标签一闪而过的问题\n· 修复私信聊天页输入框光标偏上的问题\n· 修复个别机型播放视频闪退的问题\n· 完善「崩溃取证」：可在「关于 → 崩溃日志」开启，崩溃时自动记录现场，支持一键导出 / 清除\n· 热门赛事的项目筛选改为记忆：重启后仍保留\n· 黑名单容量由 500 提升至 1000",
+  "versionCode": 213,
+  "versionName": "1.203",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.203/huzai-1.203-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.203",
+  "changelog": "· 功能删除:由于虎扑网页版关闭了「评分页面」的评论与回复接口，因此软件同步删除这2个功能，打分与点亮不受影响\n· 功能新增:发帖页「插入链接」，形式为超链接文本或卡片\n· 功能新增:正文及评论区超链接可点击并跳转，如帖子 / 评分 / 用户主页等\n· 功能新增:评论区支持查看视频与播放语音\n· 投票选项上限由 10 提升至 30\n· 专区二级页支持左右滑动切换排序\n· 问题修复:修复偶发页面容器不居中的问题，以及在上层页面按返回误关下层页面的问题",
   "forceUpdate": false
 }

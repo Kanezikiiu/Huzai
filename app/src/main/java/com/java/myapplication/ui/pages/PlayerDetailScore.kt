@@ -118,10 +118,29 @@ import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.glass.LiquidGlassCard
+import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.kyant.backdrop.Backdrop
 
 // 1.64 打分面板：半透明遮罩 + 居中卡片（iOS 风格：圆角 24dp、标题正文居左、取消灰/确认蓝）
+/**
+ * 1.224o：**评分评论 / 回复写入开关**。
+ *
+ * 虎扑已把「发评分评论 / 回复评分评论」限制为**官方客户端**：
+ * 服务端对非 App 请求一律回「评论发布失败，请使用客户端互动」。
+ * 已实测排除：前缀（/1/、/9/）× UA（桌面、移动、"kanqiu" App WebView 形态）× 版本（8.0.99、8.2.99）
+ * —— 全部被拒；官方网页 bundle 里也只有 App 环境（isHupu）才会带 `X-Hupu-Token` 发这条请求，
+ * 浏览器点提交只会弹「打开虎扑APP 即刻参与评分」。
+ *
+ * 因此这里关闭所有写入入口，**只保留打分**；若将来虎扑放开，把它改 true 即可恢复。
+ */
+internal const val SCORE_COMMENT_WRITE_ENABLED = false
+
+/** 关闭写入时，在原位置给出的说明（UI 复用） */
+internal const val SCORE_COMMENT_WRITE_HINT = "评分评论与回复仅支持虎扑官方客户端，打分不受影响"
+
 // 五星制（每星 2 分）；已打分时可修改或取消评分（取消需确认，官方语义：user/record/comment/delete）
 @Composable
 internal fun ScorePanelOverlay(
@@ -188,7 +207,7 @@ internal fun ScorePanelOverlay(
                     )
                 }
             }
-            // 1.153: 随评分一起提交的评论（选填）——官方打分弹窗本就是「打分 + 评论」一体流
+            if (SCORE_COMMENT_WRITE_ENABLED) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -225,32 +244,46 @@ internal fun ScorePanelOverlay(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            // 操作按钮：取消（浅灰）/ 确认（蓝）；已打分时额外提供取消评分
+            // 1.224o：评论写入入口已关闭，且**不再显示说明文字**（真机反馈：这行小字多余）
+            }
+            // 操作按钮：取消（玻璃）/ 确认（实心主题色）；已打分时额外提供取消评分
+            // 1.224o：这一对按钮改用 **LiquidButton**（与全站 kyant 按钮同源同手感）——
+            // 此前是自绘胶囊，与其它按钮的按压/落影形态不一致；配色不变（确认=实心主色、取消=玻璃）。
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Box(
-                    Modifier
-                        .weight(1f)
-                        // 1.192: 按钮形态对齐新弹窗（胶囊 + onSurface 淡底）
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (isLight) 0.12f else 0.16f))
-                        .clickable(enabled = !submitting) { close() }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
+                val pairDark = isAppDarkTheme()
+                LiquidButton(
+                    onClick = { close() },
+                    fill = buttonFill(pairDark),
+                    border = buttonBorder(pairDark),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(999.dp),
+                    height = 44.dp,
+                    contentPadding = 0.dp,
+                    isInteractive = !submitting,
                 ) {
-                    Text("取消", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        "取消",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
-                Box(
-                    Modifier
-                        .weight(1f)
-                        // 1.192: 与取消同款胶囊
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                        .clickable(enabled = !submitting && picked > 0) { onSubmit(picked * 2, comment.trim()) }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
+                LiquidButton(
+                    onClick = {
+                        if (!submitting && picked > 0) {
+                            // 1.224o：评论写入已关闭 → 只提交分数
+                            onSubmit(picked * 2, if (SCORE_COMMENT_WRITE_ENABLED) comment.trim() else "")
+                        }
+                    },
+                    fill = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(999.dp),
+                    height = 44.dp,
+                    contentPadding = 0.dp,
+                    isInteractive = !submitting && picked > 0,
                 ) {
                     if (submitting) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary)

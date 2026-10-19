@@ -349,6 +349,15 @@ fun SubCommentSheet(
                                                     .clickable { onImageClick(sheet.parent.images, i) },
                                             )
                                         }
+                                        // 1.225k：**母评论的语音条**。sheet 里的母评论是独立绘制的一段卡片，
+// 之前只画了文字和图片，语音（楼中楼母评论也可能是语音）就漏了 —— 子评论走
+// PlayerDetailComment 那条路径，所以子评论有、母评论没有。
+                                        if (sheet.parent.audioUrl.isNotBlank()) {
+                                            VoiceBubble(
+                                                url = sheet.parent.audioUrl,
+                                                durationSec = sheet.parent.audioDurationSec,
+                                            )
+                                        }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             val meta = listOf(sheet.parent.date, sheet.parent.ipLocation)
                                                 .filter { it.isNotBlank() }.joinToString(" · ")

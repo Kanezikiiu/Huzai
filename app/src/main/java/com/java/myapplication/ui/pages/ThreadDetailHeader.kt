@@ -352,10 +352,25 @@ internal fun MainPost(
             modifier = Modifier.padding(bottom = 8.dp),
         )
 
+        // 1.226：**视频移到正文之前**。官方（网页与 App）都是「视频 → 正文」，
+        // 之前放在正文之后，与发布页「发布后显示在正文之前」的说明也不一致。
+        if (d.thread.hasVideo && d.thread.video.isNotBlank()) {
+            VideoPlayer(
+                url = d.thread.video,
+                cover = d.thread.videoCover,
+                host = host,
+                isFullscreen = isFullscreen,
+                onToggleFullscreen = onToggleFullscreen,
+            )
+        }
         // 1.178: 结构化正文（赛事战报等）——官方存的是 JSON 描述符而非 HTML，
         // 识别后渲染成卡片并「点开进 WebView」，避免把这段 JSON 当文本原样显示
         val embed = remember(d.contentHtml) { HupuEmbedParser.parse(d.contentHtml) }
         if (embed != null) {
+            // 1.225c：**回到"按钮 + 二级页"**。
+            // 前几版尝试把战报就地内嵌（自动测高 / 官方页窗口 / 自有 HTML 模板），
+            // 都绕不开"列表里塞大块 WebView"的性能与闪烁问题；战报是深度阅读内容，
+            // 用入口卡片 + 独立页面承载最稳，也不影响帖子页的滚动体验。
             EmbedCard(embed) { onOpenEmbed(embed) }
         } else {
             // 1.122: 投票占位符在正文中内联渲染（与图片同机制）；正文无占位符（旧数据）时兜底挂末尾
@@ -369,15 +384,6 @@ internal fun MainPost(
                 onToast = onToast,
             )
             if (d.vote != null && !voteInline) VoteCard(d.vote, onToast)
-        }
-        if (d.thread.hasVideo && d.thread.video.isNotBlank()) {
-            VideoPlayer(
-                url = d.thread.video,
-                cover = d.thread.videoCover,
-                host = host,
-                isFullscreen = isFullscreen,
-                onToggleFullscreen = onToggleFullscreen,
-            )
         }
         // 1.189: 元信息行——「推荐 / 收藏」已上移到常驻操作条（滚到评论区也能操作），
         // 这里改显示「发布时间 · 发布于地 · 浏览数」，凑齐三条，与官方网页版口径一致。

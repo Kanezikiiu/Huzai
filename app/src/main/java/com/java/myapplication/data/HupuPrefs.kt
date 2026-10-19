@@ -619,6 +619,19 @@ object HupuPrefs {
         prefs.edit().putString(KEY_GAMES_VER + family, version).apply()
     }
 
+    // ---------- 1.224o：评分评论发布的"可用组合"记忆 ----------
+    // 服务端对「评论发布」的校验比打分严：非官方客户端环境会被拒（"请使用客户端互动"）。
+    // 实测同一批写接口里「点亮」必须走 /9/ 前缀，评论发布很可能同理（或需要更像客户端的 UA）。
+    // 这里记住最后一次成功的「前缀|UA档」（如 "9|m"），下次直接先试它，避免每次都要试错。
+    private const val KEY_SCORE_PUBLISH_MODE = "score_publish_mode_v1"
+
+    fun scorePublishMode(): String = prefs.getString(KEY_SCORE_PUBLISH_MODE, "") ?: ""
+
+    fun saveScorePublishMode(mode: String) {
+        if (mode.isBlank()) return
+        prefs.edit().putString(KEY_SCORE_PUBLISH_MODE, mode).apply()
+    }
+
     fun clearGamesVersion() {
         val ed = prefs.edit()
         for (f in listOf("score", "publish", "light")) ed.remove(KEY_GAMES_VER + f)

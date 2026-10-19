@@ -52,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +75,9 @@ import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.ui.components.HupuIcons
 import com.java.myapplication.ui.components.LiquidIconButton
 import com.java.myapplication.ui.glass.LiquidButton
+import com.java.myapplication.ui.glass.buttonBorder
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.theme.isAppDarkTheme
 import com.java.myapplication.data.isLocalStickerUrl
 import com.java.myapplication.data.HupuMatchDay
 import com.java.myapplication.data.HupuMatchTeam
@@ -102,6 +106,7 @@ import com.java.myapplication.ui.components.tabSwipeSwitch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -112,8 +117,21 @@ import com.java.myapplication.ui.components.HuzaiToast
  * 评分页：6 大电竞项目赛程 + 选手评分（浏览，打分需登录暂不做）
  * 数据：match-api.hupu.com 匿名接口（实测可用）
  */
+/** 1.224o：matchId → 赛程项（进程内缓存）。同一场比赛重复打开时**秒开**，不必再走网络换算评分钥匙。 */
+private val matchByIdCache = mutableMapOf<String, HupuMatch>()
+
 @Composable
-fun ScorePage(modifier: Modifier = Modifier) {
+fun ScorePage(
+    modifier: Modifier = Modifier,
+    /**
+     * 1.224o：**内嵌模式**。传非 null 时本页只渲染「选手 / 对局」详情浮层（不渲染评分首页），
+     * 并立即打开该深链 —— 供帖子正文的超链接在**帖子页内**盖一层原生评分页使用：
+     * 返回只回帖子、不切 Tab、计数天然正确。
+     */
+    embedded: HupuUiSignals.ScoreDeepLink? = null,
+    /** 内嵌模式下，详情浮层退场结束（父级据此卸载本内嵌页） */
+    onEmbeddedClosed: () -> Unit = {},
+) {
     val repo = remember { HupuRepository() }
     // 1.191: 记录层——供 Liquid Glass 弹窗采样背后像素（挂在内容层上，弹窗在其后）
     // 1.191: 先铺一层不透明页面底色再画内容——与 ThreadDetailPage 的
@@ -385,6 +403,129 @@ fun ScorePage(modifier: Modifier = Modifier) {
         playerClosing = true
     }
 
+    /**
+     * 1.224o：按 matchId 打开对局 —— **多源查找**，不区分赛事/足球。
+     *
+     * 官方深链的 host 五花八门（`general` / `soccerleagues` / `lol` / `kog`…），
+     * 但共同点是**都能取出 matchId**。所以这里按 id 逐层找：
+     *   ① 已加载过的任意频道赛程（零网络）→ ② 热门聚合（强制刷新）
+     *   → ③ 足球赛程（不同源 SSR）→ ④ 足球评分钥匙兜底
+     * 任一层找到就打开，全部失败才提示。
+     */
+    suspend fun openMatchById(matchId: String, channel: String? = null): Boolean {
+        // 0) 进程内缓存优先：同一场重复打开直接秒开
+        matchByIdCache[matchId]?.let { cached ->
+            openMatch(cached)
+            return openedMatch != null
+        }
+
+        fun find(days: List<HupuMatchDay>): HupuMatch? =
+            days.flatMap { it.matches }.firstOrNull { it.matchId == matchId }
+
+        fun tryOpen(hit: HupuMatch?): Boolean {
+            if (hit == null) return false
+            openMatch(hit)
+            if (openedMatch == null) return false
+            matchByIdCache[matchId] = hit
+            return true
+        }
+
+        /** 拉某频道赛程并找（先吃缓存；[refresh] 时强制联网） */
+        suspend fun searchChannel(bizId: String, refresh: Boolean = false): Boolean {
+            val cachedDays = schedules[bizId]
+            if (cachedDays != null && !refresh) {
+                if (tryOpen(find(cachedDays))) return true
+            }
+            val days = repo.matchSchedule(bizId, refresh = refresh)
+            if (days.isNotEmpty()) schedules[bizId] = days
+            return tryOpen(find(days))
+        }
+
+        // ① 已加载过的任意频道（零网络）
+        for (days in schedules.values) if (tryOpen(find(days))) return true
+
+        val supported = HupuMatchApi.GAMES.map { it.first }
+        val hint = channel?.lowercase()?.takeIf { it in supported }
+
+        // ② 深链 host 恰好是受支持频道（如 lol）→ 只拉这一个，命中率最高、成本最低
+        if (hint != null && hint != HupuMatchApi.SOCCER_ID &&
+            hint != HupuMatchApi.COMMON_HOT_SPORTS_ID
+        ) {
+            if (searchChannel(hint, refresh = true)) return true
+        }
+
+        // ③ 热门聚合（覆盖大多数赛事；强制刷新）
+        com.java.myapplication.ui.components.HuzaiToast.show("正在查找该比赛…")
+        if (searchChannel(HupuMatchApi.COMMON_HOT_SPORTS_ID, refresh = true)) return true
+
+        // ④ 足球赛程（不同源 SSR）
+        if (searchChannel(HupuMatchApi.SOCCER_ID)) return true
+
+        // ⑤ 其余所有受支持频道（缓存优先，没加载过的才联网；命中即止）
+        for (id in supported) {
+            if (id == HupuMatchApi.COMMON_HOT_SPORTS_ID || id == HupuMatchApi.SOCCER_ID) continue
+            if (id == hint) continue
+            if (searchChannel(id)) return true
+        }
+
+        // ⑥ 兜底：现换评分钥匙（赛程里没有 scoreItemKey 的赛事）
+        val no = repo.footballScoreNo(matchId)
+        if (!no.isNullOrBlank()) {
+            openMatch(
+                HupuMatch(
+                    matchId = matchId,
+                    statusDesc = "",
+                    status = "",
+                    matchType = "",
+                    introduction = "",
+                    matchName = "",
+                    startTimeText = "",
+                    startTimestamp = 0L,
+                    scoreCountText = "",
+                    home = null,
+                    away = null,
+                    winnerMemberId = null,
+                    playerScore = null,
+                    scoreBizType = HupuMatchApi.FOOTBALL_MATCH,
+                    scoreBizNo = no,
+                ),
+            )
+            if (openedMatch != null) return true
+        }
+
+        com.java.myapplication.ui.components.HuzaiToast.show("没找到这场比赛")
+        return false
+    }
+
+    /**
+     * 1.224o：**内嵌模式** —— 父级（帖子正文）已经决定「在当前页面展开」，
+     * 这里直接打开传入的详情。不经过全局信号、不切 Tab，
+     * 所以返回只回帖子、二级页计数天然正确。
+     */
+    LaunchedEffect(embedded) {
+        val req = embedded ?: return@LaunchedEffect
+        val opened = when (req) {
+            is HupuUiSignals.ScoreDeepLink.Item -> {
+                // 评分对象详情：bizType/bizNo 就是原生页的钥匙（名字/头像由详情接口回填）
+                openPlayer(
+                    HupuScoreItem(
+                        bizId = req.bizNo,
+                        bizType = req.bizType,
+                        name = "",
+                        image = null,
+                        scoreAvg = "",
+                        scorePersonCount = 0L,
+                        hotComment = "",
+                    ),
+                )
+                true
+            }
+            is HupuUiSignals.ScoreDeepLink.Match -> openMatchById(req.matchId, req.channel)
+        }
+        // 打开失败 → 让父级卸载本内嵌页（否则会留一层空白遮挡帖子）
+        if (!opened) onEmbeddedClosed()
+    }
+
     // ---------- 虎扑通用评分：打开/关闭/加载（同款「同步置位 + 错峰请求」策略） ----------
     /**
      * 1.132: 冷启动时评分页与首页/专区并发发起首屏请求，评分首页 SSR（桌面 UA）偶发超时 /
@@ -434,6 +575,9 @@ fun ScorePage(modifier: Modifier = Modifier) {
     // 同款「同步置位」：commonLoading 同步置 true，第一帧就是骨架屏；
     // 1.132: 首次加载错峰（stagger）——避开冷启动其余页面的首屏请求洪峰
     LaunchedEffect(Unit) {
+        // 1.224o：内嵌模式（帖子正文深链）**不预热评分首页** —— 否则每次点链接都要
+        // 拉一次虎扑评分 SSR，与盖入动画争主线程 → 真机表现为"打开有点卡/有延迟"。
+        if (embedded != null) return@LaunchedEffect
         if (commonSubjects.isEmpty() && !commonLoading && !commonFailed) loadCommonSubjects(stagger = true)
     }
 
@@ -455,12 +599,14 @@ fun ScorePage(modifier: Modifier = Modifier) {
 
     // Tab 重选刷新信号：已选中时再点评分 Tab → 当前视图强刷（虎扑评分主题流 / 电竞赛程）
     LaunchedEffect(HupuUiSignals.scoreTabTap) {
+        if (embedded != null) return@LaunchedEffect
         if (HupuUiSignals.scoreTabTap == 0) return@LaunchedEffect
         if (commonOpen) loadCommonSubjects(forceNetwork = true) else refreshTick++
     }
     // 1.132: 切入评分页时补偿重试——页面常驻组合，冷启动首屏加载若失败（含重试后仍失败），
     // 用户切过来会看到残留失败态；此时若仍为空且不在加载中，再补一次加载。
     LaunchedEffect(HupuUiSignals.scoreTabShown) {
+        if (embedded != null) return@LaunchedEffect
         if (HupuUiSignals.scoreTabShown == 0) return@LaunchedEffect
         if (commonOpen && commonSubjects.isEmpty() && !commonLoading) loadCommonSubjects()
     }
@@ -662,6 +808,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
         // 注意：切到「虎扑评分」（commonOpen）时 selectedGame 仍停留在上一个频道，
         // 所以要同时排除 commonOpen，否则评分 tab 上也会冒出筛选按钮。
         val isHotChannel = !commonOpen && selectedGame == HupuMatchApi.COMMON_HOT_SPORTS_ID
+        // 1.224o：内嵌模式下**不渲染评分首页本体**（只保留后面的详情浮层）
+        if (embedded == null) {
         FrostedHeaderLayout(
             modifier = Modifier
                 .fillMaxSize()
@@ -850,6 +998,7 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 onDismiss = { hotFilterOpen = false },
             )
         }
+        } // ← if (embedded == null) 结束：内嵌模式到此为止，下面只有详情浮层
 
         // ---------- 比赛详情二级页：盖入式转场 ----------
         val om = openedMatch
@@ -940,6 +1089,8 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 onClosed = {
                     detailClosing = false
                     openedMatch = null
+                    // 1.224o：内嵌模式且下面没有选手页时才卸载内嵌页（同选手页注释）
+                    if (embedded != null && openedPlayer == null) onEmbeddedClosed()
                 },
                 onRefresh = {
                     val no = om.scoreBizNo ?: return@MatchDetailOverlay
@@ -1013,6 +1164,10 @@ fun ScorePage(modifier: Modifier = Modifier) {
                 onClosed = {
                     playerClosing = false
                     openedPlayer = null
+                    // 1.224o：内嵌模式且**下面没有别的详情页**时才卸载内嵌页。
+                    // （此前无条件卸载 → 从"对局页 → 选手页"返回一次就会被整个送回帖子，
+                    // 对局页只闪一帧；真机反馈正是这个现象。）
+                    if (embedded != null && openedMatch == null) onEmbeddedClosed()
                 },
                 onRefresh = {
                     scope.launch {
@@ -1681,9 +1836,13 @@ private fun HotSportFilterSheet(
                         ) { onToggle(name) }
                     }
                 }
+                // 1.224o：改**玻璃底**（与全站按钮语言一致）——面板里的"完成"是次级操作，
+// 实心主题色过于抢眼（真机反馈：填充色按钮与整体风格不搭）。
+                val doneDark = isAppDarkTheme()
                 LiquidButton(
                     onClick = onDismiss,
-                    fill = MaterialTheme.colorScheme.primary,
+                    fill = buttonFill(doneDark),
+                    border = buttonBorder(doneDark),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     height = 44.dp,
@@ -1692,7 +1851,7 @@ private fun HotSportFilterSheet(
                         "完成",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -1715,9 +1874,13 @@ private fun HotFilterEmpty(onClear: () -> Unit) {
             )
             // 1.199b（真机反馈）：改用 kyant 液态玻璃按钮（与「关注/发布」同源），
             // 不再自绘文字胶囊
+            // 1.224o：空态里的"清除筛选"是**次级操作**，改玻璃底 + 主题色文字
+            //（实心主题色在白底空态里过于抢眼，与整体玻璃语言不搭）
+            val clearDark = isAppDarkTheme()
             LiquidButton(
                 onClick = onClear,
-                fill = MaterialTheme.colorScheme.primary,
+                fill = buttonFill(clearDark),
+                border = buttonBorder(clearDark),
                 shape = RoundedCornerShape(50),
                 height = 40.dp,
                 contentPadding = 18.dp,
@@ -1726,7 +1889,7 @@ private fun HotFilterEmpty(onClear: () -> Unit) {
                     "清除筛选",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

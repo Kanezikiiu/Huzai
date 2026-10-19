@@ -605,8 +605,12 @@ private fun TopicFeedOverlay(
             progress.animateTo(0f, tween(120))
             onBack()
         } catch (e: CancellationException) {
-            // 未过阈值松手 → 弹回原位
-            progress.animateTo(1f, tween(200))
+            // 未过阈值松手 → 弹回原位。
+            // 1.225l：与帖子详情同款隐患 —— 回弹动画被再次取消会让 progress 停在 0.99x，
+            // 页面永久右移几个像素（左侧露白边）。改为 NonCancellable 直接置位。
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                progress.snapTo(1f)
+            }
             throw e
         }
     }
@@ -614,6 +618,16 @@ private fun TopicFeedOverlay(
     val key = "${topic.url}#${selectedSort ?: topic.url}"
     val state = feedStates[key]
     val sorts = topicSorts[topic.url]
+    // 1.225i：**左右滑动切换排序**（与首页 Tab 左右滑动同款手感）。
+    // 只有拿到真实排序条时才启用（借用上一个话题的 tabs 时不可切，否则会请求错页面）。
+    val swipeTabs = sorts.orEmpty()
+    val curSortIdx = swipeTabs.indexOfFirst { it.url == (selectedSort ?: topic.url) }
+    val swipeEnabled = swipeTabs.size > 1 && curSortIdx >= 0 && !closing
+    fun switchSortBy(delta: Int) {
+        if (!swipeEnabled) return
+        val target = (curSortIdx + delta).coerceIn(0, swipeTabs.lastIndex)
+        if (target != curSortIdx) onSelectSort(swipeTabs[target].url)
+    }
 
     Box(
         Modifier
@@ -667,7 +681,21 @@ private fun TopicFeedOverlay(
             }
             },
         ) { topInset ->
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                // 向左滑 → 下一个排序；向右滑 → 上一个（与首页 Tab 滑动同款阈值/方向）
+                .then(
+                    if (swipeEnabled) {
+                        Modifier.tabSwipeSwitch(
+                            onPrevious = { switchSortBy(-1) },
+                            onNext = { switchSortBy(1) },
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
             // 列表区：排序切换用 Crossfade 防闪（每层用自己的目标态，不被污染）
             androidx.compose.animation.Crossfade(
                 targetState = selectedSort,

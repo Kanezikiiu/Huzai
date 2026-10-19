@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
  * 用法：`PmThreadViewer(tid) { openTid = null }`
  */
 @Composable
-internal fun PmThreadViewer(tid: String, onClose: () -> Unit) {
+internal fun PmThreadViewer(tid: String, zIndex: Float = 9f, onClose: () -> Unit) {
     val repo = remember { HupuRepository() }
     val scope = rememberCoroutineScope()
 
@@ -38,6 +38,9 @@ internal fun PmThreadViewer(tid: String, onClose: () -> Unit) {
     var loadingMore by remember(tid) { mutableStateOf(false) }
     var sortSeq by remember(tid) { mutableIntStateOf(0) }
     var closing by remember(tid) { mutableStateOf(false) }
+    // 1.225g：本查看器原先**没有**返回处理，于是叠在它下面的页面（帖子详情 / 战报页）
+    // 会接手系统返回 —— 表现为"按返回，下面的页面被关掉了，这个帖子还开着"。
+    androidx.activity.compose.BackHandler { if (!closing) onClose() }
     val floorStates = remember(tid) { androidx.compose.runtime.mutableStateMapOf<String, HupuFloorReplies>() }
     val floorLoading = remember(tid) { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
     val floorLoadingMore = remember(tid) { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
@@ -88,7 +91,7 @@ internal fun PmThreadViewer(tid: String, onClose: () -> Unit) {
     }
 
     // zIndex 抬高：确保盖在聊天页（4 级）之上
-    Box(Modifier.zIndex(9f)) {
+    Box(Modifier.zIndex(zIndex)) {
         ThreadDetailOverlay(
             tid = tid,
             titleText = detail?.thread?.title ?: "帖子",

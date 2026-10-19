@@ -77,6 +77,9 @@ import com.java.myapplication.ui.glass.liquidElevation
 import com.java.myapplication.ui.theme.isAppDarkTheme
 import kotlin.coroutines.cancellation.CancellationException
 import com.java.myapplication.ui.components.HuzaiToast
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.graphics.SolidColor
 
 /**
  * 「过滤与屏蔽」合并页（盖入式二级页）。
@@ -164,6 +167,15 @@ fun FilterBlockSettingsPage(
     // ---------- ② 黑名单 ----------
     var entries by remember { mutableStateOf(HupuPrefs.loadBlacklistEntries()) }
     var version by remember { mutableIntStateOf(0) }
+    // 1.226：黑名单搜索（按昵称 / 任一用户 id 过滤）
+    var blQuery by remember { mutableStateOf("") }
+    val blShown = remember(entries, blQuery) {
+        val q = blQuery.trim()
+        if (q.isEmpty()) entries
+        else entries.filter { e ->
+            e.name.contains(q, ignoreCase = true) || e.ids.any { it.contains(q) }
+        }
+    }
     LaunchedEffect(HupuPrefs.blacklistVersion) {
         if (version != HupuPrefs.blacklistVersion) {
             version = HupuPrefs.blacklistVersion
@@ -274,6 +286,75 @@ fun FilterBlockSettingsPage(
                                 )
                             }
                         }
+                        // 1.226：搜索框（成员较多时用；按昵称或用户 id 都行）
+                        if (entries.isNotEmpty()) {
+                            item(key = "bl-search") {
+                                // 1.226：**与搜索页同款**的胶囊输入框（BasicTextField + 落影 + 22dp 圆角）
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp)
+                                        .liquidElevation(RoundedCornerShape(22.dp), isAppDarkTheme())
+                                        .clip(RoundedCornerShape(22.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            HupuIcons.SearchOutlined,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Box(
+                                            Modifier.weight(1f),
+                                            contentAlignment = Alignment.CenterStart,
+                                        ) {
+                                            if (blQuery.isEmpty()) {
+                                                Text(
+                                                    "搜索昵称或用户 id",
+                                                    fontSize = 14.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            BasicTextField(
+                                                value = blQuery,
+                                                onValueChange = { blQuery = it },
+                                                singleLine = true,
+                                                textStyle = LocalTextStyle.current.copy(
+                                                    fontSize = 14.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                ),
+                                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
+                                        if (blQuery.isNotEmpty()) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Box(
+                                                Modifier
+                                                    .size(22.dp)
+                                                    .clip(CircleShape)
+                                                    .clickable { blQuery = "" },
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    HupuIcons.Close,
+                                                    contentDescription = "清空",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if (entries.isEmpty()) {
                             item(key = "bl-empty") {
                                 Text(
@@ -283,10 +364,19 @@ fun FilterBlockSettingsPage(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                        } else if (blShown.isEmpty()) {
+                            item(key = "bl-nomatch") {
+                                Text(
+                                    "没有匹配「${blQuery.trim()}」的成员。",
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         } else {
                             // 每行提为 LazyColumn 的直接 item，真正虚拟化。
                             items(
-                                items = entries,
+                                items = blShown,
                                 key = { e -> e.ids.first() },
                             ) { e ->
                                 BlacklistRow(
