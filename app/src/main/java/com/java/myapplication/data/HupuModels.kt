@@ -68,6 +68,13 @@ data class HupuReply(
     val audioUrl: String = "",
     /** 评论语音时长（秒） */
     val audioDurationSec: Int = 0,
+    /**
+     * 1.232：该条回复所属的**服务端页码**（SSR `replies.current`）。
+     *
+     * 用于「严谨页码」：界面显示当前阅读位置 = 视口内第一条一级评论的 page，
+     * 而不是 `replyPage`（后者会被自动补拉一路推大）。
+     */
+    val page: Int = 0,
 ) {
     /** 1.128：是否为子回复（最外层应过滤，只留真一级评论）。 */
     val isSubReply: Boolean get() = quotePid.isNotEmpty()
@@ -91,6 +98,14 @@ data class HupuSubReply(
     val audioUrl: String = "",
     /** 评论语音时长（秒） */
     val audioDurationSec: Int = 0,
+    /**
+     * 1.226e：楼中楼的**视频**。
+     *
+     * 有些子回复的 `content` 是空串、视频放在独立字段（`video` / `videoCover`），
+     * 只靠解析 `<video>` 标签会整条丢掉（真机反馈：楼中楼里看不到视频）。
+     */
+    val videoUrl: String = "",
+    val videoCover: String = "",
 )
 
 /** 楼中楼数据包：父楼层 + 子回复分页 */

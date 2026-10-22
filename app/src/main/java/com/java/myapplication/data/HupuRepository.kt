@@ -141,6 +141,27 @@ class HupuRepository {
         }
     }
 
+    /**
+     * 1.227: **跳到指定页**（评论区页码跳转）。
+     *
+     * 与「无限流翻页」不同：这里是**整页替换**，不是向后追加——
+     * 用户明确要求「去第 N 页」，追加会得到「第 1 页 + 第 N 页」的混合列表。
+     *
+     * - 主楼与统计沿用当前 `cur`（copy），避免跳页时标题/计数抖动；
+     * - 页内顺序跟随当前排序方向（倒序时页内反转，与 [threadRepliesNext] 一致）；
+     * - 页码越界就地收敛（1..total），调用方不必自己 clamp。
+     */
+    suspend fun threadRepliesJump(tid: String, cur: HupuThreadDetail, page: Int): HupuThreadDetail? {
+        val total = cur.replyTotalPages
+        val target = if (total <= 0) 1 else page.coerceIn(1, total)
+        val got = threadReplies(tid, target) ?: return null
+        return cur.copy(
+            replies = if (cur.descReplies) got.replies.reversed() else got.replies,
+            replyPage = if (target <= 1 && cur.replyTotalPages <= 0) 1 else target,
+            descReplies = cur.descReplies,
+        )
+    }
+
     /** 1.185: 仅切换回帖方向——保留主楼与统计（thread），只替换 replies，避免数字抖动 */
     suspend fun repliesDirected(tid: String, base: HupuThreadDetail, desc: Boolean): HupuThreadDetail? {
         if (!desc) {
@@ -333,7 +354,11 @@ class HupuRepository {
      */
     suspend fun floorReplies(tid: String, parent: HupuReply, maxpid: String? = null): HupuFloorReplies? {
         val json = HupuApi.fetchFloorReplies(tid, parent.pid, maxpid) ?: return null
-        return withContext(Dispatchers.Default) { HupuParser.parseFloorReplies(json, parent) }
+        return withContext(Dispatchers.Default) {
+            val fr = HupuParser.parseFloorReplies(json, parent) ?: return@withContext null
+            // 1.226g：楼中楼接口不带视频字段 → 用帖子 SSR 建好的 pid 索引回填
+            fr.copy(subReplies = HupuReplyMediaIndex.applyTo(tid, fr.subReplies))
+        }
     }
 
     /** 搜索页（桌面版 SSR，20 条/页；sortby 六种排序；topicId 专区过滤） */

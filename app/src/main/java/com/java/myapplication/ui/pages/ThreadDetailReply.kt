@@ -150,6 +150,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
@@ -493,15 +494,25 @@ internal fun ReplyRow(
                 )
             }
         }
-        HtmlContent(
-            r.contentHtml,
-            onImageClick = onImageClick,
-            // 1.224p：评论视频 / 语音（JSON 字段，不在 HTML 里）
-            videoUrl = r.videoUrl,
-            videoCover = r.videoCover,
-            audioUrl = r.audioUrl,
-            audioDurationSec = r.audioDurationSec,
-        )
+        // 1.232：**评论区文本可选**。
+        // 关键取舍：这张卡在**有楼中楼**时整块可点（点开楼中楼）。
+        // 整块 clickable 与「长按选字」必然打架（长按松手会同时想选中文本、又想打开楼中楼），
+        // 所以按「没有任何可点击操作时才允许选中」的规则：
+        //   · totalReplies > 0 → 保持整卡点击（打开楼中楼），不启用选中；
+        //   · totalReplies == 0 → 整卡本来就没有点击语义，启用文本选中，长按即可复制。
+        val selectable = r.totalReplies <= 0
+        val content: @Composable () -> Unit = {
+            HtmlContent(
+                r.contentHtml,
+                onImageClick = onImageClick,
+                // 1.224p：评论视频 / 语音（JSON 字段，不在 HTML 里）
+                videoUrl = r.videoUrl,
+                videoCover = r.videoCover,
+                audioUrl = r.audioUrl,
+                audioDurationSec = r.audioDurationSec,
+            )
+        }
+        if (selectable) SelectionContainer { content() } else content()
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (r.location.isNotBlank()) {
                 Text(r.location, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -612,6 +612,9 @@ private fun FeedContent(
             onClosed = {
                 threadClosing = false
                 openedThread = null
+                // 1.228c：关闭即清掉该帖缓存 —— 页码跳转是临时视图状态，
+                // 重开必须回到第 1 页（否则会停在上次跳到的页）。
+                threadDetails.remove(ot.tid)
             },
             onRefresh = {
                 val mySeq = threadSortSeq
@@ -634,6 +637,19 @@ private fun FeedContent(
                     if (next != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) {
                         val merged = (cur.replies + next.replies).distinctBy { it.pid }
                         threadDetails[ot.tid] = next.copy(replies = merged)
+                    }
+                    threadLoadingMore = false
+                }
+            },
+            onJumpReplyPage = { page ->
+                val cur = threadDetails[ot.tid] ?: return@ThreadDetailOverlay
+                if (threadLoadingMore) return@ThreadDetailOverlay
+                val mySeq = threadSortSeq
+                scope.launch {
+                    threadLoadingMore = true
+                    val jumped = repo.threadRepliesJump(ot.tid, cur, page)
+                    if (jumped != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) {
+                        threadDetails[ot.tid] = jumped
                     }
                     threadLoadingMore = false
                 }

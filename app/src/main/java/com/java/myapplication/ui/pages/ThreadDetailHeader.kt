@@ -153,6 +153,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
@@ -343,14 +344,17 @@ internal fun MainPost(
             }
         }
 
-        Text(
-            d.thread.title,
-            fontSize = (17 * fs).sp,
-            fontWeight = FontWeight.Bold,
-            lineHeight = (24 * fs).sp,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
+        // 1.232: 标题可选、可复制（长按选字）。主楼无「整卡点击」，不会与任何点击语义冲突。
+        SelectionContainer {
+            Text(
+                d.thread.title,
+                fontSize = (17 * fs).sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = (24 * fs).sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
 
         // 1.226：**视频移到正文之前**。官方（网页与 App）都是「视频 → 正文」，
         // 之前放在正文之后，与发布页「发布后显示在正文之前」的说明也不一致。
@@ -377,12 +381,16 @@ internal fun MainPost(
             val voteInline = remember(d.contentHtml) {
                 HupuParser.contentTokens(d.contentHtml).any { it is HupuParser.ContentToken.Vote }
             }
-            HtmlContent(
-                d.contentHtml,
-                onImageClick = onImageClick,
-                vote = d.vote,
-                onToast = onToast,
-            )
+            // 1.232: 正文可选、可复制。主楼的「整卡点击」不存在，
+// 内部只有链接 / 图片 / 视频这类**tap**（长按仍是选字），两者互不影响。
+            SelectionContainer {
+                HtmlContent(
+                    d.contentHtml,
+                    onImageClick = onImageClick,
+                    vote = d.vote,
+                    onToast = onToast,
+                )
+            }
             if (d.vote != null && !voteInline) VoteCard(d.vote, onToast)
         }
         // 1.189: 元信息行——「推荐 / 收藏」已上移到常驻操作条（滚到评论区也能操作），

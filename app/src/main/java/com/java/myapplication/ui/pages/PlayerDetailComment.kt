@@ -54,6 +54,7 @@ import com.java.myapplication.ui.components.StickerAddCell
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -170,13 +171,16 @@ internal fun CommentRow(
         }
         // 1.224q：正文与昵称行之间补一点呼吸感（真机反馈贴得太近）
         Spacer(Modifier.height(3.dp))
+        // 1.233：评分评论正文可选（这张卡没有整卡点击，只有头像/昵称/图片/按钮是 tap）
         if (c.content.isNotBlank()) {
-            EmojiText(
-                c.content,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            SelectionContainer {
+                EmojiText(
+                    c.content,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
         c.images.forEachIndexed { i, img ->
             CommentAsyncImageCompact(
@@ -370,12 +374,16 @@ internal fun SubCommentRow(
             )
         }
         Spacer(Modifier.height(3.dp))
-        EmojiText(
-            sub.content,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        // 1.233：评分楼中楼里，子/孙评论的正文同样可选
+        // （这张卡没有整卡点击，展开孙评论是下方独立按钮）
+        SelectionContainer {
+            EmojiText(
+                sub.content,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         sub.images.forEachIndexed { i, img ->
             CommentAsyncImageCompact(
                 model = normalizeImageUrl(img),
@@ -495,12 +503,15 @@ internal fun SubCommentRow(
                             }
                         }
                     }
-                    Text(
-                        grand.content,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 17.sp,
-                    )
+                    // 1.234：孙评论正文同样可选（这块是独立绘制的一段，没有整卡点击）
+                    SelectionContainer {
+                        Text(
+                            grand.content,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 17.sp,
+                        )
+                    }
                     // 1.224p：孙评论的语音附件
                     if (grand.audioUrl.isNotBlank()) {
                         VoiceBubble(url = grand.audioUrl, durationSec = grand.audioDurationSec)

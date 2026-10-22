@@ -159,6 +159,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
@@ -215,6 +216,8 @@ fun ThreadDetailOverlay(
     onClosed: () -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    /** 1.227: 跳转到指定回复页（整页替换，父层负责请求） */
+    onJumpReplyPage: (Int) -> Unit = {},
     /** 1.185: 排序方向切换（true=最新在前/倒序），父层据此重新加载 */
     onSortChanged: (Boolean) -> Unit = {},
     /** 点击作者/回复者头像打开用户主页（无 euid 时回调不触发） */
@@ -226,6 +229,18 @@ fun ThreadDetailOverlay(
     onFloorLoadMore: (String, HupuFloorReplies) -> Unit = { _, _ -> },
 ) {
     val progress = remember { Animatable(0f) }
+    // 1.240：入场是否结束。页码钮的「宽度动画 + 工具栏收缩」会每帧重新分配 Row 的 weight、
+    // 重新测量工具栏里的文字与图标；如果它和 280ms 的盖入动画同时进行，打开瞬间就会掉帧。
+    // 所以页码钮只在**入场动画结束后**才允许出现。
+    var entryDone by remember { mutableStateOf(false) }
+    // 1.241：用**独立的延时**解禁页码钮，而不是挂在 closing 的 effect 上。
+    // 之前写成「closing effect 跑完入场后 entryDone = true」，但该 effect 只在 closing 变化时
+    // 重新执行——复用同一 overlay 实例再次打开等路径下它不会重跑，entryDone 就永远停在 false
+    // （真机现象：页码钮再也不出现）。这里与入场流程彻底解耦：首次组合后 320ms（> 280ms 动画）解禁。
+    LaunchedEffect(Unit) {
+        delay(320)
+        entryDone = true
+    }
     // 1.223r: 入场/退场共用同一个 closing 键控 effect —— 退场途中再次打开（含**同一个帖子**）
     // 时 closing 会翻回 false，这里重新播入场，避免「其实已打开、却看不见 = 点了没反应」。
     LaunchedEffect(closing) {
@@ -245,6 +260,53 @@ fun ThreadDetailOverlay(
     // 1.119: 删除帖子确认弹窗（本人帖顶栏入口触发）
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    // 1.227: 评论区页码入口
+    // ① 露出时机：滑到评论区才出现。判定带**滞后**（≥3 出现、≤1 收起）——
+    //    否则在 item 2 附近来回微动时，页码钮会反复抽出/收回，像在抖。
+    // ② 点击 → 弹窗选页；选完由父层整页替换并滚回评论区顶部。
+    var commentsVisible by remember { mutableStateOf(false) }
+    var pagePickerOpen by remember { mutableStateOf(false) }
+    // 1.230: 跳页后**抑制自动续页**。
+    // 跳页是把列表换成「某一页」，如果该页条目少（或被过滤后很少），
+    // 列表底部立刻可见 → 滚动加载条件成立 → 还没等用户看清就自动把下一页追加进来，
+    // 页码随之 +1，于是出现「明明是前一页，页码却是后一页」。
+    // 规则：跳页后等用户**真正滚动一次**再恢复自动续页。
+    val suppressAutoMore = remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            if (scrolling) suppressAutoMore.value = false
+        }
+    }
+    // 1.231: **页码锚点**。
+    // 列表有个既有优化：「过滤/黑名单让本页一级评论太稀疏时自动补拉下一页」，
+    // 它会让 detail.replyPage 自己往前爬 → 页码 1→2→3 自动变化（用户没做任何操作）。
+    // 页码表达的是「你现在读的是哪一页」，这种情况不该动，所以显示值改为锚点：
+    //  · 进入评论区时锁定一次
+    //  · 跳页时更新为目标页
+    //  · 切换排序方向时清空（页号含义变了）
+    var pageAnchor by remember(tid) { mutableStateOf<Int?>(null) }
+    // 1.232: **严谨页码** —— 视口内第一条一级评论所属的服务端页。
+    // 由列表在滚动时实时上报（见 LazyColumn 内的 LaunchedEffect）；
+    // 这比 record 一个「replyPage」严谨得多：replyPage 会被自动补拉推大，
+    // 而它精确反映「你现在看到的是第几页的回复」。
+    var readingPageTop by remember(tid) { mutableStateOf(0) }
+    LaunchedEffect(commentsVisible, detail?.replyPage) {
+        if (commentsVisible && pageAnchor == null) pageAnchor = detail?.replyPage
+    }
+    LaunchedEffect(detail?.descReplies) { pageAnchor = null }
+    // 1.229: 判定改成「评论区**顶部一露头**就出现」。
+    // 之前用 `firstVisibleItemIndex >= 3`：遇到「某页只剩少量回复 / 本页被过滤成空」
+    // 时列表根本滚不到第 3 项 → 条件永不满足 → 圆钮不出现，也就没法再跳页。
+    // 现在直接读布局：只要第 3 项（「回复 N」标题，index 2）有任何像素进入视口，
+    // 就算「在评论区」。distinctUntilChanged 保证滚动过程中只有状态翻转才发射（不抖动）。
+    // 1.240：入场结束后才开始监听（入场期间列表还在首帧布局/滚动，监听是白跑）
+    LaunchedEffect(listState, entryDone) {
+        if (!entryDone) return@LaunchedEffect
+        snapshotFlow {
+            // header(0) / main(1) / 回复标题(2) —— 评论区从 index 2 起
+            listState.layoutInfo.visibleItemsInfo.any { it.index >= 2 }
+        }.distinctUntilChanged().collect { v -> commentsVisible = v }
+    }
     val actionBarBg = MaterialTheme.colorScheme.background
     // 1.189: 常驻操作条的毛玻璃底——采样「列表内容」这一层（不含操作条自身，
     // 避免自采样糊成一团）。与 MainActivity 的全局 backdrop 同一套引擎。
@@ -267,7 +329,9 @@ fun ThreadDetailOverlay(
     val shouldLoadMore by remember(detail?.replyPage, loadingMore, detail?.replyTotalPages, detail?.descReplies, sortMode) {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            canLoadMore && !loadingMore && last >= listState.layoutInfo.totalItemsCount - 4
+            // 1.230: 跳页后先别自动续页（见 suppressAutoMore 注释）
+            canLoadMore && !loadingMore && !suppressAutoMore.value &&
+                last >= listState.layoutInfo.totalItemsCount - 4
         }
     }
     LaunchedEffect(shouldLoadMore) {
@@ -1044,6 +1108,22 @@ fun ThreadDetailOverlay(
                                 // 万一出现重复 pid 都会抛「Key already used」导致闪退——这里统一兜底去重。
                                 list.distinctBy { it.pid }
                             }
+                            // 1.232: 严谨页码 —— 上报「视口内第一条一级评论所属的页」。
+                            // 列表前 3 项是 header / main /「回复 N」，其后才是回复条目，
+                            // 所以 (index - 3) 就是 displayReplies 的下标。
+                            LaunchedEffect(listState, displayReplies, entryDone) {
+                                // 1.240：入场期间不跑（此时列表还在首帧布局/滚动，白算）
+                                if (!entryDone) return@LaunchedEffect
+                                snapshotFlow {
+                                    val items = listState.layoutInfo.visibleItemsInfo
+                                    val firstReply = items.firstOrNull { it.index >= 3 }
+                                    val idx = ((firstReply?.index ?: 3) - 3).coerceAtLeast(0)
+                                    displayReplies.getOrNull(idx)?.page ?: 0
+                                }.distinctUntilChanged().collect { p ->
+                                    // 0 = 本页没有可用回复（被过滤空 / 正在加载）→ 保留上一次的值
+                                    if (p > 0) readingPageTop = p
+                                }
+                            }
                             // Only-OP fast-scan: auto-chain next page (~120ms cadence) so OP
                             // floors stream in one by one instead of a bare spinner; each
                             // landed page recomposes displayReplies via detail.replies
@@ -1208,6 +1288,37 @@ item(key = "r-count") {
                                         }
                                     }
                                 }
+                                // 1.228c：本页回复被「关键词过滤 / 黑名单」全部隐藏时，
+                                // 明确告诉用户发生了什么，并指出还能用右下角页码换页——
+                                // 否则这里只剩一片空白，像是加载失败。
+                                // 1.233：两种空态要分开说 ——
+                                //  · 全帖根本没有回复 → 直接说「本帖暂无回复」；
+                                //  · 有回复但本页都被过滤了 → 才解释「可能被过滤隐藏」并指路页码。
+                                val noReplyAtAll = d.replyCount <= 0 && d.replies.isEmpty()
+                                if (displayReplies.isEmpty() && !onlyOp && !loadingMore) {
+                                    item(key = "r-empty-filter") {
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(vertical = 26.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                        ) {
+                                            Text(
+                                                if (noReplyAtAll) "\u672c\u5e16\u6682\u65e0\u56de\u590d"
+                                                else "\u672c\u9875\u6ca1\u6709\u53ef\u663e\u793a\u7684\u56de\u590d",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            if (!noReplyAtAll) {
+                                                Spacer(Modifier.height(6.dp))
+                                                Text(
+                                                    "\u53ef\u80fd\u88ab\u300c\u5173\u952e\u8bcd\u8fc7\u6ee4 / \u9ed1\u540d\u5355\u300d\u9690\u85cf\uff0c\u53ef\u70b9\u5de6\u4e0b\u89d2\u9875\u7801\u6362\u4e00\u9875",
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 if (canLoadMore) {
                                     item(key = "r-more") {
                                         Column(
@@ -1341,7 +1452,9 @@ item(key = "r-count") {
                 targetValue =
                     if (replyBoxOpen || floorStack.isNotEmpty() || userPageStack.isNotEmpty() ||
                         autoHideBar.hidden || videoFullscreen || imageViewer != null ||
-                        embedPage != null || editingTid != null
+                        embedPage != null || editingTid != null ||
+                        // 1.227: 页码弹窗打开时也收起（弹窗自带遮罩，底栏留在下面多余）
+                        pagePickerOpen
                     ) 1f else 0f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -1349,7 +1462,10 @@ item(key = "r-count") {
                 ),
                 label = "threadActionBar",
             )
-            Box(
+            // 1.228: 底部这一行改为「工具栏 + 间隙 + 独立页码圆钮」的并列结构。
+            // 圆钮**不属于**工具栏内部：呼出时工具栏在右侧收缩让出这一格，
+            // 两者之间有真实间隙，各自是独立的毛玻璃体；离开评论区圆钮消失、工具栏恢复。
+            Row(
                 Modifier
                     .align(Alignment.BottomCenter)
                     // zIndex 996：在沉浸底条(997)/表情面板(998)/输入行(1000) 之下，
@@ -1365,9 +1481,87 @@ item(key = "r-count") {
                     .padding(bottom = with(density) { actionBarBottomPadPx.toDp() })
                     // 1.190: 不再额外加 vertical padding——底边距必须与悬浮 Tab 栏**逐 dp 一致**
                     // （此前多留 8dp，真机看到「详情页底栏比主页 Tab 栏略高」）
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 12.dp)
+                    // 1.228d：**固定行高 = 工具栏高度 54dp**。
+                    // 此前圆钮容器是 60dp，把整行撑到 60 → 54dp 的工具栏在行内居中，
+                    // 于是「页码钮一出现，工具栏就抬高 3dp，消失又落回去」。
+                    .height(54.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // ---------- 1.228c: 独立的页码圆钮（在工具栏之外） ----------
+                // 同一行、同一基线，但和工具栏是两个控件：**位于工具栏左侧**，出现时工具栏在右侧收缩，
+                // 让出「间隙 + 圆钮」的位置；离开时宽度归零、工具栏恢复整条长度。
+                val pageTotalAll = barD.replyTotalPages
+                // 1.230: **阅读顺序页码**。倒序（最新在前）时服务端页号是反的：
+                // 用户读到的是「从最新往回数第几页」，若直接显示 replyPage，
+                // 就会出现「明明是前一页、页码却是后一页」。这里统一换算成阅读顺序，
+                // 跳页面板也用同一套编号（见下方 onJump 的反向映射）。
+                // 1.232：**严谨顺序**——优先「视口顶部那条回复的真实页码」，
+// 其次退回跳页锚点，最后才用 replyPage（会被自动补拉推大的那个）。
+                val shownServerPage =
+                    readingPageTop.takeIf { it > 0 } ?: pageAnchor ?: barD.replyPage
+                val readingPage =
+                    if (barD.descReplies) (pageTotalAll - shownServerPage + 1) else shownServerPage
+                // 本页回复可能被关键词/黑名单**全部过滤**：列表会缩回顶部，
+                // 此时只按滚动位置判定会让圆钮收起 → 用户被卡在空白页，再也跳不回去。
+                // 所以「本页过滤后为空」也强制保留入口。
+                // 1.240：入场结束前不做这趟过滤计算（它要看一遍全部回复 + 关键词 + 黑名单，
+// 和首帧渲染撞在一起会明显卡顿）。入场完成后再算一次即可。
+                val pageLooksEmpty = remember(
+                    barD.replies,
+                    HupuPrefs.filterVersion,
+                    HupuPrefs.blacklistVersion,
+                    entryDone,
+                ) {
+                    if (!entryDone) {
+                        false
+                    } else {
+                        val ckw = HupuPrefs.loadFilterKeywords()
+                        val top = topLevelReplies(barD.replies).filterNot { r ->
+                            ckw.comment.isNotEmpty() &&
+                                HupuFilter.blockedComment(HupuFilter.stripHtml(r.contentHtml), ckw)
+                        }
+                        HupuBlacklist.pruneReplies(top, HupuPrefs.loadBlacklist()).isEmpty()
+                    }
+                }
+                val pageShown =
+                    // 1.240：入场动画结束前不显示（避免与盖入动画叠加掉帧）
+                    entryDone && pageTotalAll > 1 &&
+                        (commentsVisible || (barD.replyPage > 1 && pageLooksEmpty))
+                // **单一动画值** 0 → 62dp（8dp 间隙 + 54dp 圆钮），一个弹簧一次到位。
+                // 此前 gap / slot 是两个独立弹簧、各自结束，收起时会像「调了好几次」。
+                val pageSlot by animateDpAsState(
+                    targetValue = if (pageShown) 62.dp else 0.dp,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "pageSlot",
+                )
+                if (pageSlot > 0.dp) {
+                    // 只裁横向（宽度动画 = 圆钮从左侧推出/收回）。
+                    // 1.228d：高度必须 = 54dp（与工具栏同高），否则会撑高整行、
+                    // 让工具栏上下浮动。圆 48dp 在 54dp 内上下各余 3dp。
+                    Box(
+                        Modifier
+                            .width(pageSlot)
+                            .height(54.dp)
+                            .clipToBounds(),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        ReplyPageFab(
+                            backdrop = actionBackdrop,
+                            pageNow = readingPage.coerceIn(1, pageTotalAll.coerceAtLeast(1)),
+                            pageTotal = pageTotalAll.coerceAtLeast(1),
+                            onClick = { pagePickerOpen = true },
+                            modifier = Modifier
+                                .width(54.dp)
+                                .height(54.dp),
+                        )
+                    }
+                }
                 ThreadActionBar(
+                    modifier = Modifier.weight(1f),
                     backdrop = actionBackdrop,
                     replyCount = barD.replyCount,
                     recommendCount = barD.thread.lights + recommendDelta,
@@ -1755,6 +1949,37 @@ item(key = "r-count") {
                     backEnabled = nestedTid == null && scoreEmbedded == null &&
                         userPageStack.isEmpty() && imageViewer == null && editingTid == null,
                 ) { embedPage = null }
+            }
+        }
+        // 1.227: 评论区「跳转页码」弹窗（与「退出登录」同款毛玻璃卡 + 弹性入场）
+        if (pagePickerOpen) {
+            detail?.let { dd ->
+                val totalP = dd.replyTotalPages.coerceAtLeast(1)
+                // 与圆钮同一套「阅读顺序页码」；跳页时再映射回服务端页号
+                val anchorSrv = readingPageTop.takeIf { it > 0 } ?: pageAnchor ?: dd.replyPage
+                val readingNow = if (dd.descReplies) (totalP - anchorSrv + 1) else anchorSrv
+                ReplyPagePicker(
+                    // 复用操作条的采样源（列表内容层）——弹窗自身不在该层内，不会自采样
+                    backdrop = actionBackdrop,
+                    pageNow = readingNow.coerceIn(1, totalP),
+                    pageTotal = totalP,
+                    onJump = { userPage ->
+                        pagePickerOpen = false
+                        // 1.230: 跳页后先别自动续页，否则页码会自己往后跳
+                        suppressAutoMore.value = true
+                        // 整页替换后回到评论区顶部：让用户从「该页第一条」开始看
+                        scope.launch { runCatching { listState.animateScrollToItem(2) } }
+                        // 阅读顺序 → 服务端页号
+                        val targetSrv = if (dd.descReplies) (totalP - userPage + 1) else userPage
+                        // 1.231: 锚点跟着跳（页码显示以锚点为准）
+                        pageAnchor = targetSrv
+                        // 1.232: 严谨页码的上报值也立刻置为目标页，
+                        // 避免新数据到达前还显示旧页
+                        readingPageTop = targetSrv
+                        onJumpReplyPage(targetSrv)
+                    },
+                    onDismiss = { pagePickerOpen = false },
+                )
             }
         }
         // 1.112: 编辑页（盖入式，与用户主页同级的嵌套二级页）

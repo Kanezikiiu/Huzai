@@ -192,7 +192,9 @@ object HupuParser {
             val o = repList?.optJSONObject(i) ?: continue
             // 1.224p：语音附件先取出来，正文里的占位文案据此决定是否剥掉
             val audio = audioFrom(o.optJSONArray("ancillaryContents"))
-            val rawHtml = o.optString("content")
+            val video = videoFrom(o.optJSONArray("ancillaryContents"))
+            // content 可能为空，真正的正文/视频在 dealContent 里
+            val rawHtml = o.optString("content").ifBlank { o.optString("dealContent") }
             replies += HupuReply(
                 pid = o.optString("pid"),
                 contentHtml = if (audio.first.isNotBlank()) stripAudioPlaceholder(rawHtml) else rawHtml,
@@ -212,14 +214,21 @@ object HupuParser {
                     ?.takeIf { it.isNotEmpty() && it != "" }
                     ?: "",
                 // 1.224p：评论视频/语音（官方页面同样把视频放在独立字段，content 为空）
-                videoUrl = o.optString("video").takeIf { it.isNotBlank() } ?: "",
-                videoCover = o.optString("videoCover").takeIf { it.isNotBlank() } ?: "",
+                videoUrl = o.optString("video").takeIf { it.isNotBlank() }
+                    ?: video.first,
+                videoCover = o.optString("videoCover").takeIf { it.isNotBlank() }
+                    ?: video.second,
                 audioUrl = audio.first,
                 audioDurationSec = audio.second,
+                // 1.232：标记这条回复属于哪一页（严谨页码用）
+                page = page,
             )
         }
 
         val thread = threadFrom(th)
+        // 1.226g/i：楼中楼接口不带视频字段，但帖子 SSR 的 replies.list / lights 里
+        // 同一 pid 带着 video/videoCover —— 建索引（合并式）供楼中楼加载后按 pid 回填。
+        HupuReplyMediaIndex.put(thread.tid, replyVideoIndex(detail, replies))
         return HupuThreadDetail(
             thread = thread,
             contentHtml = th.optString("content"),
@@ -266,6 +275,46 @@ object HupuParser {
         }
     }
 
+    /** 1.226i：从 SSR detail 里抽出「pid → 视频/封面」索引 */
+    internal fun replyVideoIndex(detail: JSONObject, replies: List<HupuReply>): Map<String, Pair<String, String>> {
+        val idx = HashMap<String, Pair<String, String>>()
+        runCatching {
+            detail.optJSONArray("lights")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val pid = o.optString("pid").trim()
+                    val v = o.optString("video").trim()
+                    if (pid.isNotEmpty() && v.isNotEmpty() && v != "null") {
+                        idx[pid] = v to o.optString("videoCover").trim()
+                    }
+                }
+            }
+        }
+        replies.forEach { r ->
+            if (r.videoUrl.isNotBlank()) idx[r.pid] = r.videoUrl to r.videoCover
+        }
+        return idx
+    }
+
+    /** 1.226i：直接从帖子 HTML 建索引（接口层兜底用，不依赖页面是否解析过） */
+    internal fun replyVideoIndexFromHtml(html: String): Map<String, Pair<String, String>> {
+        val next = extractNextData(html) ?: return emptyMap()
+        val detail = next.optJSONObject("props")?.optJSONObject("pageProps")
+            ?.optJSONObject("detail") ?: return emptyMap()
+        val list = detail.optJSONObject("replies")?.optJSONArray("list")
+        val replies = mutableListOf<HupuReply>()
+        if (list != null) {
+            for (i in 0 until list.length()) {
+                val o = list.optJSONObject(i) ?: continue
+                val v = o.optString("video").trim()
+                if (v.isNotEmpty() && v != "null") {
+                    replies += HupuReply(pid = o.optString("pid"), videoUrl = v, videoCover = o.optString("videoCover"))
+                }
+            }
+        }
+        return replyVideoIndex(detail, replies)
+    }
+
     // ---------- 楼中楼（m.hupu.com/api/v2/bbs-reply-detail/{tid}-{pid}） ----------
 
     /**
@@ -285,7 +334,9 @@ object HupuParser {
             val user = o.optJSONObject("user")
             val quote = o.optJSONObject("quote")
             val audio = audioFrom(o.optJSONArray("ancillaryContents"))
-            val rawHtml = o.optString("content")
+            val video = videoFrom(o.optJSONArray("ancillaryContents"))
+            // content 可能为空，真正的正文/视频在 dealContent 里
+            val rawHtml = o.optString("content").ifBlank { o.optString("dealContent") }
             subs += HupuSubReply(
                 pid = o.optString("pid"),
                 contentHtml = if (audio.first.isNotBlank()) stripAudioPlaceholder(rawHtml) else rawHtml,
@@ -296,9 +347,15 @@ object HupuParser {
                 location = o.optString("location"),
                 author = subAuthorFrom(user),
                 quoteUser = quote?.optString("username") ?: "",
-                // 1.224p：楼中楼的语音附件（视频在 content 的 <video> 标签里，由渲染层解析）
+                // 1.224p：楼中楼的语音附件
                 audioUrl = audio.first,
                 audioDurationSec = audio.second,
+                // 1.226e：楼中楼视频——content 里可能是空串，视频在独立字段
+                videoUrl = o.optString("video").takeIf { it.isNotBlank() }
+                    ?: o.optString("videoUrl").takeIf { it.isNotBlank() }
+                    ?: video.first,
+                videoCover = o.optString("videoCover").takeIf { it.isNotBlank() }
+                    ?: video.second,
             )
         }
 
@@ -600,6 +657,33 @@ internal fun audioFrom(arr: org.json.JSONArray?): Pair<String, Int> {
         return url to o.optInt("durationInSec", o.optInt("duration", 0))
     }
     return "" to 0
+}
+
+/**
+ * 1.226f：从附件数组里取**视频**（`ancillaryContents` 里 contentType=VIDEO 的项）。
+ *
+ * 楼中楼/评论的视频不一定在 `content` 的 `<video>` 标签里，也不一定有顶层 `video` 字段：
+ * 移动端接口常把媒体统一塞进 `ancillaryContents`（IMAGE / AUDIO / VIDEO）。
+ *
+ * @return (视频地址, 封面)；无视频返回 ("", "")
+ */
+internal fun videoFrom(arr: org.json.JSONArray?): Pair<String, String> {
+    if (arr == null) return "" to ""
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        val type = (o.optString("contentType").ifBlank { o.optString("commentContentType") }).uppercase()
+        val url = listOf("content", "commentContent", "url", "videoUrl", "mediaUrl")
+            .map { o.optString(it) }
+            .firstOrNull { it.startsWith("http") } ?: continue
+        val looksVideo = url.contains(".mp4", true) || url.contains(".m3u8", true) ||
+            url.contains("video", true)
+        if (type != "VIDEO" && !(type.isEmpty() && looksVideo)) continue
+        val cover = listOf("cover", "poster", "videoCover", "img")
+            .map { o.optString(it) }
+            .firstOrNull { it.startsWith("http") } ?: ""
+        return url to cover
+    }
+    return "" to ""
 }
 
 /**

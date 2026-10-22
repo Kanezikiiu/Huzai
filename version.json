@@ -1,8 +1,8 @@
 {
-  "versionCode": 213,
-  "versionName": "1.203",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.203/huzai-1.203-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.203",
-  "changelog": "· 功能删除:由于虎扑网页版关闭了「评分页面」的评论与回复接口，因此软件同步删除这2个功能，打分与点亮不受影响\n· 功能新增:发帖页「插入链接」，形式为超链接文本或卡片\n· 功能新增:正文及评论区超链接可点击并跳转，如帖子 / 评分 / 用户主页等\n· 功能新增:评论区支持查看视频与播放语音\n· 投票选项上限由 10 提升至 30\n· 专区二级页支持左右滑动切换排序\n· 问题修复:修复偶发页面容器不居中的问题，以及在上层页面按返回误关下层页面的问题",
+  "versionCode": 214,
+  "versionName": "1.204",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.204/huzai-1.204-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.204",
+  "changelog": "· 功能新增:评论区支持页码跳转，滑动到评论区即出现页码按钮\n· 功能新增:帖子标题、正文、评论区支持长按选中文字\n· 功能优化:优化评分分布布局\n· 问题修复:修复楼中楼不显示视频消息的问题",
   "forceUpdate": false
 }

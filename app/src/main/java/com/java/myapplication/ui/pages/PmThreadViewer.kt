@@ -130,6 +130,17 @@ internal fun PmThreadViewer(tid: String, zIndex: Float = 9f, onClose: () -> Unit
                     loadingMore = false
                 }
             },
+            onJumpReplyPage = { page ->
+                val cur = detail ?: return@ThreadDetailOverlay
+                if (loadingMore) return@ThreadDetailOverlay
+                val mySeq = sortSeq
+                scope.launch {
+                    loadingMore = true
+                    val jumped = repo.threadRepliesJump(tid, cur, page)
+                    if (jumped != null && mySeq == sortSeq) detail = jumped
+                    loadingMore = false
+                }
+            },
             onSortChanged = { desc ->
                 val mySeq = ++sortSeq
                 val cur = detail

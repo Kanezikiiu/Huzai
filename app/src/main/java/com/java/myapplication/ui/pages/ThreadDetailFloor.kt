@@ -148,6 +148,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
@@ -329,14 +330,23 @@ internal fun FloorSheet(
                                                 )
                                             }
                                         }
-                                        HtmlContent(
-                                            parent.contentHtml,
-                                            onImageClick = onImageClick,
-                                            videoUrl = parent.videoUrl,
-                                            videoCover = parent.videoCover,
-                                            audioUrl = parent.audioUrl,
-                                            audioDurationSec = parent.audioDurationSec,
-                                        )
+                                        // 1.226k：母楼同样按 pid 兜底（母楼本身可能就是视频回复）
+                                        val parentFallback = remember(parent.pid, parent.videoUrl) {
+                                            if (parent.videoUrl.isNotBlank()) null
+                                            else com.java.myapplication.data.HupuReplyMediaIndex.videoOf(parent.pid)
+                                        }
+                                        // 1.233：母评论在楼中楼 sheet 里是**独立展示的一段**，没有整卡点击，
+// 所以长按可以直接选字复制。
+                                        SelectionContainer {
+                                            HtmlContent(
+                                                parent.contentHtml,
+                                                onImageClick = onImageClick,
+                                                videoUrl = parent.videoUrl.ifBlank { parentFallback?.first.orEmpty() },
+                                                videoCover = parent.videoCover.ifBlank { parentFallback?.second.orEmpty() },
+                                                audioUrl = parent.audioUrl,
+                                                audioDurationSec = parent.audioDurationSec,
+                                            )
+                                        }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 "全部回复 ${parent.totalReplies}",
@@ -493,13 +503,26 @@ internal fun SubReplyRow(sub: HupuSubReply, onExpand: () -> Unit, onImageClick: 
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-        HtmlContent(
-            sub.contentHtml,
-            onImageClick = onImageClick,
-            // 视频在 content 的 <video> 标签里（由 HTML 解析层提出），这里只补语音
-            audioUrl = sub.audioUrl,
-            audioDurationSec = sub.audioDurationSec,
-        )
+        // 1.226k：渲染时**按 pid 兜底**。楼中楼接口不带 video，索引里却有；
+        // 这样无论楼层数据来自哪条加载路径/哪份旧状态，都能显示出来。
+        val fallbackVideo = remember(sub.pid, sub.videoUrl) {
+            if (sub.videoUrl.isNotBlank()) null
+            else com.java.myapplication.data.HupuReplyMediaIndex.videoOf(sub.pid)
+        }
+        // 1.232：与一级评论同一条规则 —— 有「展开孙评论」时整块可点，不启用选中；
+        // 没有可点操作时才允许长按选字。
+        val selectableSub = sub.nestedCount <= 0
+        val contentBlock: @Composable () -> Unit = {
+            HtmlContent(
+                sub.contentHtml,
+                onImageClick = onImageClick,
+                videoUrl = sub.videoUrl.ifBlank { fallbackVideo?.first.orEmpty() },
+                videoCover = sub.videoCover.ifBlank { fallbackVideo?.second.orEmpty() },
+                audioUrl = sub.audioUrl,
+                audioDurationSec = sub.audioDurationSec,
+            )
+        }
+        if (selectableSub) SelectionContainer { contentBlock() } else contentBlock()
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (sub.createdAtText.isNotBlank()) {
                 Text(sub.createdAtText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

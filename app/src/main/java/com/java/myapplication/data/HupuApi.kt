@@ -59,7 +59,7 @@ object HupuApi {
             try {
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use null
-                    response.body?.string()
+                    injectReplyVideos(tid, response.body?.string())
                 }
             } catch (e: Exception) {
                 null
@@ -77,7 +77,43 @@ object HupuApi {
      * 需要登录 cookie（bbs 域 SSO），未登录时端点返回 code=0 / data=null。
      * 实测：getUserInfo/getThreadList/getReplyList/getRecommendList/getFavoritesList/getUserFollowList。
      */
-    suspend fun fetchSpaceApi(path: String, fast: Boolean = false): String? {
+    
+    /**
+     * 1.226h：楼中楼接口**不返回视频字段**，但帖子 SSR 的 replies.list / lights 里
+     * 同一 pid 带着 video / videoCover。这里在**接口层**统一注入，
+     * 让所有入口（帖子详情 / 嵌套帖子 / 首页 / 专区 / 历史 / 消息 / 用户主页）都生效。
+     */
+    internal fun injectReplyVideos(tid: String, body: String?): String? {
+        if (body.isNullOrBlank()) return body
+        var videos = HupuReplyMediaIndex.videos(tid)
+        if (videos.isEmpty()) {
+            // 1.226i：索引还没建（例如直接从消息/历史进楼中楼）→ 用缓存的帖子 HTML 现建
+            HupuCache.get("/$tid.html")?.let { html ->
+                val m = HupuParser.replyVideoIndexFromHtml(html)
+                if (m.isNotEmpty()) {
+                    HupuReplyMediaIndex.put(tid, m)
+                    videos = m
+                }
+            }
+        }
+        if (videos.isEmpty()) return body
+        return runCatching {
+            val root = org.json.JSONObject(body)
+            val replies = root.optJSONObject("data")?.optJSONArray("replies") ?: return@runCatching body
+            var changed = false
+            for (i in 0 until replies.length()) {
+                val o = replies.optJSONObject(i) ?: continue
+                val pid = o.optString("pid").trim()
+                if (pid.isEmpty() || o.optString("video").isNotBlank()) continue
+                val hit = videos[pid] ?: continue
+                o.put("video", hit.first)
+                if (hit.second.isNotBlank()) o.put("videoCover", hit.second)
+                changed = true
+            }
+            if (changed) root.toString() else body
+        }.getOrDefault(body)
+    }
+suspend fun fetchSpaceApi(path: String, fast: Boolean = false): String? {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 // 1.190: fast=true 走导航快车道（200ms），用于「用户主页资料卡」这类用户主动触发的请求

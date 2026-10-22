@@ -54,6 +54,7 @@ import com.java.myapplication.ui.components.StickerAddCell
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -331,12 +332,15 @@ fun SubCommentSheet(
                                                 )
                                             }
                                         }
-                                        Text(
-                                            sheet.parent.content,
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            lineHeight = 20.sp,
-                                        )
+                                        // 1.233：评分楼中楼的**母评论**同样可选（无整卡点击）
+                                        SelectionContainer {
+                                            Text(
+                                                sheet.parent.content,
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                lineHeight = 20.sp,
+                                            )
+                                        }
                                         sheet.parent.images.forEachIndexed { i, img ->
                                             CommentAsyncImageCompact(
                                                 model = normalizeImageUrl(img),

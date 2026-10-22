@@ -95,6 +95,8 @@ class HupuParserTest {
         assertEquals(1, d.replyPage)
         // 第一条回复楼层 = 1
         assertEquals(1, d.replies.first().floor)
+        // 1.232：每条回复都带上「所属页」（严谨页码的数据基础）
+        assertTrue("每条回复应标 page=1", d.replies.all { it.page == 1 })
         assertTrue(d.replies.first().contentHtml.contains("img") || d.replies.first().contentHtml.isNotEmpty())
         assertTrue(d.thread.title.startsWith("讯飞丑闻"))
     }
@@ -108,6 +110,8 @@ class HupuParserTest {
         assertEquals(2, d.replyPage)
         assertEquals(20, d.replies.size)
         assertEquals(21, d.replies.first().floor)
+        // 1.232：第 2 页的每条回复都应标 page=2
+        assertTrue("每条回复应标 page=2", d.replies.all { it.page == 2 })
     }
 
     @Test
