@@ -113,6 +113,7 @@ import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.HeroBadgeAvatar
 
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SkeletonDetail
 import com.java.myapplication.ui.components.SortBar
 import com.java.myapplication.ui.components.normalizeImageUrl
 import com.java.myapplication.ui.components.normalizeCover
@@ -293,8 +294,12 @@ fun PlayerDetailOverlay(
             progress.animateTo(0f, tween(120))
             onBack()
         } catch (e: CancellationException) {
-            // 未过阈值松手 → 弹回原位
-            progress.animateTo(1f, tween(200))
+            // 1.242：回弹不能走 animateTo —— 回弹途中若再发生一次返回手势/其它挂起操作，
+            // 动画会被取消，progress 永久停在 0.99x → translationX 残留几个像素的右移，
+            // 左侧露出下层白底、内容看着不居中。这里在 NonCancellable 里直接置位。
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                progress.snapTo(1f)
+            }
             throw e
         }
     }
@@ -337,7 +342,7 @@ fun PlayerDetailOverlay(
             label = "playerDetailSwitch",
         ) { s ->
             when (s) {
-                "loading" -> SkeletonHome()
+                "loading" -> SkeletonDetail()
                 "error" -> ErrorRetry { onRefresh() }
                 else -> {
                     val d = self

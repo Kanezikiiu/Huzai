@@ -199,7 +199,12 @@ fun MessageCenterPage(onClose: () -> Unit) {
             progress.animateTo(0f, tween(120))
             closing = true
         } catch (e: CancellationException) {
-            progress.animateTo(1f, tween(200))
+            // 1.242：回弹不能走 animateTo —— 回弹途中若再发生一次返回手势/其它挂起操作，
+            // 动画会被取消，progress 永久停在 0.99x → translationX 残留几个像素的右移，
+            // 左侧露出下层白底、内容看着不居中。这里在 NonCancellable 里直接置位。
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                progress.snapTo(1f)
+            }
             throw e
         }
     }
@@ -400,7 +405,12 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
             progress.animateTo(0f, tween(120))
             closing = true
         } catch (e: CancellationException) {
-            progress.animateTo(1f, tween(200))
+            // 1.242：回弹不能走 animateTo —— 回弹途中若再发生一次返回手势/其它挂起操作，
+            // 动画会被取消，progress 永久停在 0.99x → translationX 残留几个像素的右移，
+            // 左侧露出下层白底、内容看着不居中。这里在 NonCancellable 里直接置位。
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                progress.snapTo(1f)
+            }
             throw e
         }
     }
@@ -447,6 +457,10 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
 
     // ---------- 帖子详情宿主（与浏览记录页同款：状态外置缓存） ----------
     var openedThread by remember { mutableStateOf<HupuThread?>(null) }
+    // 1.251：从通知点进来要**定位到的评论 pid**（空 = 普通打开帖子）
+    var pendingPid by remember { mutableStateOf("") }
+    // 1.256：该评论的**母楼 pid**（子回复场景）。详情页用它在当前页找到母楼并自动展开楼中楼。
+    var pendingParentPid by remember { mutableStateOf("") }
     var threadClosing by remember { mutableStateOf(false) }
     var threadLoading by remember { mutableStateOf(false) }
     var threadLoadingMore by remember { mutableStateOf(false) }
@@ -471,7 +485,9 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
             )
         )
         openedThread = HupuThread(tid = n.tid, title = n.threadTitle.ifBlank { "帖子" })
-        threadLoading = !threadDetails.containsKey(n.tid)
+        // 1.251：通知自带 pid → 打开后按 pid 定位到那条评论
+        pendingPid = n.pid.takeIf { it.isNotBlank() && it != "0" }.orEmpty()
+        threadLoading = pendingPid.isNotBlank() || !threadDetails.containsKey(n.tid)
     }
 
     fun openFloor(tid: String, r: HupuReply) {
@@ -509,6 +525,26 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
         val t = openedThread ?: return@LaunchedEffect
         val tid = t.tid
         val mySeq = threadSortSeq
+        // 1.251：定位模式 —— 服务端 `/{tid}.html?pid={pid}` 会直接返回该 pid 所在的页，
+        // 一次请求就能拿到正确页码（含目标评论），不必逐页翻找、也不需要强刷第 1 页。
+        if (pendingPid.isNotBlank()) {
+            // 1.256：**两步定位**（见 repo.threadDetailLocate 注释）。
+            // 子回复可能落在母楼之外的页（实测同一母楼的两条子回复分属第 1 / 第 2 页），
+            // 所以这里定位的是「母楼所在页」，子回复交给楼中楼 sheet 翻页去找。
+            val loc = repo.threadDetailLocate(tid, pendingPid)
+            if (loc != null && mySeq == threadSortSeq && openedThread?.tid == tid) {
+                threadDetails[tid] = loc.detail
+                pendingParentPid = if (loc.anchorPid != pendingPid) loc.anchorPid else ""
+            } else {
+                // 定位不成立（深层评论 / 已被删）→ 安静回退到普通打开（第 1 页）
+                pendingPid = ""
+                pendingParentPid = ""
+                val fallback = repo.threadDetail(tid)
+                if (fallback != null && openedThread?.tid == tid) threadDetails[tid] = fallback
+            }
+            if (openedThread?.tid == tid) threadLoading = false
+            return@LaunchedEffect
+        }
         if (threadDetails.containsKey(tid)) {
             val old = threadDetails[tid]
             val fresh = repo.threadDetail(tid, refresh = true)
@@ -646,6 +682,9 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
                 onClosed = {
                     threadClosing = false
                     openedThread = null
+                    // 1.251/1.256：定位状态只对本次打开有效
+                    pendingPid = ""
+                    pendingParentPid = ""
                     // 1.228c：关闭即清掉该帖缓存 —— 页码跳转是临时视图状态，
                     // 重开必须回到第 1 页（否则会停在上次跳到的页）。
                     threadDetails.remove(ot.tid)
@@ -675,7 +714,11 @@ fun NoticeListPage(kind: Int, onClose: () -> Unit) {
                         threadLoadingMore = false
                     }
                 },
-                onJumpReplyPage = { page ->
+                // 1.251：带 pid → 详情页会滚到该评论并短暂高亮
+            focusPid = pendingPid,
+            // 1.256：子回复场景 → 母楼 pid（详情页据此在本页找到母楼并自动展开楼中楼）
+            focusParentPid = pendingParentPid,
+            onJumpReplyPage = { page ->
                     val cur = threadDetails[ot.tid] ?: return@ThreadDetailOverlay
                     if (threadLoadingMore) return@ThreadDetailOverlay
                     val mySeq = threadSortSeq

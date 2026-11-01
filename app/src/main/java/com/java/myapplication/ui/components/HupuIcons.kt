@@ -73,6 +73,68 @@ object HupuIcons {
     val FilterAlt: ImageVector = materialIcon(name = "HupuIcons.FilterAlt") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M4.25,5.61C6.57,8.59,10,13,10,13v5c0,1.1,0.9,2,2,2h0c1.1,0,2-0.9,2-2v-5c0,0,3.43-4.41,5.75-7.39 C20.26,4.95,19.79,4,18.95,4H5.04C4.21,4,3.74,4.95,4.25,5.61z"))
     }
+
+    /**
+     * 1.258：**数据排行**图标（三根竖柱，圆头线条）——用于「NBA 数据」入口。
+     * 与筛选图标同一套描边语言，24dp 下清晰。
+     */
+    val BarChart: ImageVector = materialIcon(name = "HupuIcons.BarChart") {
+        strokePath("M6,19V12", width = 3.2f)
+        strokePath("M12,19V7", width = 3.2f)
+        strokePath("M18,19V15", width = 3.2f)
+    }
+    /**
+     * 1.291：**排行榜**图标 —— 三行「圆点 + 横条」，用于「足球数据」入口。
+     *
+     * 刻意与 [BarChart]（三根竖柱）区分：这里是「列表/榜单」语义，
+     * 圆点 + 横条在 24dp 下更像一张榜单，不会和柱状图混淆。
+     */
+    val RankingList: ImageVector = materialIcon(name = "HupuIcons.RankingList") {
+        // 三行横条（长度递减，暗示排名）
+        strokePath("M9,7H20", width = 1.8f)
+        strokePath("M9,12H17.5", width = 1.8f)
+        strokePath("M9,17H15", width = 1.8f)
+        // 行首圆点
+        addPath(
+            fill = SolidColor(Color.Black),
+            pathData = addPathNodes("M5.2,7m-1.7,0a1.7,1.7 0,1 1,3.4 0a1.7,1.7 0,1 1,-3.4 0"),
+        )
+        addPath(
+            fill = SolidColor(Color.Black),
+            pathData = addPathNodes("M5.2,12m-1.7,0a1.7,1.7 0,1 1,3.4 0a1.7,1.7 0,1 1,-3.4 0"),
+        )
+        addPath(
+            fill = SolidColor(Color.Black),
+            pathData = addPathNodes("M5.2,17m-1.7,0a1.7,1.7 0,1 1,3.4 0a1.7,1.7 0,1 1,-3.4 0"),
+        )
+    }
+
+    /**
+     * 1.245：**筛选（滑杆）** —— 两条水平滑轨 + 各一个实心圆点。
+     *
+     * 替换原先的实心漏斗（`FilterAlt`）：24dp 小尺寸下漏斗的填充块太重、轮廓发闷，
+     * 而「滑杆」是当下更通行的筛选语义，细线 + 圆点在玻璃圆钮里也更轻盈。
+     *
+     * 画法要点：圆点处的轨道**断开**（两段线 + 实心圆），否则线从圆里穿过去会显脏；
+     * 线段端点用圆头（`strokePath` 默认 `StrokeCap.Round`），与全站描边图标同一语言。
+     */
+    val FilterSliders: ImageVector = materialIcon(name = "HupuIcons.FilterSliders") {
+        // 上轨：以 x=10 为圆点，左右两段留出缺口
+        strokePath("M4,9H7.2", width = 1.8f)
+        strokePath("M12.8,9H20", width = 1.8f)
+        // 下轨：以 x=14 为圆点
+        strokePath("M4,15H11.2", width = 1.8f)
+        strokePath("M16.8,15H20", width = 1.8f)
+        // 两个实心圆点
+        addPath(
+            fill = SolidColor(Color.Black),
+            pathData = addPathNodes("M10,9m-2.6,0a2.6,2.6 0,1 1,5.2 0a2.6,2.6 0,1 1,-5.2 0"),
+        )
+        addPath(
+            fill = SolidColor(Color.Black),
+            pathData = addPathNodes("M14,15m-2.6,0a2.6,2.6 0,1 1,5.2 0a2.6,2.6 0,1 1,-5.2 0"),
+        )
+    }
     val FormatSize: ImageVector = materialIcon(name = "HupuIcons.FormatSize") {
         addPath(fill = SolidColor(Color.Black), pathData = addPathNodes("M9 5.5c0 .83.67 1.5 1.5 1.5H14v10.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V7h3.5c.83 0 1.5-.67 1.5-1.5S21.33 4 20.5 4h-10C9.67 4 9 4.67 9 5.5zM4.5 12H6v5.5c0 .83.67 1.5 1.5 1.5S9 18.33 9 17.5V12h1.5c.83 0 1.5-.67 1.5-1.5S11.33 9 10.5 9h-6C3.67 9 3 9.67 3 10.5S3.67 12 4.5 12z"))
     }

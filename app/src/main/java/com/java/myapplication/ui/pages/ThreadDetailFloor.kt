@@ -188,6 +188,11 @@ internal fun FloorSheet(
     onQuoteReply: (String, String) -> Unit = { _, _ -> },
     onLightSub: (String, String) -> Unit = { _, _ -> },
     subLightState: Map<String, Boolean> = emptyMap(),
+    /**
+     * 1.252：要定位到的**子回复 pid**（从消息通知进来、且目标在楼中楼里时传入）。
+     * sheet 打开后会滚到该条并短暂高亮；若它还没加载进来，会自动继续翻页直到找到/穷尽。
+     */
+    focusPid: String = "",
 ) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) { progress.animateTo(1f, tween(280)) }
@@ -199,6 +204,8 @@ internal fun FloorSheet(
     }
 
     val listState = rememberLazyListState()
+    // 1.252：定位目标的高亮（约 1.2 秒后淡出）
+    var hlPid by remember { mutableStateOf("") }
     val canLoadMore = data != null && data.hasMore
     val shouldLoadMore by remember(data, loadingMore) {
         derivedStateOf {
@@ -262,6 +269,30 @@ internal fun FloorSheet(
                                 else fr.subReplies.filterNot { sub -> HupuFilter.blockedComment(HupuFilter.stripHtml(sub.contentHtml), fkw) }
                                 // 1.129 防闪退：子回复列表同样以 pid 为 key，兜底去重
                                 HupuBlacklist.pruneSubReplies(base, HupuPrefs.loadBlacklist()).distinctBy { it.pid }
+                            }
+                            // 1.252：定位到目标子回复；没加载到就**继续翻页**（翻到找到或 hasMore=false 为止）。
+                            LaunchedEffect(floorFilteredSubs, focusPid, loadingMore) {
+                                if (focusPid.isBlank()) return@LaunchedEffect
+                                val idx = floorFilteredSubs.indexOfFirst { it.pid == focusPid }
+                                if (idx >= 0) {
+                                    // 等 sheet 入场动画结束再滚（否则会被 animateScrollToItem 打断）
+                                    delay(300)
+                                    // 列表前 2 项是「母楼」「回复 N」，所以真实下标要 +2
+                                    runCatching { listState.animateScrollToItem(idx + 2) }
+                                    hlPid = focusPid
+                                    delay(1200)
+                                    if (hlPid == focusPid) hlPid = ""
+                                    return@LaunchedEffect
+                                }
+                                val fr = data ?: return@LaunchedEffect
+                                // 已经加载到但被「关键词过滤/黑名单」挡住了 → 停止翻页，避免无意义请求
+                                if (fr.subReplies.any { it.pid == focusPid }) return@LaunchedEffect
+                                if (fr.hasMore && !loadingMore) {
+                                    // 还没加载完 → 继续翻页（完整翻到穷尽，不设页数上限）
+                                    delay(160)
+                                    onLoadMore(fr)
+                                    return@LaunchedEffect
+                                }
                             }
                             LazyColumn(
                                 state = listState,
@@ -409,6 +440,7 @@ internal fun FloorSheet(
                                 items(floorFilteredSubs, key = { it.pid }) { sub ->
                                     SubReplyRow(
                                         sub,
+                                        highlight = hlPid == sub.pid,
                                         onExpand = { onOpenSub(sub) },
                                         onImageClick = onImageClick,
                                         onOpenUser = onOpenUser,
@@ -443,12 +475,29 @@ internal fun FloorSheet(
 
 /** 楼中楼一条子回复（nestedCount>0 时整卡可点，压栈展开深层） */
 @Composable
-internal fun SubReplyRow(sub: HupuSubReply, onExpand: () -> Unit, onImageClick: (List<String>, Int) -> Unit = { _, _ -> }, onOpenUser: (String) -> Unit = {}, onQuoteReply: () -> Unit = {}, onLight: () -> Unit = {}, isLit: Boolean = false) {
+internal fun SubReplyRow(
+    sub: HupuSubReply,
+    onExpand: () -> Unit,
+    onImageClick: (List<String>, Int) -> Unit = { _, _ -> },
+    onOpenUser: (String) -> Unit = {},
+    onQuoteReply: () -> Unit = {},
+    onLight: () -> Unit = {},
+    isLit: Boolean = false,
+    /** 1.252：从通知定位进来时，目标子回复短暂高亮 */
+    highlight: Boolean = false,
+) {
+    // 高亮底色淡入淡出（与一级评论同一套观感）
+    val hlAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (highlight) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(if (highlight) 160 else 380),
+        label = "subReplyHighlight",
+    )
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f * hlAlpha))
             .then(
                 if (sub.nestedCount > 0) Modifier.clickable { onExpand() } else Modifier
             )

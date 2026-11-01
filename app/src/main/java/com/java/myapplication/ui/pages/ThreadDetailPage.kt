@@ -153,6 +153,7 @@ import com.java.myapplication.ui.components.rememberEmojiInline
 import com.java.myapplication.ui.components.splitEmoji
 
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SkeletonDetail
 import com.java.myapplication.ui.components.formatCount
 import com.java.myapplication.ui.components.tapGuard
 import kotlinx.coroutines.delay
@@ -218,6 +219,17 @@ fun ThreadDetailOverlay(
     onLoadMore: () -> Unit,
     /** 1.227: 跳转到指定回复页（整页替换，父层负责请求） */
     onJumpReplyPage: (Int) -> Unit = {},
+    /**
+     * 1.251：要**定位到的那条评论 pid**（从消息通知「提到我的 / 评论 / 亮了」进来时传入）。
+     * 详情加载完成后会自动滚动到该楼层，并短暂高亮。
+     */
+    focusPid: String = "",
+    /**
+     * 1.256：目标评论的**母楼 pid**（子回复场景由通知页解析好传入）。
+     * 有了它就不必依赖"当前页里能读到子回复条目"——母楼所在页才是展示页，
+     * 子回复由楼中楼 sheet 自行翻页找到。
+     */
+    focusParentPid: String = "",
     /** 1.185: 排序方向切换（true=最新在前/倒序），父层据此重新加载 */
     onSortChanged: (Boolean) -> Unit = {},
     /** 点击作者/回复者头像打开用户主页（无 euid 时回调不触发） */
@@ -290,6 +302,8 @@ fun ThreadDetailOverlay(
     // 这比 record 一个「replyPage」严谨得多：replyPage 会被自动补拉推大，
     // 而它精确反映「你现在看到的是第几页的回复」。
     var readingPageTop by remember(tid) { mutableStateOf(0) }
+    // 1.251：当前高亮的评论 pid（定位后约 2 秒自动淡出）
+    var highlightPid by remember(tid) { mutableStateOf("") }
     LaunchedEffect(commentsVisible, detail?.replyPage) {
         if (commentsVisible && pageAnchor == null) pageAnchor = detail?.replyPage
     }
@@ -360,6 +374,18 @@ fun ThreadDetailOverlay(
     // 楼中楼：sheet 栈（逐层递进：根楼层 → 子回复 → 孙回复…，每层一个半屏 sheet）
     // 数据来自父页面 floorStates（以 pid 为 key，全层级共用一套缓存）
     var floorStack by remember { mutableStateOf<List<HupuReply>>(emptyList()) }
+    // 1.253：子回复 → HupuReply（压栈用；楼层号继承父楼层，引用链同属一棵树）
+    fun subAsReply(parent: HupuReply, sub: HupuSubReply): HupuReply = HupuReply(
+        pid = sub.pid,
+        contentHtml = sub.contentHtml,
+        floor = parent.floor,
+        lights = sub.lights,
+        totalReplies = sub.nestedCount,
+        createdAtText = sub.createdAtText,
+        isStarter = sub.isStarter,
+        location = sub.location,
+        author = sub.author,
+    )
     // 1.129: 本机刚发送的楼中楼回复（乐观覆盖层，key=被回复楼层 pid）。
     // 楼中楼数据来自父页面 floorStates，openFloor 命中缓存会早退、未命中才网络拉取；
     // 服务端有分钟级延迟 → 会出现「发送后我的评论不显示」。这里单独存一份乐观数据，
@@ -1044,7 +1070,7 @@ fun ThreadDetailOverlay(
         val state = if (detail != null) "ok" else if (loading) "loading" else "error"
         Crossfade(targetState = state, animationSpec = tween(180), label = "threadDetailSwitch") { s ->
             when (s) {
-                "loading" -> SkeletonHome()
+                "loading" -> SkeletonDetail()
                 "error" -> ErrorRetry { onRefresh() }
                 else -> {
                     val d = detail
@@ -1122,6 +1148,38 @@ fun ThreadDetailOverlay(
                                 }.distinctUntilChanged().collect { p ->
                                     // 0 = 本页没有可用回复（被过滤空 / 正在加载）→ 保留上一次的值
                                     if (p > 0) readingPageTop = p
+                                }
+                            }
+                            // 1.251/1.252：从消息通知进来 → 滚到目标评论并高亮。
+                            // 列表前 3 项是 header / main /「回复 N」，所以真实下标要 +3。
+                            // 1.252：目标可能是**楼中楼里的子回复** → 此时改为滚到它的母楼，
+                            // 并自动展开楼中楼，再由 FloorSheet 内部定位到那条子回复。
+                            LaunchedEffect(displayReplies, focusPid, focusParentPid, entryDone, d.replies) {
+                                if (focusPid.isBlank() || !entryDone) return@LaunchedEffect
+                                val topIdx = displayReplies.indexOfFirst { it.pid == focusPid }
+                                if (topIdx >= 0) {
+                                    // 一级评论：直接滚过去
+                                    delay(340)
+                                    runCatching { listState.animateScrollToItem(topIdx + 3) }
+                                    highlightPid = focusPid
+                                    delay(1200)
+                                    if (highlightPid == focusPid) highlightPid = ""
+                                    return@LaunchedEffect
+                                }
+                                // 不是一级评论：母楼 pid 优先用父层解析好的（focusParentPid），
+                                // 退回"当前页里读到子回复条目 → 取它的 quote.pid"。
+                                val sub = d.replies.firstOrNull { it.pid == focusPid }
+                                val parentPid = focusParentPid.ifBlank { sub?.quotePid.orEmpty() }
+                                if (parentPid.isBlank()) return@LaunchedEffect
+                                val pIdx = displayReplies.indexOfFirst { it.pid == parentPid }
+                                if (pIdx < 0) return@LaunchedEffect
+                                val parent = displayReplies[pIdx]
+                                delay(340)
+                                runCatching { listState.animateScrollToItem(pIdx + 3) }
+                                // 自动展开该母楼的楼中楼（只开一层，避免重复压栈）
+                                if (floorStack.isEmpty()) {
+                                    floorStack = listOf(parent)
+                                    onOpenFloor(parent)
                                 }
                             }
                             // Only-OP fast-scan: auto-chain next page (~120ms cadence) so OP
@@ -1253,6 +1311,7 @@ item(key = "r-count") {
                                     val opened = floorStates[r.pid]
                                     ReplyRow(
                                         r,
+                                        highlight = highlightPid == r.pid,
                                         onOpenFloor = {
                                             if (r.totalReplies > 0 || opened != null) {
                                                 floorStack = listOf(r)
@@ -1365,6 +1424,8 @@ item(key = "r-count") {
             FloorSheet(
                 parent = floorReply,
                 depth = index,
+                // 1.252：定位目标（子回复 pid）只对最顶层那层生效
+                focusPid = if (index == floorStack.lastIndex) focusPid else "",
                 data = floorDataFor(floorReply.pid, floorReply),
                 loading = floorLoading.contains(floorReply.pid),
                 loadingMore = floorLoadingMore.contains(floorReply.pid),
@@ -1420,17 +1481,7 @@ item(key = "r-count") {
                 subLightState = replyLightState,
                 onOpenSub = { sub ->
                     // 子回复转 HupuReply 压栈：其楼层号继承父楼层（引用链同一棵树）
-                    val asReply = HupuReply(
-                        pid = sub.pid,
-                        contentHtml = sub.contentHtml,
-                        floor = floorReply.floor,
-                        lights = sub.lights,
-                        totalReplies = sub.nestedCount,
-                        createdAtText = sub.createdAtText,
-                        isStarter = sub.isStarter,
-                        location = sub.location,
-                        author = sub.author,
-                    )
+                    val asReply = subAsReply(floorReply, sub)
                     floorStack = floorStack + asReply
                     onOpenFloor(asReply)
                 },

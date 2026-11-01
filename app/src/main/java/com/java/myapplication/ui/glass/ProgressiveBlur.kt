@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -155,7 +157,13 @@ internal fun FrostedHeaderLayout(
         Box(
             Modifier
                 .fillMaxWidth()
-                .onSizeChanged { headerPx = it.height },
+                .onSizeChanged { headerPx = it.height }
+                // 1.297：**顶栏要吞掉点击**。
+                // 顶栏是内容层的兄弟节点（浮在上面），但自身没有可交互修饰符时，
+                // 点在栏内空白处会穿透到下层页面（真机反馈：NBA/足球数据页点顶栏
+                // 会点到下面的评分页 chips）。这里只吃「点击」，拖拽不受影响，
+                // 栏内按钮在自己的子节点里先处理，不会被拦截。
+                .pointerInput(Unit) { detectTapGestures { } },
         ) {
             if (useBlur) {
                 Box(Modifier.matchParentSize()) {

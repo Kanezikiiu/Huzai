@@ -133,7 +133,7 @@
 
 ## 下载
 
-最新版本 **[v1.204](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.204)** · [`huzai-1.204-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.204/huzai-1.204-release.apk)（minSdk 24，正式签名）
+最新版本 **[v1.205](https://github.com/Kanezikiiu/Huzai/releases/tag/v1.205)** · [`huzai-1.205-release.apk`](https://github.com/Kanezikiiu/Huzai/releases/download/v1.205/huzai-1.205-release.apk)（minSdk 24，正式签名）
 
 全部版本见 **[Releases](https://github.com/Kanezikiiu/Huzai/releases)**。
 

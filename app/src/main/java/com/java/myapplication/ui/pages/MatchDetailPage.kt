@@ -65,10 +65,15 @@ import kotlinx.coroutines.delay
 import com.java.myapplication.data.HupuScoreGroup
 import com.java.myapplication.data.HupuScoreItem
 import com.java.myapplication.data.HupuScoreTree
+import com.java.myapplication.ui.components.rememberChipAutoCenter
+import com.java.myapplication.ui.components.ChipAutoCenterRow
+import com.java.myapplication.ui.components.ChipSlot
 import com.java.myapplication.ui.components.Chip
 import com.java.myapplication.ui.components.ErrorRetry
 import com.java.myapplication.ui.components.HeroBadgeAvatar
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SkeletonDetail
+import com.java.myapplication.ui.components.SkeletonRosterRows
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.CenteredTopBar
 import com.java.myapplication.ui.components.LiquidBackButton
@@ -139,8 +144,12 @@ fun MatchDetailOverlay(
             progress.animateTo(0f, tween(120))
             onBack()
         } catch (e: CancellationException) {
-            // 未过阈值松手 → 弹回原位
-            progress.animateTo(1f, tween(200))
+            // 1.242：回弹不能走 animateTo —— 回弹途中若再发生一次返回手势/其它挂起操作，
+            // 动画会被取消，progress 永久停在 0.99x → translationX 残留几个像素的右移，
+            // 左侧露出下层白底、内容看着不居中。这里在 NonCancellable 里直接置位。
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                progress.snapTo(1f)
+            }
             throw e
         }
     }
@@ -206,16 +215,20 @@ fun MatchDetailOverlay(
             // （非 NBA 只有一项，整条不显示，外观与旧版一致）
             val detailTab = nbaTab
             if (detailTabs.size > 1) {
-                LazyRow(
+                // 1.267：改用公共组件（选中项自动居中，单段弹簧）
+                val detailTabCenter = rememberChipAutoCenter()
+                val detailTabIdx = detailTabs.indexOfFirst { it.first == detailTab }
+                ChipAutoCenterRow(
+                    center = detailTabCenter,
+                    selectedIndex = detailTabIdx,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        // 裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
                         .chipBarClip()
                         .padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(detailTabs, key = { it.first?.name ?: "score" }) { (key, label) ->
-                        Chip(text = label, selected = detailTab == key) { nbaTab = key }
+                    detailTabs.forEachIndexed { i, (key, label) ->
+                        ChipSlot(detailTabCenter, i) {
+                            Chip(text = label, selected = detailTab == key) { nbaTab = key }
+                        }
                     }
                 }
             }
@@ -233,7 +246,7 @@ fun MatchDetailOverlay(
                 ) {
                     Crossfade(targetState = state, animationSpec = tween(180), label = "matchDetailSwitch") { s ->
                         when (s) {
-                            "loading" -> SkeletonHome()
+                            "loading" -> SkeletonRosterRows()
                             "error" -> ErrorRetry { onRefresh() }
                             else -> {
                                 val t = tree
@@ -278,19 +291,23 @@ private fun TreeContent(
         // 对局横滑条（第1局…第N局，正序）——仅 MOBA 三层结构显示；
         // 传统体育（NBA 等）children 直接是选手（flat），没有对局层
         if (!tree.flat) {
-            LazyRow(
+            // 1.267：选中项自动居中
+            val roundCenter = rememberChipAutoCenter()
+            val roundIdx = tree.rounds.indexOfFirst { it.bizId == selectedRoundId }
+            ChipAutoCenterRow(
+                center = roundCenter,
+                selectedIndex = roundIdx,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
                     .chipBarClip()
                     .padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(tree.rounds, key = { it.bizId }) { round ->
-                    Chip(
-                        text = round.name,
-                        selected = round.bizId == selectedRoundId,
-                    ) { onSelectRound(round.bizId) }
+                tree.rounds.forEachIndexed { i, round ->
+                    ChipSlot(roundCenter, i) {
+                        Chip(
+                            text = round.name,
+                            selected = round.bizId == selectedRoundId,
+                        ) { onSelectRound(round.bizId) }
+                    }
                 }
             }
         }
@@ -336,16 +353,18 @@ private fun TreeContent(
                 }
                 // 分类条可横向滚动（和平精英等战队多的赛事 Tab 超宽会挤爆固定 Row）
                 // 1.192: 由「文字 + 下划线」改为玻璃胶囊横滑条（与三大页顶部横滑条同款质感）
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
-                        .chipBarClip(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                // 1.267：战队/分组很多时，选中项自动居中（和平精英这类赛事的关键）
+                val groupCenter = rememberChipAutoCenter()
+                val groupIdx = tabs.indexOfFirst { it.first == selected }
+                ChipAutoCenterRow(
+                    center = groupCenter,
+                    selectedIndex = groupIdx,
+                    modifier = Modifier.chipBarClip(),
                 ) {
-                    items(tabs, key = { it.first }) { (key, title) ->
-                        Chip(text = title, selected = key == selected) { onGroupChange(key) }
+                    tabs.forEachIndexed { i, (key, title) ->
+                        ChipSlot(groupCenter, i) {
+                            Chip(text = title, selected = key == selected) { onGroupChange(key) }
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))

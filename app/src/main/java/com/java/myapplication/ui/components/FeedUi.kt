@@ -474,6 +474,7 @@ internal fun SortBar(
     val density = LocalDensity.current
     // 1.192b（真机反馈）：圆角增大到「半高 = 胶囊」，不再显方
     // 1.197（真机反馈）：条高 34 → 38dp（「有点细长」），圆角同步跟随半高
+    // 1.309：38dp 真机上显得细长，恢复 40dp（圆角随半高 = 20dp）
     val shape = RoundedCornerShape(20.dp)
     val segShape = RoundedCornerShape(17.dp)
     val slide = remember { Animatable(idx.toFloat()) }
@@ -893,13 +894,18 @@ internal fun Modifier.skeletonBlock(shape: Shape = RoundedCornerShape(20.dp)): M
 /** 信息流骨架屏（chips 条 + 卡片块）——静态骨架 + 正中的弹跳篮球 */
 @Composable
 internal fun SkeletonHome(modifier: Modifier = Modifier) {
+    // 1.314：骨架升级 —— 不再是几块大灰块，而是**按真实信息流卡片**逐行示意：
+    // 标题两行 / 摘要一行 / 元信息三段 / 隔一张带缩略图。
     Column(
-        modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
+        modifier.fillMaxSize().statusBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.height(8.dp))
-        // 模拟话题条
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 模拟话题横滑条
+        Row(
+            Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             repeat(3) {
                 Box(
                     Modifier
@@ -908,13 +914,362 @@ internal fun SkeletonHome(modifier: Modifier = Modifier) {
                 )
             }
         }
-        repeat(4) {
+        SkeletonFeedCards(topPadding = 0.dp, horizontalPad = 16.dp, count = 4)
+    }
+}
+
+/**
+ * 1.314：**信息流卡片骨架**（列表通用）。
+ *
+ * 结构对齐真实卡片：surface 底 + 20dp 圆角 + 14dp 内边距；
+ * 左侧标题两行（第二行更短）→ 摘要 → 元信息三段；右侧 84dp 缩略图（隔一张有封面）。
+ */
+@Composable
+internal fun SkeletonFeedCards(
+    topPadding: Dp,
+    horizontalPad: Dp = 16.dp,
+    count: Int = 4,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = topPadding)
+            .padding(horizontal = horizontalPad),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(count) { i -> SkeletonFeedCard(hasCover = i % 2 == 0) }
+    }
+}
+
+@Composable
+internal fun SkeletonFeedCard(hasCover: Boolean) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(14.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f)) {
             Box(
                 Modifier
-                    .fillMaxWidth()
-                    .height(if (it % 2 == 0) 120.dp else 84.dp)
-                    .skeletonBlock(RoundedCornerShape(20.dp))
+                    .fillMaxWidth(0.92f)
+                    .height(16.dp)
+                    .skeletonBlock(RoundedCornerShape(6.dp)),
             )
+            Spacer(Modifier.height(7.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth(0.58f)
+                    .height(16.dp)
+                    .skeletonBlock(RoundedCornerShape(6.dp)),
+            )
+            Spacer(Modifier.height(11.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth(0.78f)
+                    .height(12.dp)
+                    .skeletonBlock(RoundedCornerShape(6.dp)),
+            )
+            Spacer(Modifier.height(13.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SkeletonMetaBar(22.dp)
+                SkeletonMetaBar(38.dp)
+                SkeletonMetaBar(52.dp)
+            }
+        }
+        if (hasCover) {
+            Spacer(Modifier.width(12.dp))
+            Box(
+                Modifier
+                    .size(84.dp)
+                    .skeletonBlock(RoundedCornerShape(12.dp)),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun SkeletonMetaBar(w: Dp) {
+    Box(
+        Modifier
+            .width(w)
+            .height(10.dp)
+            .skeletonBlock(RoundedCornerShape(5.dp)),
+    )
+}
+
+/**
+ * 1.314：**详情页骨架**（帖子 / 比赛 / 选手详情这类"标题 + 正文 + 评论"的页面）。
+ *
+ * 之前这些页面也借用 [SkeletonHome]，于是会出现「假的横滑条」与「卡片流」——
+ * 与详情页真实结构完全不搭。这里按详情页画：
+ * 标题两行 → 作者行 → 正文若干行 → 分隔 → 评论条目（头像 + 两行文字）。
+ */
+@Composable
+internal fun SkeletonDetail(modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Spacer(Modifier.height(52.dp)) // 让开浮空顶栏
+        // 标题两行
+        Box(
+            Modifier
+                .fillMaxWidth(0.95f)
+                .height(20.dp)
+                .skeletonBlock(RoundedCornerShape(6.dp))
+        )
+        Box(
+            Modifier
+                .fillMaxWidth(0.62f)
+                .height(20.dp)
+                .skeletonBlock(RoundedCornerShape(6.dp))
+        )
+        // 作者行：头像 + 昵称 + 时间
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .skeletonBlock(RoundedCornerShape(50))
+            )
+            Spacer(Modifier.width(8.dp))
+            SkeletonMetaBar(64.dp)
+            Spacer(Modifier.width(8.dp))
+            SkeletonMetaBar(40.dp)
+        }
+        Spacer(Modifier.height(4.dp))
+        // 正文
+        repeat(4) { i ->
+            Box(
+                Modifier
+                    .fillMaxWidth(if (i == 3) 0.55f else 1f)
+                    .height(14.dp)
+                    .skeletonBlock(RoundedCornerShape(6.dp))
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        // 评论条目 × 3
+        repeat(3) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .skeletonBlock(RoundedCornerShape(50))
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.35f)
+                            .height(12.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(12.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.7f)
+                            .height(12.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+
+/**
+ * 1.315：**评分列表骨架**（虎扑评分首页）。
+ *
+ * 真实结构：一张横向大卡（封面 + 标题 + 副标题 + 右侧分数徽章），
+ * 之前借用 SkeletonHome 会出现「假话题条 + 信息流卡」，既不像、又偏下。
+ */
+@Composable
+internal fun SkeletonScoreCards(topPadding: Dp, count: Int = 4) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = topPadding)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(count) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(72.dp)
+                        .skeletonBlock(RoundedCornerShape(12.dp))
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.8f)
+                            .height(15.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(12.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .skeletonBlock(RoundedCornerShape(50))
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 1.315：**赛程列表骨架**（评分页赛事频道）。
+ *
+ * 真实结构：日期小标题 + 若干「比赛卡」（左边队名两行 / 中间比分 / 右边队名两行）。
+ */
+@Composable
+internal fun SkeletonSchedule(topPadding: Dp) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = topPadding)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // 日期标题
+        Box(
+            Modifier
+                .width(72.dp)
+                .height(13.dp)
+                .skeletonBlock(RoundedCornerShape(6.dp))
+        )
+        repeat(4) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.72f)
+                            .height(13.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(13.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                }
+                Box(
+                    Modifier
+                        .width(46.dp)
+                        .height(16.dp)
+                        .skeletonBlock(RoundedCornerShape(6.dp))
+                )
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.72f)
+                            .height(13.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(13.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * 1.316：**列表行骨架**（用于"顶栏/记分板已经画好、只差列表"的页面，例如比赛详情的队员列表）。
+ *
+ * 这类页面的顶栏、记分板、分类条都在**流里**已经渲染完毕，内容区只差列表本身；
+ * 之前用 [SkeletonDetail]（自带 statusBarsPadding + 52dp 让位 + 标题段）会整体偏下。
+ * 这里只画「头像 + 两行文字 + 右侧数值」的行，位置天然正确。
+ */
+@Composable
+internal fun SkeletonRosterRows(count: Int = 8) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        repeat(count) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .skeletonBlock(RoundedCornerShape(50))
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.42f)
+                            .height(12.dp)
+                            .skeletonBlock(RoundedCornerShape(6.dp))
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.26f)
+                            .height(10.dp)
+                            .skeletonBlock(RoundedCornerShape(5.dp))
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .width(30.dp)
+                        .height(12.dp)
+                        .skeletonBlock(RoundedCornerShape(6.dp))
+                )
+            }
         }
     }
 }

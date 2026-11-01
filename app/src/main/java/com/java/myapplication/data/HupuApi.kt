@@ -32,6 +32,13 @@ object HupuApi {
     private val throttle = RequestThrottle(MIN_INTERVAL_MS)
 
     /**
+     * 1.293：懂球帝数据域专用节流（200ms）。
+     * 直连 sport-data 后响应很快（~440ms），不需要再压 600ms；
+     * 仍保留独立管道以免和其它域互相排队，页面侧另有内存 + 磁盘缓存。
+     */
+    private val dqThrottle = RequestThrottle(200L)
+
+    /**
      * 拉取楼中楼 JSON（m.hupu.com/api/v2/bbs-reply-detail/{tid}-{pid}）。
      * 注意：此接口在 bbs.hupu.com 域名下 404，必须走 m.hupu.com。
      * maxpid 为翻页游标（上一页最后一条子回复的 pid），首页不传。
@@ -308,10 +315,75 @@ suspend fun fetchSpaceApi(path: String, fast: Boolean = false): String? {
      * 拉取页面 HTML。返回 null 表示失败。
      * forceNetwork = true 时跳过缓存直接请求（下拉刷新用）
      */
-    suspend fun fetchHtml(path: String, forceNetwork: Boolean = false): String? {
+    /**
+     * 1.258：抓 **nba.hupu.com** 的页面（排行/战绩）。与 bbs 域不同，所以单开一个入口。
+     * 这些页面是服务端直出的 HTML 表格，走普通节流即可（不是点开即等的关键路径）。
+     */
+    suspend fun fetchNbaHtml(path: String): String? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            throttle.acquire()
+            val request = Request.Builder()
+                .url("https://nba.hupu.com$path")
+                .header("User-Agent", DESKTOP_UA)
+                .header("Accept", "text/html,application/xhtml+xml")
+                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                .header("Referer", "https://nba.hupu.com/")
+                .build()
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    response.body?.string()
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    /**
+     * 1.293：抓**懂球帝数据接口**（足球积分榜 / 球员榜 / 球队榜）。
+     *
+     * 直接打 **sport-data.dongqiudi.com**（官方数据域名），不再走 dongqiu.org 的代理：
+     * 实测同一份 standing 数据，直连 ~440ms，而代理站要 ~2900ms（慢 6 倍）。
+     * 返回结构与代理完全一致（FLAT / GROUP / BRACKET 三种轮次），所以解析层不用改。
+     *
+     * 仍保留单独节流（该域也有限流），但间隔放宽到 200ms；页面侧还有内存 + 磁盘缓存兜底。
+     */
+    suspend fun fetchDongqiuJson(pathWithQuery: String): String? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            dqThrottle.acquire()
+            val request = Request.Builder()
+                .url("https://sport-data.dongqiudi.com$pathWithQuery")
+                .header("User-Agent", DESKTOP_UA)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                .header("Referer", "https://www.dongqiudi.com/data")
+                .build()
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    response.body?.string()
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    suspend fun fetchHtml(
+        path: String,
+        forceNetwork: Boolean = false,
+        /**
+         * 1.257：走**导航快车道**（200ms 时间片）而不是全局 1s 节流。
+         * 只用于「用户刚点了某条通知 → 按 pid 定位帖子页」这类一次性的关键路径：
+         * 定位最多要发两次请求（先读子回复的 quote.pid，再用母楼 pid 定位），
+         * 走全局节流时光排队就 ≈2s，骨架屏因此很久。
+         */
+        fast: Boolean = false,
+    ): String? {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             // 节流
-            throttle.acquire()
+            if (fast) HupuHttp.navThrottle.acquire() else throttle.acquire()
 
             // 先查缓存
             if (!forceNetwork) {

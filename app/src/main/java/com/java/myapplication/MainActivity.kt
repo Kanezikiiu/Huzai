@@ -66,6 +66,7 @@ import com.java.myapplication.ui.components.rememberAutoHideBarState
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.pages.HomePage
 import com.java.myapplication.ui.pages.DisclaimerGate
+import com.java.myapplication.ui.pages.OnboardingFlow
 import com.java.myapplication.ui.pages.ProfilePage
 import com.java.myapplication.ui.pages.ScorePage
 import com.java.myapplication.ui.pages.UpdateDialog
@@ -80,11 +81,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 1.289：底部系统导航条（小白条）必须**完全透明**。
+        // enableEdgeToEdge() 默认允许系统在导航条下面铺一层「对比度遮罩」（浅色底时是一条灰白渐变），
+        // 真机看起来就像导航条自带一层模糊背景。这里显式关掉遮罩、并把两条系统栏设为全透明，
+        // 让内容/页面底色一直延伸到屏幕最底部。
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
         // 旋转屏幕等触发 Activity 重建时：全部 Compose 状态清零（二级页消失、回到主页），
         // 但 SecondaryPage 计数是进程级单例不随重建清零——必须归零，否则 Tab 栏永久隐藏
         SecondaryPage.reset()
         // 初始化虎扑数据缓存（原始 HTML 磁盘缓存，布局调试期减少真实请求）
         HupuCache.init(cacheDir.resolve("hupu_cache"))
+        // 1.292：足球数据（懂球帝）磁盘缓存——冷启动也能秒开
+        com.java.myapplication.data.DqDiskCache.init(cacheDir.resolve("dq_rank"))
         // 初始化用户偏好（主页频道自定义等）
         HupuPrefs.init(this)
         // 初始化登录会话（cookie 恢复 / 写端点鉴权）
@@ -106,16 +119,20 @@ class MainActivity : ComponentActivity() {
             LedgerTheme(darkTheme = dark) {
                 // 1.154: 首次启动必须同意「免责声明」才能使用。不同意（点「不同意」按钮、
                 // 点弹窗以外任意区域、按系统返回键）→ 退出应用；下次启动仍会拦截。
-                if (HupuPrefs.disclaimerAccepted) {
-                    PocketLedgerApp()
-                } else {
-                    DisclaimerGate(
+                // 1.283: 同意之后，若引导还没做过 → 进入首次使用引导（外观 / 阅读字号）。
+                // 老用户的完成标记已在 HupuPrefs.init 里同步迁移好，不会看到引导。
+                when {
+                    !HupuPrefs.disclaimerAccepted -> DisclaimerGate(
                         onAgree = { HupuPrefs.acceptDisclaimer() },
                         onExit = {
                             finishAffinity()
                             android.os.Process.killProcess(android.os.Process.myPid())
                         },
                     )
+                    !HupuPrefs.onboardingDone -> OnboardingFlow(
+                        onFinish = { HupuPrefs.completeOnboarding() },
+                    )
+                    else -> PocketLedgerApp()
                 }
             }
         }

@@ -3,12 +3,16 @@ package com.java.myapplication.ui.pages
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -356,6 +360,25 @@ private fun FeedContent(
         else data.threads.map { t -> hotAuthors[t.tid]?.let { a -> t.copy(author = a) } ?: t }
     }
 
+    // 1.310：**跨「热帖 ↔ 话题」切换时，先给一小段骨架遮罩**。
+    //
+    // 这两态的顶栏高度不同（热帖没有二级排序条），内容区 topInset 会跟着变。
+    // 首页数据都在内存里，同帧就能画出来 → 顶栏变化会立刻显形（"跳一下/闪"）。
+    // 参照 NBA 数据页的做法：切换瞬间让内容**先退场**，等布局稳定后再一次性画进去，
+    // 位移就发生在"没人看得见的骨架期"。只对跨这两种形态的切换生效，
+    // 话题 ↔ 话题（高度相同）仍然同帧直切，不牺牲利索。
+    var prevFeedSel by remember { mutableStateOf(selected) }
+    var switchMasking by remember { mutableStateOf(false) }
+    LaunchedEffect(selected) {
+        val crossForm = (prevFeedSel == "hot") != (selected == "hot")
+        prevFeedSel = selected
+        if (crossForm) {
+            switchMasking = true
+            delay(180)
+            switchMasking = false
+        }
+    }
+
     // 话题首屏加载：有缓存直接显示，无缓存才进加载态（下拉刷新时绕过缓存）
     LaunchedEffect(feedKey, refreshTick) {
         if (selected == "hot") {
@@ -480,32 +503,34 @@ private fun FeedContent(
             if (HupuUiSignals.homeTabTap == 0) return@LaunchedEffect
             forceReload()
         }
-        // 排序子 Tab（仅话题流显示）
+        // 1.311：**热帖不显示二级排序条**（产品直觉：热帖就是热帖，没有可切的分法）。
+        // 顶栏高度在「热帖 / 话题流」之间因此不同 —— 跨形态切换交给"骨架遮罩"：
+        // 内容在 180ms 骨架期退场，等布局稳定后再一次性画进去，位移不可见。
         if (selected != "hot") {
-            val realTabs = topicSorts[selected]?.takeIf { it.isNotEmpty() }
-            // 1.2xx：真实 tab 还没回来时**借用上一个话题的排序条** ——
-            // 多数话题的排序分类相同，借来的往往就是最终要显示的那一套；
-            // 等真实 tab 到位若与之相同，则排序条一个像素都不会动。
-            val barTabs = realTabs ?: lastSortBar
-            if (barTabs.isNotEmpty()) {
-                val barSel = if (realTabs != null) {
-                    currentSort ?: selected
-                } else {
-                    // 借用期按与「真实 tab」完全相同的规则推算高亮 → tab 到位时高亮不跳
-                    pickTopicSortKey(barTabs, HupuPrefs.loadDefaultTopicSortTitle())
-                        ?: barTabs.firstOrNull()?.url.orEmpty()
-                }
-                SortBar(barTabs, barSel) { url ->
-                    // 借用期忽略点击：借用 tab 的 url 属于上一个话题，用了会请求错页面
-                    if (realTabs != null) selectedSort = url
-                }
+        val barRealTabs = topicSorts[selected]?.takeIf { it.isNotEmpty() }
+        val barTabs = barRealTabs ?: lastSortBar
+        if (barTabs.isNotEmpty()) {
+            val barSel = if (barRealTabs != null) {
+                currentSort ?: selected
             } else {
-                Spacer(Modifier.height(SORT_BAR_TOTAL_HEIGHT))
+                pickTopicSortKey(barTabs, HupuPrefs.loadDefaultTopicSortTitle())
+                    ?: barTabs.firstOrNull()?.url.orEmpty()
             }
+            SortBar(barTabs, barSel) { url ->
+                // 借用期忽略点击：借用 tab 的 url 属于上一个话题，用了会请求错页面
+                if (barRealTabs != null) selectedSort = url
+            }
+        } else {
+            // 话题流的分类还没回来：留出等高占位，保证顶栏高度不抖
+            Spacer(Modifier.height(SORT_BAR_TOTAL_HEIGHT))
+        }
         }
         },
         // ---------- 内容（列表）：顶部内边距 = 实测栏高 ----------
     ) { topInset ->
+        // 排序条已回到顶栏（热帖用等高占位），所以这里 **bar 高度已包含在 topInset 里**，
+        // 两态列表顶边天然一致 —— 不需要再自己让位、也不再需要内容层覆盖条。
+        Box(Modifier.fillMaxSize()) {
         // 已有内容的流刷新时走顶部指示器（内容保持不动）；仅首次加载（无缓存）才显示骨架
         PullToRefreshBox(
             isRefreshing = isRefreshing || inPlaceRefreshing,
@@ -523,50 +548,40 @@ private fun FeedContent(
                 )
             },
         ) {
-            Crossfade(
-                targetState = selected,
-                animationSpec = tween(180),
-                label = "feedSwitch",
-            ) { sel ->
-                // 1.2xx：退场层（sel != selected）沿用它「离开时」的 key —— 否则会掉回默认排序的
-                // key，闪一下当前话题的「最新回复」列表再切走（真机反馈）
-                val selKey = when {
-                    sel == "hot" -> "hot"
-                    sel == selected -> "$sel#${selectedSort ?: sel}"
-                    else -> lastKeyOf[sel] ?: "$sel#$sel"
-                }
-                when {
-                    // 默认：全站热帖（70 条一次性，无分页）；threads 用补过作者的那份，黑名单才能生效
-                    sel == "hot" -> FeedList(
-                        threads = hotThreads,
-                        useBigCards = true,
-                        resetKey = if (sel == selected) "hot-$refreshVersion-$hotResetTick" else "hot",
-                        topInset = topInset,
-                        onOpenThread = { if (sel == selected) openThread(it) },
-                    )
-                    else -> {
-                        val state = feedStates[selKey]
-                        when {
-                            // 首次加载（无缓存）
-                            state == null -> SkeletonHome(Modifier.padding(top = topInset))
-                            // 加载失败/为空
-                            state.threads.isEmpty() -> ErrorRetry { forceReload() }
-                            // 话题流：无限滚动翻页
-                            else -> FeedList(
-                                threads = state.threads,
-                                useBigCards = true,
-                                canLoadMore = state.page < state.totalPages,
-                                loadingMore = state.loadingMore,
-                                onLoadMore = { if (sel == selected) loadMore() },
-                                resetKey = if (sel == selected) "$selKey-$refreshVersion" else selKey,
-                                topInset = topInset,
-                                onOpenThread = { if (sel == selected) openThread(it) },
-                            )
+            // 1.301：**同帧换画面**（对齐 NBA 数据页的手感，不做交叉淡入）
+            val sel = selected
+            val selKey = if (sel == "hot") "hot" else "$sel#${selectedSort ?: sel}"
+            when {
+                // 1.310：跨「热帖 ↔ 话题」的切换：先只画骨架（位移藏在这一帧里）
+                switchMasking -> SkeletonFeedCards(topPadding = topInset + FEED_TOP_GAP)
+                // 默认：全站热帖（70 条一次性，无分页）
+                sel == "hot" -> FeedList(
+                    threads = hotThreads,
+                    useBigCards = true,
+                    resetKey = "hot-$refreshVersion-$hotResetTick",
+                    topInset = topInset + FEED_TOP_GAP,
+                    onOpenThread = { openThread(it) },
+                )
+                else -> {
+                    val state = feedStates[selKey]
+                    when {
+                        state == null -> SkeletonFeedCards(topPadding = topInset + FEED_TOP_GAP)
+                        state.threads.isEmpty() -> ErrorRetry { forceReload() }
+                        else -> FeedList(
+                            threads = state.threads,
+                            useBigCards = true,
+                            canLoadMore = state.page < state.totalPages,
+                            loadingMore = state.loadingMore,
+                            onLoadMore = { loadMore() },
+                            resetKey = "$selKey-$refreshVersion",
+                            topInset = topInset + FEED_TOP_GAP,
+                            onOpenThread = { openThread(it) },
+                        )
                     }
                 }
             }
         }
-    }
+        }
     } // FrostedHeaderLayout 内容块关闭（overlay 挂 Box 内、骨架外）
 
     // ---------- 搜索二级页：盖入式（挂在 Box 内、帖子详情之前——同 zIndex 2 时组合顺序决定层叠，详情页绘制在搜索页之上） ----------
@@ -675,6 +690,18 @@ private fun FeedContent(
     } // Box
 }
 
+/**
+ * 1.306：**信息流首条与二级 tab 之间的呼吸间距**。
+ *
+ * 真机反馈：二级 tab 到一级 tab 的距离 > 首条信息到二级 tab 的距离，看着头重脚轻。
+ * 这里给列表顶部多加一段内边距（话题流与热帖一致），把下半部分撑开。
+ */
+// 一级 tab 底部呼吸是 10dp（TopicBar 的 padding(bottom = 10.dp)），
+// 二级 tab 自身底部呼吸是 6dp（SortBar 的 bottomPad）——
+// 所以列表再补 4dp，两段间距刚好都是 10dp，视觉上不再头重脚轻。
+private val FEED_TOP_GAP = 3.dp
+
+
 /** 话题横滑条（固定）：单选切换，选中 chip 主题色高亮 */
 @Composable
 private fun TopicBar(
@@ -695,7 +722,7 @@ private fun TopicBar(
             // 可视窗口与下方条目对齐（左右 16dp），越线滚动内容被裁剪覆盖
             // 1.197：裁剪边界退到 8dp，给首个/末个 chip 的浮起阴影留空间（内容仍从 16dp 起）
             .chipBarClip()
-            .padding(bottom = 10.dp),
+            .padding(bottom = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // 「热帖」chip：默认流（/all-gambia 全站热帖榜）——1.192 起可被设置页隐藏

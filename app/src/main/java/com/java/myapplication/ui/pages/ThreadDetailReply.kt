@@ -60,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -441,12 +442,21 @@ internal fun ReplyRow(
     isLit: Boolean = false,
     onOpenUser: (String) -> Unit = {},
     onQuoteReply: () -> Unit = {},
+    /** 1.251：从消息通知跳进来时，目标评论短暂高亮，便于一眼定位 */
+    highlight: Boolean = false,
 ) {
+    // 高亮底色做淡入淡出，避免「突然变色又突然消失」
+    val hlAlpha by animateFloatAsState(
+        targetValue = if (highlight) 1f else 0f,
+        animationSpec = tween(if (highlight) 160 else 380),
+        label = "replyHighlight",
+    )
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f * hlAlpha))
             .then(
                 if (r.totalReplies > 0) Modifier.clickable { onOpenFloor() } else Modifier
             )

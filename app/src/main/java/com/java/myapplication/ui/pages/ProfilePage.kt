@@ -250,7 +250,7 @@ fun ProfilePage(modifier: Modifier = Modifier) {
                 ProfileGroupLabel("过滤与屏蔽")
                 ProfileGroup {
                     SettingRow(
-                        icon = HupuIcons.FilterAlt,
+                        icon = HupuIcons.FilterSliders,
                         title = "过滤与屏蔽",
                         subtitle = "关键词过滤 · " + if (blacklistCount > 0) "已拉黑 $blacklistCount 人" else "黑名单",
                         onClick = { if (!profilePageOpen()) filterBlockEpoch++ },

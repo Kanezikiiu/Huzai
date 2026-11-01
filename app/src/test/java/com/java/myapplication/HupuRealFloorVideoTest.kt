@@ -29,6 +29,19 @@ class HupuRealFloorVideoTest {
     }
 
     @Test
+    fun `子回复在 SSR 平铺条目里带 quotePid（通知定位母楼的数据基础）`() {
+        // 1.252：消息通知里的 pid 可能是楼中楼里的子回复。
+        // 服务端 `?pid=子pid` 返回的页里，该子回复会以**平铺条目**出现且带 quote.pid，
+        // 我们据此就能找到它所属的母楼、自动展开楼中楼。这条测试守住该数据契约。
+        val html = read("thread_643087279.html")
+        val d = HupuParser.parseThreadDetail(html)!!
+        val sub = d.replies.firstOrNull { it.pid == "23931" }
+        assertTrue("SSR 里没有子回复 23931", sub != null)
+        assertEquals("23813", sub!!.quotePid)
+        assertTrue("子回复条目应被识别为 isSubReply", sub.isSubReply)
+    }
+
+    @Test
     fun `真实楼中楼 JSON 注入后解析出视频`() {
         val html = read("thread_643087279.html")
         HupuReplyMediaIndex.put("643087279", HupuParser.replyVideoIndexFromHtml(html))

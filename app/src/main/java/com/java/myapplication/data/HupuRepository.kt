@@ -162,6 +162,99 @@ class HupuRepository {
         )
     }
 
+    /**
+     * 1.251：**按 pid 定位到该评论所在的页**。
+     *
+     * 实测服务端原生支持：`GET /{tid}.html?pid={pid}` 会直接返回该 pid 所在的页
+     * （`replies.current` 即页码，列表里含该 pid）——从消息通知点进来时可以
+     * 一次请求就跳到正确页码，不必逐页翻找。
+     *
+     * 失败（pid 不是一级评论 / 帖子已删除等）返回 null，调用方退回普通详情加载。
+     */
+    suspend fun threadDetailAtPid(tid: String, pid: String): HupuThreadDetail? {
+        if (tid.isBlank() || pid.isBlank()) return null
+        // 1.257：定位是用户等待的关键路径 → 走 200ms 快车道（见 fetchHtml 注释）
+        val html = HupuApi.fetchHtml("/$tid.html?pid=$pid", fast = true) ?: return null
+        return withContext(Dispatchers.Default) { HupuParser.parseThreadDetail(html) }
+    }
+
+    /** 1.256：定位结果 —— [anchorPid] 是要在页内滚动/展开的那一层（一级评论或它的母楼） */
+    data class LocatedThread(val detail: HupuThreadDetail, val anchorPid: String)
+
+    /**
+     * 1.256：**从通知 pid 定位到"该展示哪一页"**，两步走。
+     *
+     * 实测（tid=632585864）：同一个母楼下的两条子回复会落在**不同的页**
+     *  - A=65327 在第 1 页（母楼 59224 也在第 1 页）
+     *  - B=120407 在第 2 页（但母楼 59224 **不在**第 2 页）→ 直接展示第 2 页就没有母楼可展开
+     *
+     * 所以：先用 pid 探一次，读出它是"一级评论"还是"子回复（带 quote.pid）"；
+     * 子回复 → **改用母楼 pid 再定位一次**，展示母楼所在页；子回复本身交给楼中楼 sheet
+     * 自己翻页去找（sheet 支持翻到找到为止）。
+     *
+     * 返回 null 表示服务端定位不到（孙评论等深层 / 已删除），调用方退回普通打开。
+     */
+    suspend fun threadDetailLocate(tid: String, pid: String): LocatedThread? {
+        val first = threadDetailAtPid(tid, pid) ?: return null
+        val hit = first.replies.firstOrNull { it.pid == pid } ?: return null
+        val parentPid = hit.quotePid
+        if (parentPid.isBlank()) return LocatedThread(first, pid)
+        // 子回复：母楼所在页才是要展示的页
+        val withParent = threadDetailAtPid(tid, parentPid)
+        if (withParent != null && withParent.replies.any { it.pid == parentPid }) {
+            return LocatedThread(withParent, parentPid)
+        }
+        // 母楼取不到（被删等）→ 退回用第一页数据（至少能打开帖子）
+        return LocatedThread(first, pid)
+    }
+
+    // ---------- 1.258：NBA 排行榜（战绩 / 数据排名） ----------
+
+    /** 战绩：东西部（[byDivision]=false）或 6 个赛区（true）。10 分钟内存缓存。 */
+    suspend fun nbaStandings(byDivision: Boolean): List<NbaRankTable> {
+        val key = if (byDivision) "division" else "standings"
+        NbaRankCache.get(key)?.let { return it }
+        val path = if (byDivision) "/standings/division" else "/standings"
+        val html = HupuApi.fetchNbaHtml(path) ?: return emptyList()
+        val tables = withContext(Dispatchers.Default) { NbaRankParser.parseBlockGrouped(html) }
+        if (tables.isNotEmpty()) NbaRankCache.put(key, tables)
+        return tables
+    }
+
+    /** 球员数据排名（指标见 [NBA_PLAYER_METRICS]） */
+    suspend fun nbaPlayerStats(metric: String): NbaRankTable? {
+        val key = "players_$metric"
+        NbaRankCache.get(key)?.firstOrNull()?.let { return it }
+        val html = HupuApi.fetchNbaHtml("/stats/players/$metric") ?: return null
+        val table = withContext(Dispatchers.Default) { NbaRankParser.parseSingle(html) } ?: return null
+        NbaRankCache.put(key, listOf(table))
+        return table
+    }
+
+    /** 球队数据排名（双层表头已合并成一层；排序由界面本地完成） */
+    suspend fun nbaTeamStats(): NbaRankTable? {
+        NbaRankCache.get("teams")?.firstOrNull()?.let { return it }
+        val html = HupuApi.fetchNbaHtml("/stats/teams") ?: return null
+        val table = withContext(Dispatchers.Default) { NbaRankParser.parseSingle(html) } ?: return null
+        NbaRankCache.put("teams", listOf(table))
+        return table
+    }
+
+    /**
+     * 1.272：**同步读缓存**（不发起网络）。
+     *
+     * 用于「切回已经看过的 tab」：命中时界面可以直接铺新数据，
+     * 不必先清空表格再等一次挂起返回（那会出现「闪空 → 重建」的卡顿感）。
+     */
+    fun nbaStandingsCached(byDivision: Boolean): List<NbaRankTable>? =
+        NbaRankCache.get(if (byDivision) "division" else "standings")
+
+    fun nbaPlayerStatsCached(metric: String): NbaRankTable? =
+        NbaRankCache.get("players_$metric")?.firstOrNull()
+
+    fun nbaTeamStatsCached(): NbaRankTable? =
+        NbaRankCache.get("teams")?.firstOrNull()
+
     /** 1.185: 仅切换回帖方向——保留主楼与统计（thread），只替换 replies，避免数字抖动 */
     suspend fun repliesDirected(tid: String, base: HupuThreadDetail, desc: Boolean): HupuThreadDetail? {
         if (!desc) {

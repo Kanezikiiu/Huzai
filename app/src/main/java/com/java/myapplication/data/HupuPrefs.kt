@@ -54,6 +54,10 @@ object HupuPrefs {
         if (inited) return
         prefs = context.getSharedPreferences("hupu_prefs", Context.MODE_PRIVATE)
         disclaimerAccepted = prefs.getBoolean(KEY_DISCLAIMER_ACCEPTED, false)
+        onboardingDone = prefs.getBoolean(KEY_ONBOARDING_DONE, false)
+        // 1.283：老用户静默迁移必须在**首帧之前**同步做完 —— 否则升级后的第一次启动
+        // 会先渲染一帧「引导页」再切回主界面（闪一下）。
+        migrateOnboardingIfNeeded()
         // 1.224e：把「首页第一帧就要用到的偏好」在这里先读进内存。
         warmUp()
         seedNewScoreChannels()
@@ -127,6 +131,36 @@ object HupuPrefs {
         prefs.edit().putStringSet(KEY_HOT_EXCLUDED, v).apply()
     }
 
+    // 1.248：热门赛事的「项目」筛选**选中集合**（显式保存，能表达"全选"这一态）。
+    // 历史字段 KEY_HOT_EXCLUDED 存的是"被排除的项目"，两者互补；新字段缺失时由旧字段换算迁移。
+    private const val KEY_HOT_SELECTED = "hot_selected_projects_v2"
+
+    /** 读取显式保存的选中集合；null = 从未写过（老用户，需要从旧排除集换算） */
+    fun loadHotSelectedProjects(): Set<String>? =
+        prefs.getStringSet(KEY_HOT_SELECTED, null)?.toSet()
+
+    /** 保存显式选中的项目集合（空集 = 不筛选；全量 = 全选） */
+    fun saveHotSelectedProjects(v: Set<String>) {
+        prefs.edit().putStringSet(KEY_HOT_SELECTED, v).apply()
+    }
+
+    // ---------- 1.243：赛事频道的「队伍 / 选手」筛选 ----------
+    // 按频道独立持久化（nba / cba / lol…互不影响）；元素格式 "memberId\tname"，
+    // 带上 name 是为了「今天没有该队比赛、但仍被选中」时，面板里还能列出它并取消。
+    private const val KEY_TEAM_FILTER_PREFIX = "score_team_filter_"
+
+    /** 读取某赛事频道已选中的队伍（空集 = 不筛选） */
+    fun loadTeamFilter(gameId: String): Set<String> {
+        if (gameId.isBlank()) return emptySet()
+        return prefs.getStringSet(KEY_TEAM_FILTER_PREFIX + gameId, emptySet())?.toSet() ?: emptySet()
+    }
+
+    /** 保存某赛事频道已选中的队伍 */
+    fun saveTeamFilter(gameId: String, v: Set<String>) {
+        if (gameId.isBlank()) return
+        prefs.edit().putStringSet(KEY_TEAM_FILTER_PREFIX + gameId, v).apply()
+    }
+
     // ---------- 1.224n：崩溃取证（默认**关闭**） ----------
     private const val KEY_CRASH_LOG = "crash_log_enabled_v1"
 
@@ -166,6 +200,40 @@ object HupuPrefs {
     fun acceptDisclaimer() {
         prefs.edit().putBoolean(KEY_DISCLAIMER_ACCEPTED, true).apply()
         disclaimerAccepted = true
+    }
+
+    // ---------- 1.283 首次使用引导（欢迎 / 外观 / 字号 / 完成） ----------
+
+    /**
+     * 引导流程是否已完成。
+     *
+     * 与「免责声明」配合使用：
+     *  · 老用户：早已同意免责声明，且升级到本版本时由 [migrateOnboardingIfNeeded] 静默标记完成
+     *    → 永远看不到引导（不会让老用户重走一遍设置）；
+     *  · 新用户：免责声明未同意 → 同意后 [onboardingDone] 仍为 false → 进入引导。
+     */
+    var onboardingDone by mutableStateOf(false)
+        private set
+
+    fun completeOnboarding() {
+        prefs.edit().putBoolean(KEY_ONBOARDING_DONE, true).apply()
+        onboardingDone = true
+    }
+
+    /**
+     * **老用户一次性静默迁移**（只在装/升到本版本后的第一次启动执行一次）。
+     *
+     * 判据：执行时免责声明**已被同意** → 说明这是升级上来的老用户 → 直接标记引导完成。
+     * 新装用户此刻 `disclaimerAccepted == false`，不会被误标；
+     * 而「已迁移」标记保证这段逻辑此后再也不会跑，所以新用户同意免责声明后
+     * 不会被它顺手标成已完成。
+     */
+    fun migrateOnboardingIfNeeded() {
+        if (prefs.getBoolean(KEY_ONBOARDING_MIGRATED, false)) return
+        val ed = prefs.edit().putBoolean(KEY_ONBOARDING_MIGRATED, true)
+        if (disclaimerAccepted) ed.putBoolean(KEY_ONBOARDING_DONE, true)
+        ed.apply()
+        onboardingDone = prefs.getBoolean(KEY_ONBOARDING_DONE, false)
     }
 
     /** 版本号：设置页保存后 +1，首页观察到变化即刷新横滑条 */
@@ -641,6 +709,10 @@ object HupuPrefs {
     private const val KEY_THEME_MODE = "theme_mode_v1"
     /** 1.154：免责声明是否已同意（false = 首次启动，必须同意才能使用） */
     private const val KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted_v1"
+    /** 1.283：首次使用引导是否已完成 */
+    private const val KEY_ONBOARDING_DONE = "onboarding_done_v1"
+    /** 1.283：老用户「一次性静默迁移」标记（保证那段兼容逻辑只跑一次） */
+    private const val KEY_ONBOARDING_MIGRATED = "onboarding_migrated_v1"
 
     /** 主题模式变更版本：MainActivity / 主题计算观察到即重组（切换即时生效，无需重启） */
     var themeModeVersion by mutableIntStateOf(0)

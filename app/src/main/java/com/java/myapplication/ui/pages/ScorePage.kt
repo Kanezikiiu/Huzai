@@ -101,6 +101,8 @@ import com.java.myapplication.ui.components.PageHeader
 import com.java.myapplication.ui.glass.FrostedHeaderLayout
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SkeletonSchedule
+import com.java.myapplication.ui.components.SkeletonScoreCards
 import com.java.myapplication.ui.components.normalizeCover
 import com.java.myapplication.ui.components.tabSwipeSwitch
 import kotlinx.coroutines.async
@@ -804,10 +806,55 @@ fun ScorePage(
             hotExcluded = next
             HupuPrefs.saveHotExcluded(next)
         }
-        var hotFilterOpen by remember { mutableStateOf(false) }
+        // 1.246：项目筛选与队伍筛选合并为**同一个面板**，原来的 hotFilterOpen 并入 teamFilterOpen
+        // 1.243：**赛事频道的队伍筛选**（NBA / CBA / LOL…各自独立，按频道持久化）。
+        // 与热门赛事不同：那里筛的是「项目」，这里筛的是「参赛队伍」。
+        var teamFilterOpen by remember { mutableStateOf(false) }
+        // 1.258：NBA 数据（战绩 / 排行）二级页
+        var nbaRankOpen by remember { mutableStateOf(false) }
+        // 1.291：足球数据（懂球帝数据源）二级页——仅在「国际足球」tab 下可进入
+        var dqRankOpen by remember { mutableStateOf(false) }
+        var teamFilter by remember(selectedGame) {
+            mutableStateOf(HupuPrefs.loadTeamFilter(selectedGame))
+        }
+        fun setTeamFilter(next: Set<String>) {
+            teamFilter = next
+            HupuPrefs.saveTeamFilter(selectedGame, next)
+        }
         // 注意：切到「虎扑评分」（commonOpen）时 selectedGame 仍停留在上一个频道，
         // 所以要同时排除 commonOpen，否则评分 tab 上也会冒出筛选按钮。
         val isHotChannel = !commonOpen && selectedGame == HupuMatchApi.COMMON_HOT_SPORTS_ID
+        // 1.243：单个赛事频道（非虎扑评分、非热门赛事）→ 可以按参赛队伍筛选
+        // 该频道当前可筛选的队伍（有数据才显示按钮，避免空面板）
+        val teamItems = remember(schedules[selectedGame], teamFilter) {
+            TeamFilter.items(schedules[selectedGame].orEmpty(), teamFilter)
+        }
+        val teamFilterActive = TeamFilter.selectedIds(teamFilter).isNotEmpty()
+        // 1.247：项目维度统一成「选中 = 只显示选中项，空 = 不筛选」（与队伍一致）。
+        // 旧版存的是「被排除的项目名」，这里在读取时换算成「选中集合」——
+        // 存储格式（KEY_HOT_EXCLUDED）完全不变，老用户的筛选结果保持一致。
+        val hotVisibleNames = remember(schedules[HupuMatchApi.COMMON_HOT_SPORTS_ID], isHotChannel) {
+            if (!isHotChannel) emptyList()
+            else HotSport.counts(schedules[HupuMatchApi.COMMON_HOT_SPORTS_ID].orEmpty()).map { it.first }
+        }
+        // 1.248：**选中集合显式保存**。
+        // 之前把它从「排除集」派生，于是"全选"写进存储后就是空排除集，读回来又成了"全没选"——
+        // 全选与全不选塌缩成同一个状态（点全选看起来毫无反应）。现在单独存一份，两者可区分。
+        var hotSelectedProjects by remember { mutableStateOf(HupuPrefs.loadHotSelectedProjects()) }
+        val hotSelected: Set<String> =
+            hotSelectedProjects ?: HotSport.selectedFromExcluded(hotVisibleNames, hotExcluded)
+        fun setHotSelected(next: Set<String>) {
+            hotSelectedProjects = next
+            HupuPrefs.saveHotSelectedProjects(next)
+            // 旧字段同步（filterDays 与旧版本回退都依赖它）
+            setHotExcluded(HotSport.excludedFromSelected(hotVisibleNames, next))
+        }
+        // 老用户迁移：新字段从未写过时，由旧「排除集」换算一次并落盘
+        LaunchedEffect(hotVisibleNames) {
+            if (hotSelectedProjects == null && hotVisibleNames.isNotEmpty()) {
+                setHotSelected(HotSport.selectedFromExcluded(hotVisibleNames, hotExcluded))
+            }
+        }
         // 1.224o：内嵌模式下**不渲染评分首页本体**（只保留后面的详情浮层）
         if (embedded == null) {
         FrostedHeaderLayout(
@@ -822,15 +869,50 @@ fun ScorePage(
                 // 1.199：热门赛事是混装聚合 → 右上角给「筛选项目」入口
                 //     （组件与首页搜索键同源：LiquidIconButton 液态玻璃圆钮，24dp 图标）
                 //     过滤生效时图标转主题色，避免「明明有比赛却看不到」的困惑
-                if (isHotChannel) {
-                    LiquidIconButton(
-                        icon = HupuIcons.FilterAlt,
-                        contentDescription = "筛选项目",
-                        onClick = { hotFilterOpen = true },
-                        iconSize = 24.dp,
-                        tint = if (hotExcluded.isEmpty()) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.primary,
-                    )
+                // 1.258b：PageHeader 的 trailing 是**单个 Box（居中叠放）**，
+                // 直接并排写两个按钮会重叠 —— 这里显式用 Row 横向排开。
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // 1.258：NBA tab → 「数据」入口（战绩 / 排行二级页）
+                    if (!commonOpen && selectedGame == "nba") {
+                        LiquidIconButton(
+                            icon = HupuIcons.BarChart,
+                            contentDescription = "NBA 数据",
+                            onClick = { nbaRankOpen = true },
+                            iconSize = 24.dp,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    // 1.291：国际足球 tab → 「足球数据」入口（积分榜 / 球员榜 / 球队榜）
+                    // 数据源是懂球帝，与虎扑赛事体系无关，所以只在这个 tab 出现。
+                    if (!commonOpen && selectedGame == HupuMatchApi.SOCCER_ID) {
+                        LiquidIconButton(
+                            icon = HupuIcons.BarChart,
+                            contentDescription = "足球数据",
+                            onClick = { dqRankOpen = true },
+                            iconSize = 24.dp,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    // 1.246：所有赛事 tab（含热门赛事）共用同一个筛选入口；
+                    // 热门赛事的面板里同时有「项目」与「队伍」两个分段。
+                    if (!commonOpen && teamItems.isNotEmpty()) {
+                        // 1.283：热门赛事的「项目」筛选**只属于热门赛事频道**。
+                        // 之前不看频道，于是在热门赛事勾了项目后，切到 NBA/CBA 等
+                        // 单赛事 tab 时筛选图标仍是主题色（看起来像这些 tab 也被筛了）。
+                        val anyFilter = teamFilterActive ||
+                            (isHotChannel && hotExcluded.isNotEmpty())
+                        LiquidIconButton(
+                            icon = HupuIcons.FilterSliders,
+                            contentDescription = "筛选",
+                            onClick = { teamFilterOpen = true },
+                            iconSize = 24.dp,
+                            tint = if (anyFilter) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
             }
         // 项目横滑条（与首页/专区同款裁剪）——首项为通用评分（虎扑评分，非赛事体系）
@@ -882,7 +964,7 @@ fun ScorePage(
         if (commonOpen) {
             when {
                 // 1.198：骨架也从浮空栏下开始（否则首行骨架块会被顶栏盖住）
-                commonSubjects.isEmpty() && commonLoading -> SkeletonHome(Modifier.padding(top = topInset))
+                commonSubjects.isEmpty() && commonLoading -> SkeletonScoreCards(topPadding = topInset)
                 commonSubjects.isEmpty() && commonFailed -> ErrorRetry { loadCommonSubjects(forceNetwork = true) }
                 else -> {
                     // 与电竞侧同款：下拉刷新（虎扑评分首页每次刷新换一批）
@@ -917,8 +999,11 @@ fun ScorePage(
         val days = schedules[selectedGame]
         // 1.199：只在「热门赛事」下按项目过滤；被排除项目的比赛整条不显示，
         // 过滤后为空的**日期块会被丢掉** —— 这样列表的「定位到最近比赛日」不会落到空日子上。
-        val shownDays = remember(days, hotExcluded, isHotChannel) {
-            if (isHotChannel) HotSport.filterDays(days.orEmpty(), hotExcluded) else days.orEmpty()
+        val shownDays = remember(days, hotExcluded, isHotChannel, teamFilter) {
+            val hot = if (isHotChannel) HotSport.filterDays(days.orEmpty(), hotExcluded) else days.orEmpty()
+            // 1.243/1.246：再按「参赛队伍」过滤 —— 热门赛事与单赛事频道都适用
+            // （两个维度叠加：先按项目排除，再按队伍包含；空日期块一并丢掉）
+            TeamFilter.filterDays(hot, teamFilter)
         }
         val pullState = rememberPullToRefreshState()
         val refreshing = loadingGame == selectedGame
@@ -949,12 +1034,21 @@ fun ScorePage(
             },
         ) {
             when {
-                days == null && refreshing -> SkeletonHome(Modifier.padding(top = topInset))
+                days == null && refreshing -> SkeletonSchedule(topPadding = topInset)
                 days == null -> ErrorRetry { refreshTick++ }
                 days.isEmpty() -> EmptySchedule()
                 // 1.199：筛选把比赛全筛掉了 → 给一条「清除筛选」的出路，而不是白屏
                 // （1.224l：清除 = 清空整个排除集，连带清掉历史遗留项）
-                shownDays.isEmpty() -> HotFilterEmpty { setHotExcluded(emptySet()) }
+                // 1.243：单赛事频道下由队伍筛选清空 → 清队伍筛选（两者互斥）
+                shownDays.isEmpty() -> HotFilterEmpty(
+                    onClear = {
+                        // 1.246：热门赛事可能同时有「项目」与「队伍」筛选 → 一起清
+                        // 1.248：选中的项目是显式状态，也必须清（否则面板残留旧勾选）
+                        // 1.283：但项目筛选只属于热门赛事频道，单赛事 tab 只清队伍筛选
+                        setTeamFilter(emptySet())
+                        if (isHotChannel) setHotSelected(emptySet())
+                    },
+                )
                 else -> ScheduleList(
                     shownDays,
                     resetKey = "$selectedGame-$refreshVersion",
@@ -967,37 +1061,61 @@ fun ScorePage(
         }
         }
 
-        // ---------- 1.199：热门赛事「项目筛选」底部 sheet ----------
-        if (hotFilterOpen) {
-            // 类别与场次随当前数据动态生成（只列此刻真实出现的项目）
-            val hotCounts = HotSport.counts(schedules[HupuMatchApi.COMMON_HOT_SPORTS_ID].orEmpty())
-            // 1.224l：面板列表 = **当前出现的类别 ∪ 已被排除的类别**。
-            // 历史遗留的排除项（今天没有该项目的比赛）必须也列出来，否则它**没有任何入口能取消**
-            // —— 比赛被静默隐藏、用户却看不出原因；而且会让「所有 chip 都勾着、右上角却写着全选」
-            // 的矛盾状态出现（旧代码的 allSelected = excluded.isEmpty() 就是这么来的）。
-            val hotItems = remember(hotCounts, hotExcluded) {
-                hotCounts + hotExcluded
-                    .filter { n -> hotCounts.none { it.first == n } }
+        // ---------- 1.246：统一筛选面板（热门 = 项目 + 队伍；单赛事 = 只有队伍） ----------
+        if (teamFilterOpen && !commonOpen) {
+            val days = schedules[selectedGame].orEmpty()
+            // 热门赛事的「项目」维度：当前出现的类别 ∪ 已被排除的类别（历史项必须能取消）
+            val hotCategories: List<Pair<String, Int>>? = if (isHotChannel) {
+                val counts = HotSport.counts(days)
+                counts + hotExcluded
+                    .filter { n -> counts.none { it.first == n } }
                     .sorted()
                     .map { it to 0 }
+            } else {
+                null
             }
-            // 「全不选 ⇄ 全选」的判据用**可见项**，而不是 excluded 是否为空
-            val hotAllSelected = hotItems.none { (name, _) -> name in hotExcluded }
-            HotSportFilterSheet(
-                counts = hotItems,
-                excluded = hotExcluded,
-                onToggle = { name ->
-                    setHotExcluded(if (name in hotExcluded) hotExcluded - name else hotExcluded + name)
-                },
-                // 全部可见项都已勾选 → 点一下「全不选」；否则「全选」= 清空整个排除集（连带历史项）
-                onToggleAll = {
-                    setHotExcluded(
-                        if (hotAllSelected) hotItems.map { it.first }.toSet() else emptySet(),
+            TeamFilterSheet(
+                title = "筛选",
+                items = teamItems,
+                selected = teamFilter,
+                totalMatches = days.sumOf { it.matches.size },
+                onToggle = { item, raw ->
+                    val ids = TeamFilter.selectedIds(teamFilter)
+                    setTeamFilter(
+                        if (item.id in ids) {
+                            teamFilter.filterNot { TeamFilter.decode(it)?.first == item.id }.toSet()
+                        } else {
+                            teamFilter + raw
+                        },
                     )
                 },
-                onDismiss = { hotFilterOpen = false },
+                onInvertTeams = { next -> setTeamFilter(next) },
+                onClear = {
+                    setTeamFilter(emptySet())
+                    // 1.283：项目筛选是热门赛事的，别在单赛事 tab 里顺手清掉
+                    if (isHotChannel) setHotSelected(emptySet())
+                },
+                onDismiss = { teamFilterOpen = false },
+                categories = hotCategories,
+                // 1.283：非热门赛事频道不携带「项目」选中集合。
+                // 面板的「清除筛选」可用性 = 两段都为空才禁用；若把热门的选中集合
+                // 带进来，单赛事 tab 打开面板时清除按钮会莫名可用。
+                selectedCategories = if (isHotChannel) hotSelected else emptySet(),
+                onToggleCategory = { name ->
+                    if (isHotChannel) {
+                        setHotSelected(if (name in hotSelected) hotSelected - name else hotSelected + name)
+                    }
+                },
+                onInvertCategories = { next -> if (isHotChannel) setHotSelected(next) },
             )
         }
+            // 1.258：NBA 数据二级页（盖在评分页之上）
+            if (nbaRankOpen) {
+                NbaRankOverlay(
+                    repo = repo,
+                    onClose = { nbaRankOpen = false },
+                )
+            }
         } // ← if (embedded == null) 结束：内嵌模式到此为止，下面只有详情浮层
 
         // ---------- 比赛详情二级页：盖入式转场 ----------
@@ -1701,160 +1819,10 @@ fun ScorePage(
                 onDismiss = { scoreStickerToDelete = null },
             )
         }
-    }
-}
-
-/**
- * 1.199：热门赛事的「项目筛选」底部 sheet。
- *
- * · 多选 = 勾选要显示的项目（默认全勾）；每个项目后面带**当前场次数**，方便取舍；
- * · 「全选」一键恢复；点遮罩或「完成」关闭；
- * · **1.224l 起持久化**（1.199 时是不记的，真机反馈要记）——排除项存在 [com.java.myapplication.data.HupuPrefs]，
- *   重启后仍生效；面板里的类别列表 = 当前出现的类别 ∪ 已被排除的类别。
- */
-/**
- * 1.199：热门赛事的「项目筛选」底部 sheet。
- *
- * chrome（抓手条 / 左标题 / 右侧动作）**与楼中楼面板同源** —— 直接复用
- * [SheetGrabber] 与 [sheetTopCornerShape]，标题字号 15sp SemiBold、行留白
- * （start 16dp / end 12dp / top 10dp / bottom 8dp）与 [SheetTopBar] 一致；
- * 大圆角机型用 [rememberSheetSideInset] 让标题与右侧按钮落进圆角内侧直边区。
- *
- * · 多选 = 勾选要显示的项目（默认全勾）；每个项目后面带**当前场次数**；
- * · 右上角一键「全不选 / 全选」：全部选中时显示「全不选」，否则显示「全选」；
- * · 打开期间让底部悬浮 Tab 栏神隐（[SecondaryPage]），否则面板会被它盖住；
- * · **1.224l 起持久化**（见调用方与 [com.java.myapplication.data.HupuPrefs.saveHotExcluded]）。
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun HotSportFilterSheet(
-    counts: List<Pair<String, Int>>,
-    excluded: Set<String>,
-    onToggle: (String) -> Unit,
-    onToggleAll: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    // 打开期间隐藏底部悬浮 Tab 栏（与二级页/其它半屏面板同源做法），关闭后 Q 弹回来
-    DisposableEffect(Unit) {
-        SecondaryPage.enter()
-        onDispose { SecondaryPage.exit() }
-    }
-    // 1.199b（真机反馈）：面板必须自己接管返回 —— 之前按返回直接退出了 App
-    // （ScorePage 是主页，面板只是覆盖层，没接管就会一路冒泡到 Activity.finish）。
-    BackHandler { onDismiss() }
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { progress.animateTo(1f, tween(220)) }
-    val scrimSource = remember { MutableInteractionSource() }
-    val panelSource = remember { MutableInteractionSource() }
-    val side = rememberSheetSideInset(depth = 25.dp)
-    // 1.224l：「全不选 ⇄ 全选」按**可见项**判断，而不是 excluded 是否为空 ——
-    // 持久化之后可能出现「排除集里只剩一个今天不出现的类别」，
-    // 那种情况下列表里所有 chip 都是勾着的，若按 excluded.isEmpty() 判断，
-    // 右上角却会写着「全选」，与肉眼所见自相矛盾。
-    val allSelected = counts.none { (name, _) -> name in excluded }
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .zIndex(4f)
-            .background(Color.Black.copy(alpha = 0.25f * progress.value))
-            .clickable(indication = null, interactionSource = scrimSource) { onDismiss() },
-    ) {
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .graphicsLayer { translationY = (1f - progress.value) * size.height }
-                // 顶部圆角跟随屏幕物理圆角（与楼中楼面板同一套）
-                .clip(sheetTopCornerShape())
-                .background(MaterialTheme.colorScheme.background)
-                // 面板内点击不穿透到遮罩
-                .clickable(indication = null, interactionSource = panelSource) {}
-                .navigationBarsPadding(),
-        ) {
-            // 抓手条：与楼中楼面板完全同款
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                SheetGrabber()
-            }
-            // 标题行：左标题 + 右「全选 / 全不选」（留白与 SheetTopBar 一致）
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = maxOf(16.dp, side),
-                        end = maxOf(12.dp, side),
-                        top = 10.dp,
-                        bottom = 6.dp,
-                    ),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "筛选项目",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    if (allSelected) "全不选" else "全选",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onToggleAll() }
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                )
-            }
-            // 内容：类别 chips + 完成
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    "只显示勾选的项目 · 共 ${counts.sumOf { it.second }} 场比赛",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    counts.forEach { (name, count) ->
-                        // 1.224l：count = 0 的是"历史遗留的排除项"（今天没有该项目的比赛），
-                        // 仍然列出来，好让用户能取消它。
-                        Chip(
-                            text = if (count > 0) "$name $count" else "$name（暂无）",
-                            selected = name !in excluded,
-                        ) { onToggle(name) }
-                    }
-                }
-                // 1.224o：改**玻璃底**（与全站按钮语言一致）——面板里的"完成"是次级操作，
-// 实心主题色过于抢眼（真机反馈：填充色按钮与整体风格不搭）。
-                val doneDark = isAppDarkTheme()
-                LiquidButton(
-                    onClick = onDismiss,
-                    fill = buttonFill(doneDark),
-                    border = buttonBorder(doneDark),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    height = 44.dp,
-                ) {
-                    Text(
-                        "完成",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
+        // 1.296：足球数据二级页放在**组合树最末尾** —— PredictiveBackHandler 是
+        // 「最后组合的那个生效」，放在中间会被后面其它浮层/页面的手势处理器盖掉。
+        if (dqRankOpen) {
+            DqRankOverlay(onClose = { dqRankOpen = false })
         }
     }
 }

@@ -1,8 +1,8 @@
 {
-  "versionCode": 214,
-  "versionName": "1.204",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.204/huzai-1.204-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.204",
-  "changelog": "· 功能新增:评论区支持页码跳转，滑动到评论区即出现页码按钮\n· 功能新增:帖子标题、正文、评论区支持长按选中文字\n· 功能优化:优化评分分布布局\n· 问题修复:修复楼中楼不显示视频消息的问题",
+  "versionCode": 215,
+  "versionName": "1.205",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.205/huzai-1.205-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.205",
+  "changelog": "· 功能新增:评分页「NBA」新增「NBA 数据」，可查看战绩排名与数据排名\n· 功能新增:评分页「国际足球」新增「足球数据」，支持 18 项赛事(中超、五大联赛、美职联、沙特联等)的积分榜、球员榜与球队榜\n· 功能新增:新增首次使用设置流程（外观 / 阅读字号 / 默认频道等）\n· 功能新增:评分页赛程支持按队伍或选手筛选，热门赛事的项目与队伍筛选合并为同一面板\n· 功能新增:点击消息通知可定位到对应评论，楼中楼子回复会自动展开，但受限于技术原因，仅限于前两层评论，更深层评论的跳转暂时无法实现\n· 功能优化:筛选面板交互统一，支持反选并可按频道分别保存\n· 功能优化:骨架屏按各页面真实布局重绘，加载过程更自然\n· 问题修复:修复部分页面返回手势取消后内容偏移、左侧留白的问题\n· 问题修复:修复顶部栏点击会穿透到底层页面的问题\n· 问题修复:修复首页在热帖与话题之间切换时信息流跳动的问题",
   "forceUpdate": false
 }

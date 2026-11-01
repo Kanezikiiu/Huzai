@@ -71,6 +71,31 @@ object HotSport {
     }
 
     /**
+     * 1.247：**旧数据兼容的换算**（项目筛选语义统一为「选中 = 只显示选中项」）。
+     *
+     * 历史上 `HupuPrefs.HotExcluded` 存的是「被排除的项目名」，而新版面板的勾选语义是
+     * 「选中 = 只显示这些」；两者互为补集。这里只做换算，**存储格式完全不变**，
+     * 所以老用户升级后筛选结果与之前一致，不需要迁移。
+     *
+     * @param all 当前数据里出现的项目名（[counts] 的 key）
+     */
+    fun selectedFromExcluded(all: List<String>, excluded: Set<String>): Set<String> {
+        if (excluded.isEmpty()) return emptySet()
+        return all.filterNot { it in excluded }.toSet()
+    }
+
+    /**
+     * 反向：把「选中集合」写回成「被排除集合」。
+     *
+     * 注意两者都表示「不筛选」（一个都没勾 / 全勾）—— 都写空集，
+     * 因为 [filterDays] 对空排除集是原样返回。
+     */
+    fun excludedFromSelected(all: List<String>, selected: Set<String>): Set<String> {
+        if (selected.isEmpty() || selected.size >= all.size) return emptySet()
+        return all.filterNot { it in selected }.toSet()
+    }
+
+    /**
      * 按「被排除的类别」过滤赛程。
      * · [excluded] 为空 → 原样返回（默认全显示）；
      * · 过滤后没有比赛的日子会被丢掉 —— 否则列表里会出现空日期块，

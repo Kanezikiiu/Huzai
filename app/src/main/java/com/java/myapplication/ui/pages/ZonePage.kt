@@ -83,6 +83,7 @@ import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.SortBar
 import com.java.myapplication.ui.components.SORT_BAR_TOTAL_HEIGHT
 import com.java.myapplication.ui.components.SkeletonHome
+import com.java.myapplication.ui.components.SkeletonFeedCards
 import com.java.myapplication.ui.components.tapGuard
 import com.java.myapplication.ui.components.TopicFeedState
 import com.java.myapplication.ui.components.normalizeCover
@@ -329,7 +330,7 @@ fun ZonePage(modifier: Modifier = Modifier) {
         ) { topInset ->
             when {
                 // 1.198：骨架也从浮空栏下开始（否则首行骨架块会被顶栏盖住）
-                categories == null && loading -> SkeletonHome(Modifier.padding(top = topInset))
+                categories == null && loading -> SkeletonFeedCards(topPadding = topInset)
                 categories == null -> ErrorRetry { cateRefreshTick++ }
                 categories!!.isEmpty() -> ErrorRetry { cateRefreshTick++ }
                 else -> {
@@ -738,7 +739,7 @@ private fun TopicFeedOverlay(
                     },
                 ) {
                     when {
-                        selState == null -> SkeletonHome(Modifier.padding(top = topInset))
+                        selState == null -> SkeletonFeedCards(topPadding = topInset)
                         selState.threads.isEmpty() -> ErrorRetry { onRefresh() }
                         else -> FeedList(
                             threads = selState.threads,
