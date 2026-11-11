@@ -215,6 +215,20 @@ data class HupuBoardPage(
     val recommendations: List<HupuThread>,
 )
 
+/**
+ * 1.32x：步行街「推荐流」一页（`m.hupu.com/api/v2/bbs/walkingStreet/threads`）。
+ *
+ * 与 [HupuBoardPage] 的区别：这个源**带封面图、带作者、匿名可访问、每次请求换一批**，
+ * 所以首页热帖改用它（`/all-gambia` 降级为失败兜底）。
+ *  - [cursor]：下一页游标（时间戳），必须与 page 一起传
+ *  - [hasMore]：`data.nextPage`
+ */
+data class HupuStreetPage(
+    val threads: List<HupuThread>,
+    val cursor: String,
+    val hasMore: Boolean,
+)
+
 /** 话题页数据（含分页） */
 data class HupuTopicPage(
     val topic: HupuTopicInfo,

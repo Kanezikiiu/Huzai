@@ -240,9 +240,14 @@ fun AboutPage(onClose: () -> Unit) {
                 // 解码自适应图标 XML（"Only VectorDrawables and rasterized asset types…"），
                 // 组合期抛异常导致打开即闪退。这里统一把 Drawable 绘制成位图，自适应/位图
                 // 两种形态都安全；失败则回退到主题色字母块。
-                val appIcon = remember(context) {
+                // 1.345：图标要跟随「外观 → 应用图标」的选择（真机反馈：软件内还是旧图标）。
+                // 订阅 appIconVersion，切换后回到这里即是新图标。
+                val chosenIcon = remember(HupuPrefs.appIconVersion) { HupuPrefs.loadAppIcon() }
+                val iconRes = if (chosenIcon == 1) R.mipmap.ic_launcher_round
+                else R.mipmap.ic_launcher_peek_round
+                val appIcon = remember(context, iconRes) {
                     runCatching {
-                        ContextCompat.getDrawable(context, R.mipmap.ic_launcher_round)
+                        ContextCompat.getDrawable(context, iconRes)
                             ?.toBitmap(width = 192, height = 192)
                             ?.asImageBitmap()
                     }.getOrNull()

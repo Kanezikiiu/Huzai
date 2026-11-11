@@ -427,12 +427,99 @@ object HupuParser {
 
     // ---------- 映射工具 ----------
 
+    // ---------- 步行街推荐流（m.hupu.com/api/v2/bbs/walkingStreet/threads） ----------
+    /**
+     * 1.32x：解析步行街推荐流 JSON（首页热帖新数据源）。
+     *
+     * 与 SSR 版块页的差异（详见 [HupuStreetPage] 注释）：
+     *  - 列表在 `data.threadList`，每页 10 条
+     *  - 封面 = `picList[0].url`；视频帖还有 `video.img/url`
+     *  - **自带作者**（puid + userName）→ 黑名单按人过滤不再需要逐条补请求
+     *  - 翻页要 `page` + `data.cursor` 一起传
+     */
+    fun parseWalkingStreet(json: String): HupuStreetPage? {
+        val root = try { JSONObject(json) } catch (e: Exception) { null } ?: return null
+        if (root.optInt("code") != 200) return null
+        val data = root.optJSONObject("data") ?: return null
+        val arr = data.optJSONArray("threadList") ?: return null
+        val list = ArrayList<HupuThread>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val tid = strOf(o, "tid")
+            if (tid.isEmpty()) continue
+            val cover = o.optJSONArray("picList")?.optJSONObject(0)?.let { strOf(it, "url") }
+            val videoObj = o.optJSONObject("video")
+            val videoUrl = videoObj?.let { strOf(it, "url") } ?: ""
+            val videoImg = videoObj?.let { strOf(it, "img") } ?: ""
+            val isVideo = o.optBoolean("videoThread", false) || videoUrl.isNotEmpty()
+            list += HupuThread(
+                tid = tid,
+                title = strOf(o, "title"),
+                fid = strOf(o, "fid"),
+                // 视频帖用视频封面兜底，避免卡片缺图
+                cover = cover?.ifEmpty { null } ?: videoImg.ifEmpty { null },
+                lights = o.optInt("recommendCount", 0),
+                replies = o.optInt("replies", 0),
+                createdAtText = strOf(o, "time"),
+                hasVideo = isVideo,
+                video = videoUrl,
+                videoCover = videoImg,
+                author = HupuAuthor(puid = strOf(o, "puid"), name = strOf(o, "userName")),
+                topic = HupuTopic(topicId = strOf(o, "topicId"), name = strOf(o, "topicName")),
+                url = "/$tid.html",
+            )
+        }
+        return HupuStreetPage(
+            threads = list,
+            cursor = strOf(data, "cursor"),
+            hasMore = data.optBoolean("nextPage", list.isNotEmpty()),
+        )
+    }
+
+    /**
+     * Android org.json 的 `optString` 会把 JSON null 强转成字符串 "null"，
+     * 这里的读法把 null / "null" 统一收敛为空串（与 HupuMatchParser.clean 同口径）。
+     */
+    private fun strOf(o: JSONObject, key: String): String {
+        if (o.isNull(key)) return ""
+        val v = o.optString(key)
+        return if (v == "null") "" else v
+    }
+
+    /**
+     * 1.335：列表页 `desc`（摘要）清洗。
+     *
+     * 官方这份数据里混了三种「不该原样显示」的内容，治理后统一收敛为空（= 不显示摘要行）：
+     *
+     * 1. **缩进式前导空格**：实测 65/70 条 desc 前带 4 个半角空格（0x20），
+     *    会让信息流里摘要那行整体右移，看起来像没对齐 → `trim()`。
+     * 2. **机器生成的比赛内链 JSON**：形如
+     *    `{"team":"football","type":"iframe-match","url":"https://games.mobileapi.hupu.com/..."}`
+     *    它是给详情页塞 iframe 用的配置，被当普通文本渲染出来就是「正文一串花括号 JSON」
+     *    （真机截图里那两条战报卡片）。这类没有可读文本可提取 → 整条丢弃：
+     *    标题本身已写清比分（「亚精英赛：泰港7-4国安…」），少一行反而干净。
+     * 3. **纯 `[图片]` 占位**：场景实测 205 条。卡片右侧已有缩略图，再显示一行「图片」
+     *    纯属噪音；且专区页同一帖的 desc 为空（不显示），丢弃后两处表现一致。
+     *
+     * 注意：**不能**笼统地「以 `{` 或 `[` 开头就丢」——实测存在以数字开头的正常长文本
+     * （如「2026赛季…」「1999山东最后一轮…」），`[` 开头也全部是 `[图片]` 而无其他形态。
+     */
+    private fun cleanDesc(raw: String): String? {
+        val d = raw.trim()
+        if (d.isEmpty()) return null
+        // 机器内链 JSON：特征足够明确（team + type 前缀），不会误伤用户正文
+        if (d.startsWith("{\"team\"")) return null
+        // 纯图片占位：没有实际文字
+        if (d == "[图片]") return null
+        return d
+    }
+
     private fun threadFrom(o: JSONObject): HupuThread = HupuThread(
         tid = o.optString("tid"),
         title = o.optString("title"),
         fid = o.optString("fid"),
         cover = o.optString("cover").ifEmpty { null },
-        desc = o.optString("desc").ifEmpty { null },
+        desc = cleanDesc(o.optString("desc")),
         lights = o.optInt("recommend", o.optInt("lights", 0)),
         replies = o.optInt("replies", 0),
         read = o.optInt("read", 0),

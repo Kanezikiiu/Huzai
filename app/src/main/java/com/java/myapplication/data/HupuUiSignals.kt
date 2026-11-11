@@ -35,6 +35,20 @@ object HupuUiSignals {
         data class Match(val matchId: String, val channel: String? = null) : ScoreDeepLink
     }
 
+    /**
+     * 1.336：底栏搜索按钮被点击。
+     *
+     * 搜索页挂在 [com.java.myapplication.ui.pages.HomePage] 内部（有它自己的 searchOpen 状态），
+     * 而底栏按钮在 MainActivity —— 两者不在同一组合作用域。沿用本项目既有的「全局信号」模式：
+     * 底栏自增该计数，首页侧 LaunchedEffect 观察到变化后打开搜索页。
+     */
+    var searchRequested by mutableIntStateOf(0)
+        private set
+
+    fun requestSearch() {
+        searchRequested++
+    }
+
     fun tapHome() {
         homeTabTap++
     }

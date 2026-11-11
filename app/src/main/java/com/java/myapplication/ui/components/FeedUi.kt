@@ -5,6 +5,7 @@ package com.java.myapplication.ui.components
  * 全部为无状态渲染组件，数据与加载逻辑由调用方页面持有。
  */
 
+import androidx.compose.runtime.SideEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -66,6 +68,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -265,7 +268,17 @@ internal fun FeedItem(thread: HupuThread, showImage: Boolean, onOpen: (HupuThrea
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(Modifier.weight(1f)) {
+        // 1.326：**只在带图时才让文本列撑到缩略图高度**，无图卡片保持自然高度。
+        //
+        // 为什么不统一：卡片等高不是目标（历史上就不是）。
+        //  - 有图：卡片行高由固定 100×76 缩略图决定，文本列只占约 60 → meta 会紧贴标题、
+        //    下方空一截。这里给列补上 min = 76，配合下面的可扩展间隔把 meta 压到与图底齐平。
+        //  - 无图：没有图在撑高度，**不需要**对齐任何东西；若也给 76 下限，反而在标题与
+        //    meta 之间塞进一段空白（真机反馈的"无图帖子中间大空隙"就是它）。
+        // 注意：一律不能用 fillMaxHeight —— 那会让两行标题把卡片顶高、图片跟着被拉大（1.323 的锅）。
+        val textCol = if (showImage) Modifier.weight(1f).heightIn(min = 76.dp)
+        else Modifier.weight(1f)
+        Column(textCol) {
             Text(
                 thread.title,
                 fontSize = 15.sp,
@@ -285,7 +298,17 @@ internal fun FeedItem(thread: HupuThread, showImage: Boolean, onOpen: (HupuThrea
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            // 1.330：**按形态分开写**，修「改了数值却看不出变化」。
+            //
+            // 旧写法是 Spacer(Modifier.weight(1f).height(N.dp))，看起来像"至少 N dp"，
+            // 但 weight 默认 fill = true —— Column 会把这个子项的主轴尺寸**强制成它分配到的空间**，
+            // 于是 .height(N.dp) 里的数值被吞掉：
+            //   · 无图卡片：Column 没有富余空间 → 分到 0 → 间隔恒为 0，改 8/12/16 全都看不出变化
+            //   · 有图卡片：分到的是「76 - 内容高度」，本来也不需要这个数值
+            // 所以拆成两支：有图靠 weight 吸底（数值无意义），无图用固定高度（数值一定生效）。
+            // 1.334：无图间隔 11 → 8dp（真机反馈继续收）
+            if (showImage) Spacer(Modifier.weight(1f))
+            else Spacer(Modifier.height(8.dp))
             MetaRow(thread)
         }
         if (showImage) {
@@ -370,20 +393,68 @@ internal fun FeedList(
 ) {
     val listState = rememberLazyListState()
     // 刷新完成后回顶（仅当前活动列表）
+    //
+    // 1.363：之前的 LaunchedEffect 方案仍会"闪一下"——因为它是**副作用**，
+    // 在内容替换的那一帧之后才跑；那一帧新内容已经被 lay 在旧滚动位置上，
+    // 而且可能越到顶栏区域（真机：「刷新后的一瞬间，卡片内容会在顶栏中闪一下」）。
+    //
+    // 现在用 SideEffect：它在 apply changes 之后、**绘制之前**同步执行，
+    // 于是"请求回顶"与"内容替换"落在同一帧，新内容第一次出画就在顶部。
+    // 同时把这一帧标记为 resettingZone，供下面的顶部遮挡使用。
+    var resetKeySeen by remember { mutableStateOf("") }
+    var resettingZone by remember { mutableStateOf(false) }
+    SideEffect {
+        if (resetKey != resetKeySeen) {
+            resetKeySeen = resetKey
+            if (resetKey.isNotEmpty()) {
+                // requestScrollToItem 是同步 API（把目标位置交给下一次测量）；
+                // 若当前版本没有该 API，则什么也不做 —— 下方 LaunchedEffect 会用挂起的
+                // scrollToItem 补齐，保证功能不丢。
+                runCatching { listState.requestScrollToItem(0) }
+                // 保持一帧遮挡，确保这次复位过程里顶栏区域不会漏出内容
+                resettingZone = true
+            }
+        }
+    }
+    // 挂起兜底：万一 requestScrollToItem 不存在（老版本 Compose），这里把列表拉回顶部
     LaunchedEffect(resetKey) {
-        if (resetKey.isNotEmpty() && listState.firstVisibleItemIndex > 0) {
+        if (resetKey.isEmpty()) return@LaunchedEffect
+        if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
             listState.scrollToItem(0)
         }
     }
-    // 滚动接近尾部（最后 5 条内）时自动触发加载
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            canLoadMore && !loadingMore && last >= listState.layoutInfo.totalItemsCount - 5
-        }
+    LaunchedEffect(resettingZone) {
+        if (!resettingZone) return@LaunchedEffect
+        // 等一帧（布局已按新位置量完）再撤掉遮挡
+        kotlinx.coroutines.android.awaitFrame()
+        resettingZone = false
     }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore) onLoadMore?.invoke()
+    // 滚动接近尾部（最后 5 条内）时自动触发加载。
+    //
+    // 1.327：改用 snapshotFlow + 滞回，修「偶发继续滑动不触发加载」。
+    // 旧写法是 derivedStateOf 出一个 Boolean 再 LaunchedEffect(boolean)：
+    //   ① `loadingMore` 本身就参与了这个布尔值。加载结束时它 true→false，会让布尔值
+    //      短暂变 true；可此时若手指已经按住（正在滑动），没有任何 value 变化去重算它，
+    //      就停在 false 上再也不会重新触发。
+    //   ② 旧条件用「可见项最后一条的 index」在条目高矮不一时本身也不稳。
+    // 现在改成订阅列表快照：只要「还没到底 + 不在加载」并进入阈值就触发；
+    // 额外用 triggered 做滞回（必须离开阈值区才允许下一次），避免一次滑动连发多次请求。
+    var loadMoreArmed by remember { androidx.compose.runtime.mutableStateOf(true) }
+    LaunchedEffect(listState, canLoadMore, loadingMore) {
+        if (!canLoadMore || loadingMore) return@LaunchedEffect
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            total > 0 && last >= total - 5
+        }.collect { nearEnd ->
+            if (!nearEnd)
+                loadMoreArmed = true
+            else if (loadMoreArmed) {
+                loadMoreArmed = false
+                onLoadMore?.invoke()
+            }
+        }
     }
     // 浏览流关键词过滤（我的→浏览流设置）：标题/分区命中 → 条目不显示；
     // 挂 filterVersion 订阅——关键词保存即刻刷新（首页/专区共用本列表）
@@ -413,6 +484,10 @@ internal fun FeedList(
         }
         return
     }
+    // 1.363：整个列表包一层 Box —— 复位期间在上面叠一条与顶栏等高的遮挡，
+    // 保证"内容替换 / 回顶 / 遮挡"发生在同一帧，顶栏区域不会漏出卡片内容。
+    // 平时（不在复位）这层不存在，所以正常滚动、顶栏渐进模糊都不受影响。
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
         // 1.199：上方留白交给横滑条自身的 bottom padding，这里不再叠加（否则空隙过大）
@@ -423,12 +498,23 @@ internal fun FeedList(
         items(filteredThreads, key = { it.tid }) { thread ->
             FeedItem(thread, showImage = useBigCards && normalizeCover(thread.cover) != null, onOpen = onOpenThread ?: {})
         }
-        if (canLoadMore) {
+        // 1.324：只在**真正在加载**时显示转圈。
+        // 之前是 `if (canLoadMore)`——分页流只要有下一页这个圈就常驻，看起来像"一直转圈"。
+        if (canLoadMore && loadingMore) {
             item(key = "loading-more") {
                 Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 }
             }
+        }
+    }
+        if (resettingZone) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(topInset)
+                    .background(MaterialTheme.colorScheme.background),
+            )
         }
     }
 }

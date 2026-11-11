@@ -661,6 +661,59 @@ object HupuPrefs {
      * 之所以默认关：该效果需要给内容多打一层**全屏离屏层**，并且每帧跑一次 AGSL 着色器，
      * 低端机可能掉帧，所以交给用户自己选。
      */
+    // ---------- 1.336：搜索按钮位置 ----------
+    // 0 = 顶栏（默认，历史行为）；1 = 底栏左侧；2 = 底栏右侧
+    // 底栏模式下，搜索按钮作为第 5 个「Tab」出现在玻璃胶囊里，与其它 Tab 同外观。
+    private const val KEY_SEARCH_POSITION = "search_button_position_v1"
+
+    /** 默认：底栏右侧（2）。顶栏 = 0，底栏左侧 = 1 */
+    const val DEFAULT_SEARCH_POSITION = 2
+
+    /** 设置变化信号：界面订阅它即可即时重排搜索入口（无需重启） */
+    var searchPositionVersion by mutableIntStateOf(0)
+        private set
+
+    // 1.352：默认改为「底栏右侧」= 2（真机确认的产品默认）
+    fun loadSearchPosition(): Int =
+        prefs.getInt(KEY_SEARCH_POSITION, DEFAULT_SEARCH_POSITION).coerceIn(0, 2)
+
+    fun saveSearchPosition(position: Int) {
+        prefs.edit().putInt(KEY_SEARCH_POSITION, position.coerceIn(0, 2)).apply()
+        searchPositionVersion++
+    }
+
+    // ---------- 1.354：视频默认静音 ----------
+    /**
+     * 打开视频时是否默认静音。
+     *
+     * 现代短视频/信息流应用的通行做法：外放突然出声很打扰，所以默认静音，
+     * 由用户主动开声；同时播放器里有静音按钮可随时切换。
+     * 用户调整系统音量时，播放器侧会自动取消静音（见 HupuVideoPlayer）。
+     */
+    private const val KEY_VIDEO_MUTE_BY_DEFAULT = "video_mute_by_default_v1"
+
+    fun loadVideoMuteByDefault(): Boolean =
+        prefs.getBoolean(KEY_VIDEO_MUTE_BY_DEFAULT, true)
+
+    fun saveVideoMuteByDefault(mute: Boolean) {
+        prefs.edit().putBoolean(KEY_VIDEO_MUTE_BY_DEFAULT, mute).apply()
+    }
+
+    // ---------- 1.344：应用图标 ----------
+    // 0 = 左侧探头（新，默认）；1 = 经典（旧）
+    private const val KEY_APP_ICON = "app_icon_v1"
+
+    /** 设置变化信号：界面订阅它即时刷新选中态 */
+    var appIconVersion by mutableIntStateOf(0)
+        private set
+
+    fun loadAppIcon(): Int = prefs.getInt(KEY_APP_ICON, 0).coerceIn(0, 1)
+
+    fun saveAppIcon(icon: Int) {
+        prefs.edit().putInt(KEY_APP_ICON, icon.coerceIn(0, 1)).apply()
+        appIconVersion++
+    }
+
     fun loadProgressiveHeader(): Boolean = prefs.getBoolean(KEY_PROGRESSIVE_HEADER, false)
     fun saveProgressiveHeader(v: Boolean) {
         prefs.edit().putBoolean(KEY_PROGRESSIVE_HEADER, v).apply()

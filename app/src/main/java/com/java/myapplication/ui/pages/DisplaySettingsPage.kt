@@ -1,5 +1,26 @@
 package com.java.myapplication.ui.pages
 
+import com.java.myapplication.ui.glass.buttonFill
+import com.java.myapplication.ui.glass.liquidElevation
+import com.java.myapplication.ui.glass.liquidPressTransform
+import com.java.myapplication.ui.glass.rememberLiquidHighlight
+import androidx.compose.ui.draw.shadow
+import com.java.myapplication.ui.components.chipGlassFill
+import com.java.myapplication.ui.components.chipGlassBorder
+import com.java.myapplication.ui.components.rememberInstantPressScale
+import com.java.myapplication.ui.components.pressScale
+import com.java.myapplication.ui.theme.isAppDarkTheme
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import com.java.myapplication.AppIconSwitcher
+import com.java.myapplication.ui.components.HuzaiToast
+import com.java.myapplication.R
+import com.java.myapplication.ui.components.SortBar
+import com.java.myapplication.data.SortTab
 import android.app.Activity
 import android.view.Display
 import androidx.activity.compose.PredictiveBackHandler
@@ -356,6 +377,51 @@ private fun AppearanceSection() {
                     },
                 )
             }
+            // 1.336：搜索按钮位置（顶栏 / 底栏左侧 / 底栏右侧）。
+            // 选到「底栏」时，搜索会以第 5 个 Tab 的形态并入底部玻璃胶囊（与其它 Tab 同外观）。
+            var searchPos by remember { mutableStateOf(HupuPrefs.loadSearchPosition()) }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+            )
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                Text(
+                    "搜索按钮位置",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "选择「底栏」后，搜索会作为独立圆钮放在底部 Tab 胶囊的左侧或右侧",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                // 1.338：改用**二级 tab 控件**（与首页/专区的排序条同款 iOS 分段胶囊），
+                // 与全站二级 tab 视觉统一。hPad/bottomPad 传 0 —— 外层卡片已有 16dp 内边距。
+                val posTabs = remember {
+                    listOf(
+                        SortTab(id = 0, title = "顶栏", url = "0"),
+                        SortTab(id = 1, title = "底栏左侧", url = "1"),
+                        SortTab(id = 2, title = "底栏右侧", url = "2"),
+                    )
+                }
+                SortBar(
+                    sorts = posTabs,
+                    selected = searchPos.toString(),
+                    hPad = 0.dp,
+                    bottomPad = 0.dp,
+                    onSelect = { url ->
+                        val v = url.toIntOrNull() ?: 0
+                        searchPos = v
+                        HupuPrefs.saveSearchPosition(v)
+                    },
+                )
+            }
         }
         Spacer(Modifier.height(12.dp))
         GroupLabel("底栏")
@@ -398,6 +464,61 @@ private fun AppearanceSection() {
                         HupuPrefs.saveAutoHideBar(it)
                     },
                 )
+            }
+        }
+        GroupLabel("应用图标")
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            // 1.344：图标切换。左侧探头为默认，经典图标保留可选。
+            // 文案必须写清"桌面可能需要手动删掉旧图标"—— 这是 activity-alias 方案的固有限制。
+            val ctx = LocalContext.current
+            var appIcon by remember(HupuPrefs.appIconVersion) { mutableStateOf(HupuPrefs.loadAppIcon()) }
+            // 1.346：按真机要求**只保留图标本身** —— 去掉分组内标题、说明文字与图标下的文字。
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // 1.349：切换后必须**退出应用**，否则桌面/最近任务不会重读图标
+                    // （真机反馈：只切换组件状态时仅软件内生效）。
+                    // 退出前给一句提示，避免用户以为闪退。
+                    fun switchTo(icon: Int) {
+                        if (appIcon == icon) return
+                        // 1.350：先应用 alias 再落偏好 —— **应用成功才保存**，
+                        // 否则会出现"偏好已改、桌面没变"的不一致。
+                        when (val r = AppIconSwitcher.apply(ctx, icon)) {
+                            is AppIconSwitcher.Result.Ok -> {
+                                appIcon = icon
+                                HupuPrefs.saveAppIcon(icon)
+                                HuzaiToast.show("图标已切换，应用将重新启动以刷新桌面图标")
+                                AppIconSwitcher.restartApp(ctx)
+                            }
+                            is AppIconSwitcher.Result.NoSuchComponent -> {
+                                // 走到这里说明清单里的别名没生效（多半是包名/别名不匹配）
+                                HuzaiToast.show("切换失败：找不到启动器组件 " + r.name)
+                            }
+                            is AppIconSwitcher.Result.Failed -> {
+                                HuzaiToast.show("切换失败：" + r.message)
+                            }
+                        }
+                    }
+                    IconOption(
+                        drawableRes = R.mipmap.ic_launcher_peek,
+                        label = "左侧探头",
+                        selected = appIcon == 0,
+                        modifier = Modifier.weight(1f),
+                    ) { switchTo(0) }
+                    IconOption(
+                        drawableRes = R.mipmap.ic_launcher,
+                        label = "经典",
+                        selected = appIcon == 1,
+                        modifier = Modifier.weight(1f),
+                    ) { switchTo(1) }
+                }
             }
         }
     }
@@ -629,7 +750,84 @@ private fun ThemeOptionRow(
     }
 }
 
-/** 分组标题（把「深浅模式」「色彩主题」「底栏」等分开，避免语义混淆）。 */
+/**
+ * 1.353：图标选项 —— **去掉容器**（真机要求）。
+ *
+ * 之前尝试过玻璃底 / 描边 / 按钮底，都会在设置页的白色卡片上留下"脏色块"观感。
+ * 现在改为最朴素、也不会有任何色块的形态：
+ *
+ *    [ 图标 88dp ]      [ 图标 88dp ]     ← 只有图标本身，无底、无描边、无阴影
+ *        ○ 单选            ● 单选         ← 选中状态由下方单选钮表达
+ *
+ * 点击区域是「图标 + 单选钮」整列，符合设置项的一般手感。
+ */
+@Composable
+private fun IconOption(
+    @DrawableRes drawableRes: Int,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val ctx = LocalContext.current
+    val bmp = remember(drawableRes) {
+        runCatching {
+            ContextCompat.getDrawable(ctx, drawableRes)
+                ?.toBitmap(width = 240, height = 240)
+                ?.asImageBitmap()
+        }.getOrNull()
+    }
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(interactionSource = null, indication = null) { onClick() }
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (bmp != null) {
+            Image(
+                bitmap = bmp,
+                contentDescription = label,
+                modifier = Modifier.size(88.dp).clip(RoundedCornerShape(20.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(
+                Modifier
+                    .size(88.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(accent.copy(alpha = 0.20f)),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        // 单选钮：iOS 风格 —— 实心主题色圆环 + 白点
+        Box(
+            Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .then(
+                    if (selected) Modifier.background(accent)
+                    else Modifier.border(
+                        1.6.dp,
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                        CircleShape,
+                    )
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun GroupLabel(text: String) {
     Text(
@@ -716,3 +914,4 @@ private fun RateRow(title: String, subtitle: String, selected: Boolean, onClick:
         )
     }
 }
+

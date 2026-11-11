@@ -2,6 +2,7 @@ package com.java.myapplication.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 
 /**
@@ -25,6 +26,114 @@ class HupuRepository {
     suspend fun threadAuthor(tid: String): HupuAuthor? {
         val json = HupuApi.fetchThreadAuthorJson(tid) ?: return null
         return withContext(Dispatchers.Default) { HupuParser.parseThreadAuthor(json) }
+    }
+
+    /**
+     * 1.332：首页热帖 —— **多板块轮转**聚合。
+     *
+     * 对每个板块路径并行抓 SSR 页 + 解析，合并去重（保持传入顺序）。
+     * 单个板块超时/失败**只是缺席**，不影响其余板块（详见 [HupuApi.fetchBoardPage]）。
+     *
+     * @param paths 本次要抓的板块路径（来自 [HupuBoardRotation.draw]）
+     * @return 合并去重后的帖子列表（可能为空：全部板块都失败时）
+     */
+    suspend fun boardPages(paths: List<String>): List<HupuThread> {
+        if (paths.isEmpty()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            // 并行抓取；单板块失败返回空列表而不是抛异常
+            val parsed = paths.map { path ->
+                async {
+                    val html = HupuApi.fetchBoardPage(path) ?: return@async emptyList()
+                    withContext(Dispatchers.Default) {
+                        HupuParser.parseBoardPage(html)?.threads ?: emptyList()
+                    }
+                }
+            }.awaitAll()
+            // 1.360：**每个板块先随机旋转一个起点**，再交错合并。
+            //
+            // 为什么需要：板块页返回的是「该板块热帖 Top70」，顺序长期稳定。
+            // 只随机板块的话，列表前几条永远是"某板块的 Top1 / Top2"——
+            // 而这些热帖几天都不变，真机看到的就是「前面老是熟悉的那几条」。
+            //
+            // 旋转（drop(off) + take(off)）只是环形平移：**不丢帖、不改相对热度次序**，
+            // 但每次刷新"打头"的位置不同（可能是第 1 热帖，也可能是第 12 热帖），
+            // 于是同一条帖子不会反复占据首屏。
+            val rotated = parsed.map { list -> rotateForDisplay(list) }
+            // 按 board 顺序交错合并（每个板块轮流取一条），避免前两个板块把列表占满
+            interleave(rotated).distinctBy { it.tid }
+        }
+    }
+
+    /**
+     * 交错合并多个板块的帖子。
+     *
+     * 目的：若直接 `a + b + c`，列表前 70 条会全是第一个板块的；交错后各板块均匀出现在
+     * 首屏，用户一眼就能看出「内容来源多样」。
+     *
+     * ## 1.359：每轮内部的顺序**也随机**
+     *
+     * 真机疑问「抽到的 3 个板块是不是每次都有固定的先后顺序」——实测抽取本身是均匀随机的
+     * （每个板块落在第 1/2/3 位的概率都≈1/10），但**交错节奏**是固定的：
+     *
+     *     A0 B0 C0 | A1 B1 C1 | A2 B2 C2 …
+     *
+     * 也就是"第 1、4、7…条永远来自 A"，看起来就像板块有固定轮次。
+     * 现在每一轮三条的顺序也做一次洗牌：
+     *
+     *     C0 A0 B0 | B1 C1 A1 | A2 C2 B2 …
+     *
+     * 各板块仍然**均匀出现**（每个板块每轮恰好一条），但出现位置不再有规律。
+     */
+    /**
+     * 1.360：把一个板块的帖子列表做**环形随机旋转**（供首屏打散用）。
+     *
+     * `drop(off) + take(off)` 只是平移起点：
+     *  · **不丢帖**（长度不变、集合不变）
+     *  · **不改相对热度次序**（仍是热帖流顺序，只是从第 off+1 条开始读）
+     *  · 每次调用 off 随机，于是「打头」的帖子不再固定
+     *
+     * 抽成独立函数是为了可单测（见 BoardRotateTest）。
+     */
+    internal fun <T> rotateForDisplay(
+        list: List<T>,
+        maxOffset: Int = ROTATE_MAX_OFFSET,
+        random: kotlin.random.Random = kotlin.random.Random.Default,
+    ): List<T> {
+        if (list.size <= 1) return list
+        val cap = minOf(list.size - 1, maxOffset)
+        if (cap <= 0) return list
+        val off = random.nextInt(0, cap + 1)
+        if (off == 0) return list
+        return list.drop(off) + list.take(off)
+    }
+
+
+    private fun interleave(
+        lists: List<List<HupuThread>>,
+        random: kotlin.random.Random = kotlin.random.Random.Default,
+    ): List<HupuThread> {
+        val out = ArrayList<HupuThread>()
+        val maxLen = lists.maxOfOrNull { it.size } ?: 0
+        val indices = lists.indices.toList()
+        for (i in 0 until maxLen) {
+            // 每轮重新洗牌，避免"节拍固定"
+            val order = if (lists.size <= 1) indices else indices.shuffled(random)
+            for (idx in order) {
+                val l = lists[idx]
+                if (i < l.size) out += l[i]
+            }
+        }
+        return out
+    }
+
+    /**
+     * 1.32x：首页热帖新数据源 —— 步行街推荐流（带图 / 带作者 / 匿名可用 / 每次换一批）。
+     *
+     * 解析放 Dispatchers.Default：单页 JSON ≈ 15KB，量不大，但保持与其它方法同口径。
+     */
+    suspend fun walkingStreet(page: Int = 1, cursor: String = ""): HupuStreetPage? {
+        val json = HupuApi.fetchWalkingStreet(page, cursor) ?: return null
+        return withContext(Dispatchers.Default) { HupuParser.parseWalkingStreet(json) }
     }
 
     /** 全站版块/话题导航树（取自任一 /all-* 页） */
@@ -554,3 +663,11 @@ class HupuRepository {
         return fresh.copy(replies = merged, replyPage = fresh.replyPage)
     }
 }
+
+/**
+ * 1.360：每个板块的**随机起点上限**。
+ *
+ * 取 18 意味着"打头"的帖子会在该板块的第 1~19 热帖之间浮动：
+ * 太小（0~2）前排仍显得固定，太大则会把真正最热的帖子推到很后面。
+ */
+private const val ROTATE_MAX_OFFSET = 18

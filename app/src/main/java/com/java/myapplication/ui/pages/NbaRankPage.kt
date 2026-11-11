@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -172,13 +173,14 @@ internal fun NbaRankOverlay(
         // 后台预热列宽（Paint 测量），界面组合时零测量
         if (loaded.isNotEmpty()) {
             val d = density.density
+            val fs = density.fontScale
             withContext(kotlinx.coroutines.Dispatchers.Default) {
                 loaded.forEach { t ->
-                    val k = NbaColWidthCache.key(t)
+                    val k = NbaColWidthCache.key(t) + "|v321|fs$fs"
                     if (NbaColWidthCache.get(k) == null) {
                         NbaColWidthCache.put(
                             k,
-                            NbaColWidthMeasurer.computePx(t, 11f, 12f, d),
+                            NbaColWidthMeasurer.computePx(t, HEAD_SP, BODY_SP, d * fs),
                         )
                     }
                 }
@@ -328,8 +330,12 @@ internal fun NbaRankOverlay(
 private val RANK_W: Dp = 34.dp
 private val NAME_W: Dp = 96.dp
 private val NUM_W: Dp = 62.dp
-private val HEADER_H: Dp = 44.dp
-private val ROW_H: Dp = 44.dp
+// 1.319：表格重设计 —— 行高 44→48、表头 44→46，配合正文 12→14sp
+private val HEADER_H: Dp = 46.dp
+private val ROW_H: Dp = 48.dp
+/** 表体字号（与列宽测量保持一致） */
+private const val BODY_SP = 14f
+private const val HEAD_SP = 12.5f
 
 /**
  * 1.277：**虚拟化表格**。
@@ -348,13 +354,20 @@ internal fun NbaTablesView(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val containerW = maxWidth
-        val widthMap = remember(tables, containerW) {
-            tables.map { t -> computeWidths(t, containerW, density.density) }
+        val fontScale = density.fontScale
+        val widthMap = remember(tables, containerW, fontScale) {
+            tables.map { t -> computeWidths(t, containerW, density.density, fontScale) }
         }
         val totalW = widthMap.maxOfOrNull { ws -> ws.fold(0.dp) { a, d -> a + d } } ?: containerW
-        // 1.284：加深一档、保持冷中性（既不泛黄，又能看清表格轮廓）
-        val tableBg = if (!isAppDarkTheme()) androidx.compose.ui.graphics.Color(0xFFEEF0F3)
-        else MaterialTheme.colorScheme.surfaceVariant
+        // 1.319：改成「白卡 + 细描边 + 行分隔线 + 斑马纹」——
+        // 之前的整块灰底（#EEF0F3）既不贴合全站 iOS 风格，字也压不住。
+        val dark = isAppDarkTheme()
+        val cardBg = if (dark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
+        else MaterialTheme.colorScheme.surface
+        val cardBorder = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.10f else 0.07f)
+        val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.07f else 0.05f)
+        val zebraColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.035f else 0.022f)
+        val tableShape = RoundedCornerShape(18.dp)
 
         // 1.280：**整页纵向滚动 + 单一横向滚动容器**。
         // 每张表各自一张卡片（圆角 + 独立间距），「按赛区」的 6 张表因此是分开的，
@@ -406,8 +419,9 @@ internal fun NbaTablesView(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(tableBg)
+                            .clip(tableShape)
+                            .background(cardBg)
+                            .border(0.8.dp, cardBorder, tableShape)
                             .horizontalScroll(hScroll),
                     ) {
                         Column {
@@ -429,9 +443,19 @@ internal fun NbaTablesView(
                                     }
                                 }
                             }
+                            // 表头下细分隔线
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(0.6.dp)
+                                    .background(lineColor),
+                            )
                             rows.forEachIndexed { ri, row ->
                                 Row(
-                                    Modifier.height(ROW_H),
+                                    Modifier
+                                        .height(ROW_H)
+                                        // 斑马纹：奇数行加一层极淡底色，长表更好扫读
+                                        .background(if (ri % 2 == 1) zebraColor else androidx.compose.ui.graphics.Color.Transparent),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     row.forEachIndexed { i, c ->
@@ -440,11 +464,20 @@ internal fun NbaTablesView(
                                             width = widths.getOrElse(i) { NUM_W } +
                                                 if (i == sortCol && sortable && table.sortable) arrowW else 0.dp,
                                             alignStart = i == nameIdx,
-                                            bold = i == 0 || i == nameIdx,
+                                            // 1.321：与足球数据表格保持一致 —— 不加粗
+                                            bold = false,
                                         )
                                     }
                                 }
-                                if (ri == rows.lastIndex) Spacer(Modifier.height(2.dp))
+                                // 行分隔线（最后一行不画）
+                                if (ri != rows.lastIndex) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(0.5.dp)
+                                            .background(lineColor),
+                                    )
+                                }
                             }
                         }
                     }
@@ -455,20 +488,30 @@ internal fun NbaTablesView(
 }
 
 /** 列宽：内容基础宽度（后台已预热）→ 加内边距 → 铺满均分 */
-private fun computeWidths(table: NbaRankTable, containerW: Dp, density: Float): List<Dp> {
+private fun computeWidths(
+    table: NbaRankTable,
+    containerW: Dp,
+    density: Float,
+    fontScale: Float,
+): List<Dp> {
     if (table.headers.isEmpty()) return emptyList()
     val nameIdx = table.headers.indexOfFirst {
         it == "队名" || it == "球员" || it == "球队"
     }.let { if (it >= 0) it else 1 }
-    val basePx = NbaColWidthCache.get(NbaColWidthCache.key(table))
-        ?: NbaColWidthMeasurer.computePx(table, 11f, 12f, density).also {
-            NbaColWidthCache.put(NbaColWidthCache.key(table), it)
+    // 1.321：测量口径 = 渲染口径。
+    // 系统字体放大时 sp 会按 fontScale 放大，而 Paint 的 textSize 只认 px ——
+    // 之前没乘 fontScale，于是"大字体用户"的列宽偏窄、内容被截断。
+    // 这里把 fontScale 折进 px 测量（随后再 /density 换回 dp），并且缓存键带上它。
+    val key = NbaColWidthCache.key(table) + "|v321|fs$fontScale"
+    val basePx = NbaColWidthCache.get(key)
+        ?: NbaColWidthMeasurer.computePx(table, HEAD_SP, BODY_SP, density * fontScale).also {
+            NbaColWidthCache.put(key, it)
         }
     val base = table.headers.indices.map { i ->
         val needDp = (basePx.getOrElse(i) { 0f } / density).dp
-        (needDp + 14.dp).coerceIn(
-            if (i == 0) 30.dp else if (i == nameIdx) 56.dp else 44.dp,
-            if (i == nameIdx) 128.dp else 96.dp,
+        (needDp + 18.dp).coerceIn(
+            if (i == 0) 34.dp else if (i == nameIdx) 64.dp else 48.dp,
+            if (i == nameIdx) 240.dp else 140.dp,
         )
     }
     val total = base.fold(0.dp) { acc, d -> acc + d }
@@ -493,18 +536,19 @@ private fun HeadCell(
     val color = if (active) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant
     BasicText(
-        text = if (active) text + if (desc) " ↓" else " ↑" else text,
+        text = if (active) text + if (desc) " ▾" else " ▴" else text,
         style = TextStyle(
-            fontSize = 11.sp,
+            fontSize = 12.5.sp,
             color = color,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+            letterSpacing = 0.2.sp,
             textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
         ),
         maxLines = 1,
         modifier = Modifier
             .width(width)
             .then(if (clickable) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = 2.dp, vertical = 6.dp),
+            .padding(horizontal = 4.dp, vertical = 6.dp),
     )
 }
 
@@ -518,14 +562,17 @@ private fun BodyCell(
     BasicText(
         text = text,
         style = TextStyle(
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 14.sp,
+            color = if (bold) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurface,
             fontWeight = if (bold) FontWeight.Medium else FontWeight.Normal,
+            // 等宽数字：数值列不会因为数字宽度不同而左右跳
+            fontFeatureSettings = "tnum",
             textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
         ),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.width(width).padding(horizontal = 2.dp),
+        modifier = Modifier.width(width).padding(horizontal = 4.dp),
     )
 }
 
@@ -540,11 +587,8 @@ internal fun NbaTableSkeleton(rows: Int = 10) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(
-                    if (!isAppDarkTheme()) androidx.compose.ui.graphics.Color(0xFFEEF0F3)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                ),
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surface),
         ) {
             Row(
                 Modifier.fillMaxWidth().height(HEADER_H).padding(horizontal = 12.dp),

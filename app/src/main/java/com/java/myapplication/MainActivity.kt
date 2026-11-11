@@ -11,6 +11,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
@@ -59,6 +61,7 @@ import com.java.myapplication.data.HupuUpdate
 import com.java.myapplication.data.HupuUpdateInfo
 import com.java.myapplication.data.HupuUpdateResult
 import com.java.myapplication.ui.glass.GlassBottomTabs
+import com.java.myapplication.ui.glass.GlassSearchFab
 import com.java.myapplication.ui.glass.GlassTab
 import com.java.myapplication.ui.components.SecondaryPage
 import com.java.myapplication.ui.components.autoHideScroll
@@ -98,6 +101,9 @@ class MainActivity : ComponentActivity() {
         HupuCache.init(cacheDir.resolve("hupu_cache"))
         // 1.292：足球数据（懂球帝）磁盘缓存——冷启动也能秒开
         com.java.myapplication.data.DqDiskCache.init(cacheDir.resolve("dq_rank"))
+        // 1.344：把清单里的图标别名状态与用户选择对齐。
+        // 场景：用户清除数据/换机恢复后，偏好回到默认，但组件启用状态可能还停在旧值。
+        runCatching { AppIconSwitcher.syncOnStart(this) }
         // 初始化用户偏好（主页频道自定义等）
         HupuPrefs.init(this)
         // 初始化登录会话（cookie 恢复 / 写端点鉴权）
@@ -180,6 +186,9 @@ fun PocketLedgerApp() {
     }
     // 1.182: 默认启动页（设置页可选；冷启动读取）
     var selectedTab by remember { mutableIntStateOf(HupuPrefs.loadStartTab()) }
+    // 1.341：全局搜索层。底栏搜索入口用它 —— 盖在所有 Tab 之上，
+    // 打开/关闭都**不触碰 selectedTab**，因此从哪个 Tab 点开、返回后就还在哪个 Tab。
+    var globalSearchOpen by remember { mutableStateOf(false) }
     // 1.224o：正文里的评分链接现在是「在帖子页内盖一层原生评分页」（ScorePage 内嵌模式），
     // 不再切 Tab —— 所以这里原先的「切到评分 Tab / 自动切回」两段逻辑已移除。
     // （返回只回帖子、二级页计数天然正确）
@@ -202,6 +211,11 @@ fun PocketLedgerApp() {
     }
     // 1.132: 切入评分页信号——页面常驻组合，评分页冷启动首屏加载失败后不会自己重试；
     // 切入时通知评分页做一次补偿重试，避免看到残留的「加载失败」
+    // 1.341：订阅全局搜索请求信号（顶栏之外的入口统一走这里）
+    LaunchedEffect(HupuUiSignals.searchRequested) {
+        if (HupuUiSignals.searchRequested == 0) return@LaunchedEffect
+        globalSearchOpen = true
+    }
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) HupuUiSignals.enterScore()
         // 1.223k: 「我的」页是**常驻组合**（四页常驻 + 盖入式平移），ProfilePage 里的
@@ -326,6 +340,47 @@ fun PocketLedgerApp() {
                     translationY = (size.height + bottomPadPx + imeBottomPx + 30.dp.toPx()) * tabProgress
                 }
         ) {
+            // 1.337：搜索按钮位置（0=顶栏 / 1=底栏左侧 / 2=底栏右侧）。
+            // 订阅 searchPositionVersion：设置页改动后即时重排，不用重启。
+            val searchPos = remember(HupuPrefs.searchPositionVersion) {
+                HupuPrefs.loadSearchPosition()
+            }
+            // 1.338：底栏搜索 → **先切回首页 Tab，再打开搜索页**。
+            //
+            // 修的问题：搜索页挂在 HomePage 内部，而底栏按钮在所有 Tab 下都可见。
+            // 之前在别的 Tab（如「我的」）点它，搜索页确实在首页里打开了、同时
+            // SecondaryPage.enter() 也确实让底栏隐藏 —— 但用户看到的是
+            // 「底栏消失、搜索页没出现」（搜索页在非当前 Tab 的图层上）。
+            // 先 selectedTab = 0 再发信号，切页与开搜索在同一次点击里完成。
+            // 1.341：底栏搜索 —— **不切换 Tab**，直接打开全局搜索层。
+            //
+            // 走到这一步的历史：
+            //  ① 最初把搜索页放在 HomePage 内部 → 从别的 Tab 点开时，搜索页确实打开了、
+            //     底栏也确实隐藏了，但用户看到的只是「底栏消失」（搜索页在首页图层上）。
+            //  ② 于是点击时强制 selectedTab = 0 → 修了 ①，但返回后被丢在首页（用户抗议）。
+            //  ③ 再改成「记来处、关闭时还原」→ 用户仍看到「先跳首页、退出又跳回去」，
+            //     因为**跳转动作本身是可见的**，这是一条弯路。
+            //  ④ 现在的正解：把搜索页提到**全局层**（见下方 GlobalSearchOverlay），
+            //     它在所有 Tab 之上，打开/关闭都只影响自己 —— 完全不需要碰 selectedTab。
+            fun openSearchFromBottomBar() {
+                globalSearchOpen = true
+            }
+
+            // 底栏模式下搜索是**独立控件**（不并进胶囊），所以用 Row 把
+            // [搜索圆钮] + [Tab 胶囊] 并排摆放；顶栏模式 Row 只有胶囊一个孩子，等价于原布局。
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .widthIn(max = 560.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+            if (searchPos == 1) {
+                GlassSearchFab(
+                    backdrop = backdrop,
+                    onClick = { openSearchFromBottomBar() },
+                )
+            }
             GlassBottomTabs(
                 selectedTabIndex = { selectedTab },
                 onTabSelected = { selectedTab = it },
@@ -340,7 +395,8 @@ fun PocketLedgerApp() {
                 tabsCount = 4,
                 // 1.224o：把隐藏进度透给栏内诊断浮层（仅诊断包可见）
                 debugTabProgress = tabProgress,
-                modifier = Modifier.padding(horizontal = 20.dp).widthIn(max = 480.dp)
+                // Row 内让胶囊吃掉剩余宽度
+                modifier = Modifier.weight(1f)
             ) {
                 val tabs = listOf(
                     Triple("首页", Icons.Rounded.Home, "首页"),
@@ -369,6 +425,13 @@ fun PocketLedgerApp() {
                     }
                 }
             }
+            if (searchPos == 2) {
+                GlassSearchFab(
+                    backdrop = backdrop,
+                    onClick = { openSearchFromBottomBar() },
+                )
+            }
+            }
         }
         // 发现新版本弹窗（与关于页共用；1.191 起为 Liquid Glass 毛玻璃 + Q 弹出入场）。
         // 必须画在内容层 Surface 之后（根 backdrop 记录的就是 Surface 像素）。
@@ -391,6 +454,37 @@ fun PocketLedgerApp() {
                     autoUpdateInfo = null
                 },
             )
+        }
+        // 1.341：全局搜索层。放在 Tab 栏之后（能盖住底栏）+ Toast 之前（提示仍最上层）。
+        // 搜索页自身会 SecondaryPage.enter() → 底栏按既有的弹性动画滑出，符合"进入二级页"的语义。
+        if (globalSearchOpen) {
+            val repoForSearch = remember { com.java.myapplication.data.HupuRepository() }
+            // 1.343：搜索层与详情页**同时挂载**，详情只是叠在搜索之上。
+            //
+            // 修「点结果会一瞬间返回最外层页面，再打开详情；退出时也是一瞬间返回最外层」：
+            // 根因是上一版用 if/else 二选一（搜索页 or 详情页）——
+            //   · 点结果 → 搜索页被卸载（那 280ms 退场动画就是"闪回最外层"）
+            //   · 返回   → 详情页被卸载、搜索页重新挂载（又"闪一下"）
+            // 现在搜索页**常驻**，详情用共享的 RenderThreadDetailOverlay 叠上去，
+            // 与首页里点帖子完全同款（盖入/滑出），并且用的是同一份完整实现。
+            val searchHost = com.java.myapplication.ui.pages.rememberThreadDetailHost(repoForSearch)
+            com.java.myapplication.ui.pages.SearchPage(
+                onOpenThread = { s ->
+                    searchHost.open(
+                        com.java.myapplication.data.HupuThread(
+                            tid = s.tid,
+                            title = s.title,
+                            cover = s.picture,
+                            replies = s.replies,
+                            lights = s.lights,
+                            topic = s.forumName.takeIf { it.isNotBlank() }
+                                ?.let { n -> com.java.myapplication.data.HupuTopic(name = n) },
+                        )
+                    )
+                },
+                onClose = { globalSearchOpen = false },
+            )
+            com.java.myapplication.ui.pages.RenderThreadDetailOverlay(state = searchHost)
         }
         // 1.223: 全局统一提示（位置 / 时长 / Q 弹出入场统一）——根 Box 最后一个子节点，盖过所有页面
         com.java.myapplication.ui.components.HuzaiToastHost()

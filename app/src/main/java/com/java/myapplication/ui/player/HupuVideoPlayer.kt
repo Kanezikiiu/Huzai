@@ -91,6 +91,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.java.myapplication.data.HupuCrashLog
+import com.java.myapplication.data.HupuPrefs
 import com.java.myapplication.data.HupuHttp
 import com.java.myapplication.ui.components.HupuIcons
 import kotlinx.coroutines.delay
@@ -181,6 +182,39 @@ internal class VideoHost {
     var resumeOnAppear = false
 }
 
+/**
+ * 1.357：**进程内共享**的视频静音状态。
+ *
+ * ## 为什么必须是全局唯一
+ *
+ * 1.356 把 `muted` 放在 [HupuPlayerUi] 里，而 `rememberPlayerUi` 会被调用多次：
+ *  · 小窗播放器（帖子正文）
+ *  · 全屏播放器（`FullscreenVideo` 里又调用了一次）
+ *  · 每个新视频（`remember(url)` 换 key → 新实例）
+ * 于是每次都按「默认静音」初始化一份 true →
+ * **小窗里取消静音，进全屏又静音；换个视频又静音**（真机反馈）。
+ *
+ * ## 语义（真机要求「静音应该只管一次」）
+ *
+ *  · 进程启动后第一次播放 → 按设置静音；
+ *  · 用户一旦**主动取消静音**（点静音钮 / 按音量键）→ 这个"不再静音"的选择
+ *    对**之后所有视频、全屏、小窗**都生效，不再反复自动静音；
+ *  · 重启应用 → 重新按设置来一次。
+ *
+ * 放在 object 里（进程级）就天然满足上面三条，且各处读到的永远是同一个值。
+ */
+internal object VideoMuteState {
+    /** 用 Compose 的可观察状态，任何位置读写都能触发重组 */
+    var muted: Boolean by androidx.compose.runtime.mutableStateOf(
+        com.java.myapplication.data.HupuPrefs.loadVideoMuteByDefault()
+    )
+
+    /** 用户在设置页改了「视频默认静音」→ 立刻按新设置生效 */
+    fun applySetting(muteByDefault: Boolean) {
+        muted = muteByDefault
+    }
+}
+
 /** 播放器 UI 状态 */
 @Stable
 internal class HupuPlayerUi {
@@ -191,6 +225,15 @@ internal class HupuPlayerUi {
     var durationMs by mutableLongStateOf(0L)
     var bufferedMs by mutableLongStateOf(0L)
     var speed by mutableFloatStateOf(1f)
+    /**
+     * 1.357：是否静音 —— **委托到进程级 [VideoMuteState]**。
+     *
+     * 这样小窗 / 全屏 / 每个新视频读到的都是同一份状态，
+     * 「小窗取消静音 → 全屏仍静音」这类不一致从根上消失。
+     */
+    var muted: Boolean
+        get() = VideoMuteState.muted
+        set(value) { VideoMuteState.muted = value }
 
     /** 视频显示比例（含旋转）；未知为 null */
     var videoAspect by mutableStateOf<Float?>(null)
@@ -199,6 +242,8 @@ internal class HupuPlayerUi {
 /** 把 ExoPlayer 接到 UI 状态：监听器 + 位置轮询 */
 @Composable
 internal fun rememberPlayerUi(player: ExoPlayer?): HupuPlayerUi {
+    // 1.357：静音状态的初值由 [VideoMuteState] 负责（进程级、只初始化一次），
+    // 这里不再按实例初始化 —— 否则每换一个视频就又回到"默认静音"。
     val ui = remember { HupuPlayerUi() }
     DisposableEffect(player) {
         if (player == null) return@DisposableEffect onDispose { }
@@ -249,6 +294,13 @@ internal fun rememberPlayerUi(player: ExoPlayer?): HupuPlayerUi {
             ui.positionMs = player.currentPosition
             ui.bufferedMs = player.bufferedPosition
             player.duration.takeIf { it != C.TIME_UNSET && it > 0L }?.let { ui.durationMs = it }
+            // 1.356：**把 muted 约束到播放器上**。
+            // 之前只在「创建播放器那一刻」写一次 volume，任何没走那条路径的实例
+            // （例如点播放时的 ensurePlaying、全屏复用、将来新增的入口）都会漏掉 →
+            // 真机表现为「默认静音不生效」。改成每帧对齐一次，就不可能漏：
+            //   · ui.muted == true  → 保证 volume = 0f
+            //   · ui.muted == false → 不动音量（由点击/音量键决定）
+            if (ui.muted && player.volume != 0f) player.volume = 0f
             delay(if (ui.playing) 400L else 1000L)
         }
     }
@@ -462,9 +514,26 @@ internal fun VideoPlayer(
             }
         }
     }
+    /**
+     * 1.355：创建播放器并**统一套用**「默认静音」设置。
+     *
+     * 1.354 的 bug：只在上面这个 LaunchedEffect 里设了 `volume = 0f`，
+     * 但用户点播放走的是下面的 `ensurePlaying()`（它自己调 buildPlayer），
+     * 且 typically 先执行、把 host.player 填好了 → LaunchedEffect 判定 `player != null`
+     * 直接跳过 → **静音设置根本没生效**（真机反馈「默认静音不生效」）。
+     * 现在把「创建 + 静音」收成一个函数，两条路径都走它，不可能再漏。
+     */
+    fun createPlayer(): ExoPlayer {
+        val p = buildPlayer(context, url)
+        // 1.357：读**全局**静音状态（不是设置项）—— 用户本次已取消静音时，
+        // 新视频也应该直接有声，而不是先响一帧再被约束压回去。
+        if (VideoMuteState.muted) p.volume = 0f
+        return p
+    }
+
     LaunchedEffect(host.started, url) {
         if (host.started && host.player == null) {
-            host.player = buildPlayer(context, url)
+            host.player = createPlayer()
         }
     }
 
@@ -476,7 +545,8 @@ internal fun VideoPlayer(
         HupuCrashLog.note("起播请求", HupuCrashLog.safeUrl(url))
         val p = host.player
         if (p == null) {
-            host.player = buildPlayer(context, url)
+            // 1.355：这里必须走 createPlayer()，否则点播放创建出来的实例不受默认静音影响
+            host.player = createPlayer()
         } else {
             if (p.playbackState == Player.STATE_ENDED) p.seekTo(0L)
             p.play()
@@ -485,6 +555,35 @@ internal fun VideoPlayer(
 
     PlayerLifecycleBinding(player)
     val ui = rememberPlayerUi(player)
+
+    // 1.354：用户动了音量键 → 自动解除静音（"发生音量调整动作则取消静音"）。
+    // 只在「静音中」才需要监听；解除后把音量恢复到 1f 并停听，避免长期占用。
+    val audioManager = remember(context) {
+        context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    }
+    // 用「上一次读到的音量」做变化检测：Compose 里没有系统音量变化的回调，
+    // 轮询一个 Int 的成本可以忽略，且不需要动态注册 BroadcastReceiver（避免泄漏）。
+    var lastVolume by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(player, ui.muted) {
+        if (player == null) return@LaunchedEffect
+        if (!ui.muted) return@LaunchedEffect
+        lastVolume = runCatching {
+            audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+        }.getOrDefault(-1)
+        while (player.volume == 0f) {
+            val now = runCatching {
+                audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+            }.getOrDefault(lastVolume)
+            if (lastVolume >= 0 && now != lastVolume) {
+                // 用户调了音量 → 解除静音（音量交给系统，播放器回到满音量）
+                player.volume = 1f
+                ui.muted = false
+                break
+            }
+            lastVolume = now
+            delay(250L)
+        }
+    }
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         // ── 尺寸：**全程只有一个**（1.2xx 定稿）────────────────────────────────
@@ -1066,6 +1165,15 @@ private fun PlayerStage(
                     markInteraction()
                     speedPanel = !speedPanel
                 },
+                // 1.354：静音切换（0f <-> 1f），并同步 UI 状态
+                onToggleMute = {
+                    markInteraction()
+                    // 1.356：以 ui.muted（真源）为准翻转，不再看 player.volume
+                    // —— 音量可能被上面每帧的「强制对齐」改过，读它容易与事实相反
+                    val nextMuted = !ui.muted
+                    ui.muted = nextMuted
+                    player?.volume = if (nextMuted) 0f else 1f
+                },
                 onToggleFullscreen = {
                     markInteraction()
                     onToggleFullscreen()
@@ -1311,6 +1419,8 @@ private fun PlayerControls(
     onSeekBy: (Long) -> Unit,
     onSeekTo: (Long) -> Unit,
     onToggleSpeedPanel: () -> Unit,
+    /** 1.354：切换静音 */
+    onToggleMute: () -> Unit,
     onToggleFullscreen: () -> Unit,
     /** 拖动进度条开始 / 结束（用于禁止拖动期间自动隐藏控件、避免拖动被打断） */
     onScrubChange: (Boolean) -> Unit,
@@ -1359,6 +1469,24 @@ private fun PlayerControls(
                     Spacer(Modifier.width(8.dp))
                     Text(formatPlayerTime(ui.durationMs), fontSize = 11.sp, color = Color.White)
                     Spacer(Modifier.width(10.dp))
+                    // 1.354：静音切换（与倍速钮同款胶囊）
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.Black.copy(alpha = 0.42f))
+                            .border(0.6.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(50))
+                            .clickable(onClick = onToggleMute)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (ui.muted) HupuIcons.VolumeOff else HupuIcons.VolumeOn,
+                            contentDescription = if (ui.muted) "取消静音" else "静音",
+                            tint = Color.White,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Row(
                         Modifier
                             .clip(RoundedCornerShape(50))

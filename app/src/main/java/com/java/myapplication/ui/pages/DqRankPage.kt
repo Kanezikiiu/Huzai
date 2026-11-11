@@ -4,6 +4,7 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -163,15 +164,22 @@ internal fun DqRankOverlay(
         pageEntered = true
     }
 
-    /** 列宽后台预热（不阻塞渲染；命中时组合期零测量） */
+    /**
+     * 列宽后台预热（不阻塞渲染；命中时组合期零测量）。
+     * 1.318：字号与渲染保持一致（表头 12sp / 正文 13sp），并写进足球数据自己的缓存。
+     */
     fun warmUp(section: DqSection) {
         val d = density.density
+        val fs = density.fontScale
         scope.launch {
             withContext(kotlinx.coroutines.Dispatchers.Default) {
                 section.tables.forEach { t ->
-                    val k = NbaColWidthCache.key(t)
-                    if (NbaColWidthCache.get(k) == null) {
-                        NbaColWidthCache.put(k, NbaColWidthMeasurer.computePx(t, 11f, 12f, d))
+                    val k = dqWidthKey(t) + "|fs$fs"
+                    if (DqWidthCache.get(k) == null) {
+                        DqWidthCache.put(
+                            k,
+                            NbaColWidthMeasurer.computePx(t, 12.5f, 14f, d * fs),
+                        )
                     }
                 }
             }
@@ -366,12 +374,13 @@ internal fun DqRankOverlay(
                     )
                     current == null -> NbaTableSkeleton()
                     else -> {
-                        if (current.stages.isNotEmpty()) {
-                            // 杯赛：对阵卡 + 小组名次表，统一在 LazyColumn 里（一屏滚动）
-                            DqMixedView(current)
-                        } else {
-                            NbaTablesView(current.tables, sortable = true)
-                        }
+                        // 1.320：**所有赛事统一走同一套表格**。
+                        // 之前是"有淘汰赛 → DqMixedView（足球自己的表格）"、"纯积分表 → NbaTablesView
+                        // （NBA 的表格）"，两套样式/字重/列宽算法都不一样：
+                        //  · NBA 那套把「排名 / 球队」加粗 → 纯积分表看着更粗；
+                        //  · 两套的列宽算法不同 → 杯赛里队名被截断。
+                        // 现在统一用 DqMixedView（内部就是白卡表格 + 淘汰赛对阵卡）。
+                        DqMixedView(current)
                     }
                 }
             }
@@ -384,8 +393,6 @@ internal fun DqRankOverlay(
 // ---------------------------------------------------------------------------
 @Composable
 private fun DqMixedView(section: DqSection) {
-    val tableBg = if (!isAppDarkTheme()) androidx.compose.ui.graphics.Color(0xFFEEF0F3)
-    else MaterialTheme.colorScheme.surfaceVariant
     // 1.298：导航条高度算进 contentPadding（而不是给容器加 navigationBarsPadding），
     // 内容可以滚到导航条下面 —— 导航条区域看到的是内容/页面底色本身，不再是色带。
     val navBottom = androidx.compose.foundation.layout.WindowInsets.navigationBars
@@ -398,7 +405,7 @@ private fun DqMixedView(section: DqSection) {
         // 淘汰赛各阶段：一张卡一个阶段
         items(section.stages.size) { i ->
             val stage = section.stages[i]
-            BracketStageCard(stage, tableBg)
+            BracketStageCard(stage)
         }
         // 小组/分区名次表
         items(section.tables.size) { i ->
@@ -413,7 +420,7 @@ private fun DqMixedView(section: DqSection) {
                         modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                     )
                 }
-                DqTableCard(table, tableBg)
+                DqTableCard(table)
             }
         }
     }
@@ -424,12 +431,18 @@ private fun DqMixedView(section: DqSection) {
  * 「主队（右对齐） · 比分 · 客队（左对齐）」，胜者加粗、负者次要色 —— 比塞进表格更符合语义。
  */
 @Composable
-private fun BracketStageCard(stage: DqBracketStage, bg: androidx.compose.ui.graphics.Color) {
+private fun BracketStageCard(stage: DqBracketStage) {
+    val dark = isAppDarkTheme()
+    val cardBg = if (dark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
+    else MaterialTheme.colorScheme.surface
+    val cardBorder = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.10f else 0.07f)
+    val shape = RoundedCornerShape(18.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(bg),
+            .clip(shape)
+            .background(cardBg)
+            .border(0.8.dp, cardBorder, shape),
     ) {
         Text(
             stage.title,
@@ -500,22 +513,34 @@ private fun KnockedRow(m: DqKnockout) {
 
 /** 杯赛里的小组名次表（LazyColumn 里的一张卡，可横向滑动） */
 @Composable
-private fun DqTableCard(table: NbaRankTable, bg: androidx.compose.ui.graphics.Color) {
+private fun DqTableCard(table: NbaRankTable) {
     val density = LocalDensity.current
+    val dark = isAppDarkTheme()
+    val cardBg = if (dark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
+    else MaterialTheme.colorScheme.surface
+    val cardBorder = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.10f else 0.07f)
+    val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.07f else 0.05f)
+    val zebraColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.035f else 0.022f)
+    val shape = RoundedCornerShape(18.dp)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val containerW = maxWidth
-        val widths = remember(table, containerW) { dqWidths(table, containerW, density.density) }
+        val fontScale = density.fontScale
+        val widths = remember(table, containerW, fontScale) {
+            dqWidths(table, containerW, density.density, fontScale)
+        }
         val nameIdx = table.headers.indexOfFirst { it == "队名" || it == "球员" || it == "球队" }
             .let { if (it >= 0) it else 1 }
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(bg)
+                .clip(shape)
+                .background(cardBg)
+                .border(0.8.dp, cardBorder, shape)
                 .horizontalScroll(rememberScrollState()),
         ) {
             Column {
-                Row(Modifier.height(42.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 表头
+                Row(Modifier.height(46.dp), verticalAlignment = Alignment.CenterVertically) {
                     table.headers.forEachIndexed { i, h ->
                         DqCell(
                             text = h,
@@ -525,16 +550,35 @@ private fun DqTableCard(table: NbaRankTable, bg: androidx.compose.ui.graphics.Co
                         )
                     }
                 }
-                table.rows.forEach { row ->
-                    Row(Modifier.height(42.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(0.6.dp)
+                        .background(lineColor),
+                )
+                // 数据行（斑马纹 + 行分隔线）
+                table.rows.forEachIndexed { ri, row ->
+                    Row(
+                        Modifier
+                            .height(48.dp)
+                            .background(if (ri % 2 == 1) zebraColor else androidx.compose.ui.graphics.Color.Transparent),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         row.forEachIndexed { i, c ->
                             DqCell(
                                 text = c,
                                 width = widths.getOrElse(i) { 56.dp },
                                 alignStart = i == nameIdx,
-                                bold = i == 0 || i == nameIdx,
                             )
                         }
+                    }
+                    if (ri != table.rows.lastIndex) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(0.5.dp)
+                                .background(lineColor),
+                        )
                     }
                 }
             }
@@ -548,37 +592,79 @@ private fun DqCell(
     width: Dp,
     alignStart: Boolean,
     header: Boolean = false,
-    bold: Boolean = false,
 ) {
     Text(
         text,
         modifier = Modifier
             .width(width)
-            .padding(horizontal = 10.dp),
-        fontSize = if (header) 12.sp else 13.sp,
-        fontWeight = when {
-            header -> FontWeight.Medium
-            bold -> FontWeight.SemiBold
-            else -> FontWeight.Normal
-        },
-        color = if (header) MaterialTheme.colorScheme.onSurfaceVariant
-        else MaterialTheme.colorScheme.onSurface,
+            .padding(horizontal = 4.dp),
+        // 1.319：Text 没有 fontFeatureSettings 参数，统一走 TextStyle
+        style = androidx.compose.ui.text.TextStyle(
+            fontSize = if (header) 12.5.sp else 14.sp,
+            fontWeight = if (header) FontWeight.Medium else FontWeight.Normal,
+            // 等宽数字：数值列不会左右跳
+            fontFeatureSettings = "tnum",
+            letterSpacing = if (header) 0.2.sp else 0.sp,
+            color = if (header) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurface,
+            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
+        ),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
     )
 }
 
-/** 列宽：内容实测（后台已预热）→ 加内边距；总宽不足一屏时均分铺满 */
-private fun dqWidths(table: NbaRankTable, containerW: Dp, density: Float): List<Dp> {
+/**
+ * 列宽：内容实测（后台已预热）→ 加内边距；总宽不足一屏时均分铺满。
+ *
+ * 1.317：**名称列单独放宽**。
+ * 名称列（排名后的「球队 / 球员」）是加粗渲染的，同样字号下比正文宽 ~8~10%，
+ * 而杯赛小组表列数多（排名/球队/赛/胜/平/负/进失/积分），按普通字重测出来的宽度
+ * 会把球队名截断（真机反馈：几乎每个队名都显示不全）。这里给它额外补偿并放宽上限。
+ */
+private fun dqWidths(
+    table: NbaRankTable,
+    containerW: Dp,
+    density: Float,
+    fontScale: Float,
+): List<Dp> {
     if (table.headers.isEmpty()) return emptyList()
-    val basePx = NbaColWidthCache.get(NbaColWidthCache.key(table))
-        ?: NbaColWidthMeasurer.computePx(table, 11f, 12f, density).also {
-            NbaColWidthCache.put(NbaColWidthCache.key(table), it)
+    // 1.321：fontScale 折进测量（理由同 NBA 页），缓存键带上它
+    val key = dqWidthKey(table) + "|fs$fontScale"
+    val basePx = DqWidthCache.get(key)
+        ?: NbaColWidthMeasurer.computePx(table, 12.5f, 14f, density * fontScale).also {
+            DqWidthCache.put(key, it)
         }
-    val pads = 20f * density
-    var list = basePx.map { ((it + pads) / density).dp }
-        .map { it.coerceIn(44.dp, 168.dp) }
+    val nameIdx = table.headers.indexOfFirst { it == "队名" || it == "球员" || it == "球队" }
+        .let { if (it >= 0) it else 1 }
+    // 1.320：**中文兜底估算**。
+    // 只靠 Paint 实测偶尔会给出偏小的宽度（不同 ROM 的字体度量差异），
+    // 于是长中文名被截成「阿尔巴…」。这里再按字符数估一遍，取两者较大值：
+    //  · 中文/全角按 1.0 个字号宽
+    //  · 其余（数字/字母）按 0.55 个字号宽
+    fun estimateDp(text: String): Float {
+        var cjk = 0
+        var other = 0
+        for (ch in text) {
+            if (ch.code > 0x2E80) cjk++ else other++
+        }
+        return (cjk * 1.0f + other * 0.55f) * 14f * fontScale
+    }
+    val longestName = table.rows.asSequence()
+        .map { it.getOrNull(nameIdx).orEmpty() }
+        .maxByOrNull { it.length } ?: ""
+
+    var list = basePx.mapIndexed { i, px ->
+        var dp = (px / density).dp + 18.dp
+        if (i == nameIdx) {
+            val est = estimateDp(longestName).dp
+            if (est > dp) dp = est
+            dp = dp.coerceIn(72.dp, 260.dp)
+        } else {
+            dp = dp.coerceIn(46.dp, 140.dp)
+        }
+        dp
+    }
     val total = list.fold(0.dp) { a, d -> a + d }
     if (total < containerW && list.isNotEmpty()) {
         val extra = (containerW - total) / list.size
@@ -586,6 +672,28 @@ private fun dqWidths(table: NbaRankTable, containerW: Dp, density: Float): List<
     }
     return list
 }
+
+/**
+ * 1.318：足球数据自己的列宽缓存。
+ *
+ * 不复用 `NbaColWidthCache` 的原因：那份缓存是按「表头 + 行数」做 key 的，
+ * 我们改了测量字号（12/13sp，与真实渲染一致）后，**旧条目仍然会被命中**，
+ * 于是算出来的还是偏小的宽度 —— 这正是「队名依旧被截断」的隐藏原因。
+ * 这里用独立的 key（额外带字号版本号），升级后自然失效。
+ */
+private object DqWidthCache {
+    private val map = java.util.concurrent.ConcurrentHashMap<String, List<Float>>()
+
+    fun get(key: String): List<Float>? = map[key]
+
+    fun put(key: String, v: List<Float>) {
+        if (v.isNotEmpty()) map[key] = v
+    }
+}
+
+private fun dqWidthKey(table: NbaRankTable): String =
+    "v3|12.5/14|" + table.headers.joinToString(",") + "|" + table.rows.size
+
 
 @Composable
 private fun FailureView(onRetry: () -> Unit) {

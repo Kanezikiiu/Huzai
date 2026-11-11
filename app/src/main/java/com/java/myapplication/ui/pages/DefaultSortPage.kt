@@ -1,5 +1,7 @@
 package com.java.myapplication.ui.pages
 
+import com.java.myapplication.ui.player.VideoMuteState
+import com.java.myapplication.ui.glass.GlassSwitch
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -113,6 +115,8 @@ internal fun DefaultSortPage(onClose: () -> Unit) {
     var topicTitle by remember { mutableStateOf(HupuPrefs.loadDefaultTopicSortTitle()) }
     var replyMode by remember { mutableIntStateOf(HupuPrefs.loadDefaultReplySort()) }
     var scoreKey by remember { mutableStateOf(HupuPrefs.loadDefaultScoreSort()) }
+    // 1.354：视频默认静音
+    var muteByDefault by remember { mutableStateOf(HupuPrefs.loadVideoMuteByDefault()) }
     /** 0=无 / 1=默认启动页 / 2=专区 / 3=帖子回复 / 4=评分评论 */
     var picking by remember { mutableIntStateOf(0) }
 
@@ -173,6 +177,44 @@ internal fun DefaultSortPage(onClose: () -> Unit) {
                         subtitle = SCORE_SORT_OPTIONS.firstOrNull { it.first == scoreKey }?.second ?: "最亮",
                         onClick = { picking = 4 },
                     )
+                    // 1.354：视频默认静音（开关）
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                muteByDefault = !muteByDefault
+                                HupuPrefs.saveVideoMuteByDefault(muteByDefault)
+                                // 1.357：同步进程级状态 —— 改完立刻生效，
+                                // 不用等重启（也避免"设置显示开、实际不静音"的错位）
+                                VideoMuteState.applySetting(muteByDefault)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "视频默认静音",
+                                fontSize = 15.sp,
+                                // 1.361：与下面四行 SortSettingRow 保持一致 —— 都用默认字重，不加粗
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "打开视频时不出声；调整音量会自动取消静音，播放器内也可随时切换",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        GlassSwitch(
+                            checked = muteByDefault,
+                            onCheckedChange = {
+                                muteByDefault = it
+                                HupuPrefs.saveVideoMuteByDefault(it)
+                                VideoMuteState.applySetting(it)
+                            },
+                        )
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(

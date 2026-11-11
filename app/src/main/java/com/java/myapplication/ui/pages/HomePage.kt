@@ -53,7 +53,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import com.java.myapplication.data.HupuAuthor
-import com.java.myapplication.data.HupuBoardPage
+import com.java.myapplication.data.HupuBoardRotation
 import com.java.myapplication.data.HupuFloorReplies
 import com.java.myapplication.data.HupuReply
 import com.java.myapplication.data.HupuThread
@@ -72,30 +72,107 @@ import androidx.compose.foundation.layout.PaddingValues
 @Composable
 fun HomePage(modifier: Modifier = Modifier) {
     val repo = remember { HupuRepository() }
-    var page by remember { mutableStateOf<HupuBoardPage?>(null) }
+    // 1.332：热帖数据源换成**多板块轮转**。
+    //
+    // 演进过程（每一步都有真机反馈驱动）：
+    //  · 最初 `/all-gambia`：几分钟才动一两条，下拉刷新等于没刷；
+    //  · 中间 `walkingStreet` 推荐流：每次确实换一批，但**只有步行街主干道**——来源单一、
+    //    水帖多、还混着 10-12/10-30 的旧帖（真机反馈「内容质量有点差」）；
+    //  · 现在：虎扑每个 `bbs.hupu.com/all-*` 板块页都带 70 条完整热帖（封面/亮/回/专区齐全），
+    //    每次刷新随机抽 3 个板块（含首页）并行抓取 → 交错合并去重；
+    //    上滑翻页时再抽 1 个补上（比再抽 3 个快），直到 10 个板块全部抽完。
+    // 于是「每次刷新必然不同」由**板块组合**保证，不再依赖服务端那 ~10s 的缓存窗口。
+    var hotThreads by remember { mutableStateOf<List<HupuThread>>(emptyList()) }
+    // 顶部频道横滑条的数据（官方「热门话题」）仍来自版块页；抽到首页时顺带拿到
+    var hotTopics by remember { mutableStateOf<List<HupuTopicInfo>>(emptyList()) }
+    // 1.358：上一次抽中的板块组合（刷新时用来避免"刷了等于没刷"）
+    var lastPickedBoards by remember { mutableStateOf<List<String>>(emptyList()) }
+    // 本轮已加载过的板块（上滑续页时优先取没出现过的；全部用完再回到整池）
+    val usedBoards = remember { mutableSetOf<String>() }
+    // 是否还能继续上滑加载（板块池抽空后会自动重新洗牌，见 HupuBoardRotation.draw）
+    var hotHasMore by remember { mutableStateOf(true) }
+    var hotLoadingMore by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // 1.328：刷新成功信号 —— 只用于驱动列表回顶。
+    // 为什么需要它：FeedList 的回顶挂在 `resetKey` 变化上，而热帖的 resetKey 原来是
+    // "hot-$refreshVersion-$hotResetTick"，其中 refreshVersion 只被**话题流**的 forceReload
+    // 自增过，热帖下拉刷新走的是 load(refresh=true)，**从不动 refreshVersion** →
+    // resetKey 不变 → 回顶 effect 不重启 → 刷新后停在原位（真机反馈的"有时不回顶"）。
+    var hotRefreshTick by remember { mutableIntStateOf(0) }
 
     suspend fun load(refresh: Boolean = false) {
         if (refresh) refreshing = true else loading = true
         failed = false
-        // 1.133: 首屏偶发失败自动重试（递增退避，共 3 次尝试），对齐评分页容错——
-        // 避免冷启动网络抖动「一次失败即永久显示失败态」。
-        var p = repo.board(refresh = refresh)
+        // 1.332：随机抽 3 个板块（含首页）并行抓取。
+        // 失败重试：整体为空时退避重试 2 次（沿用旧的容错策略，避免冷启动一次失败就永久失败态）。
+        var picked = HupuBoardRotation.draw(lastPickedBoards, HupuBoardRotation.HEAD_SIZE)
+        lastPickedBoards = picked
+        usedBoards.clear()
+        usedBoards.addAll(picked)
+        var threads = repo.boardPages(picked)
         var tries = 0
-        while (p == null && tries < 2) {
+        while (threads.isEmpty() && tries < 2) {
             tries++
             kotlinx.coroutines.delay(600L * tries)
-            p = repo.board(refresh = refresh)
+            picked = HupuBoardRotation.draw(lastPickedBoards, HupuBoardRotation.HEAD_SIZE)
+            lastPickedBoards = picked
+            threads = repo.boardPages(picked)
         }
-        page = p
-        failed = p == null
+        if (threads.isNotEmpty()) {
+            hotThreads = threads
+            hotHasMore = true
+            if (refresh) hotRefreshTick++
+            loading = false
+            refreshing = false
+            return
+        }
+        // 兜底：全部板块都抓失败（断网等）→ 回退到单页热帖，保证不空屏
+        val f = repo.board(refresh = refresh)
+        if (f != null) {
+            hotThreads = f.threads
+            hotTopics = f.hotTopics
+            hotHasMore = false
+        }
+        failed = f == null
         loading = false
         refreshing = false
     }
-
     LaunchedEffect(Unit) { load() }
+
+    // 1.332：频道横滑条的数据（官方「热门话题」）只在首页板块被抽到时顺带取一次。
+    // 以前是「冷启动单独补一页 260KB 的版块页」——现在抽到 `/` 时它自带 hotTopics，
+    // 抽不到就先用空条（下次刷新抽到再补），省一次固定开销。
+    LaunchedEffect(hotThreads) {
+        if (hotTopics.isNotEmpty()) return@LaunchedEffect
+        if (hotThreads.isEmpty()) return@LaunchedEffect
+        val meta = repo.board(refresh = false)
+        if (meta != null) hotTopics = meta.hotTopics
+    }
+
+    /**
+     * 1.332：热帖上滑加载 —— 再随机抽 **1** 个板块续上（比再抽 3 个快，用户要的是「还有新东西」）。
+     *
+     * 板块池抽完（`hotRemaining` 空）时 [HupuBoardRotation.draw] 会自动重新洗牌，
+     * 所以理论上可以一直滑（内容会环回，但 10 个板块 × 70 条本身也够翻很久）。
+     * 去重后若一条新增都没有（极端情况：整批都和前文重复），主动停掉加载，避免死循环。
+     */
+    fun loadMoreHot() {
+        if (hotLoadingMore || !hotHasMore) return
+        hotLoadingMore = true
+        scope.launch {
+            val picked = HupuBoardRotation.drawUnused(usedBoards, HupuBoardRotation.MORE_SIZE)
+            val more = repo.boardPages(picked)
+            val before = hotThreads.size
+            val merged = (hotThreads + more).distinctBy { it.tid }
+            hotThreads = merged
+            // 一条都没新增 → 认为没有更多了（防止滑到底反复请求同一批）
+            if (merged.size == before) hotHasMore = false
+            hotLoadingMore = false
+        }
+    }
 
     // Tab 重选刷新信号：已选中时再点首页 Tab → 强刷热帖流（列表在别处也能立即刷新）
     var tabResetTick by remember { mutableIntStateOf(0) }
@@ -105,14 +182,17 @@ fun HomePage(modifier: Modifier = Modifier) {
         load(refresh = true)
     }
 
-    val scope = rememberCoroutineScope()
-    val data = page
     when {
-        data != null -> FeedContent(
-            data = data,
+        hotThreads.isNotEmpty() -> FeedContent(
+            hotList = hotThreads,
+            hotTopics = hotTopics,
+            hotHasMore = hotHasMore,
+            hotLoadingMore = hotLoadingMore,
+            onLoadMoreHot = { loadMoreHot() },
             isRefreshing = refreshing,
             onRefresh = { scope.launch { load(refresh = true) } },
             hotResetTick = tabResetTick,
+            hotRefreshTick = hotRefreshTick,
             modifier = modifier,
         )
         loading -> SkeletonHome(modifier)
@@ -124,10 +204,15 @@ fun HomePage(modifier: Modifier = Modifier) {
 
 @Composable
 private fun FeedContent(
-    data: HupuBoardPage,
+    hotList: List<HupuThread>,
+    hotTopics: List<HupuTopicInfo>,
+    hotHasMore: Boolean,
+    hotLoadingMore: Boolean,
+    onLoadMoreHot: () -> Unit,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     hotResetTick: Int = 0,
+    hotRefreshTick: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val repo = remember { HupuRepository() }
@@ -154,118 +239,22 @@ private fun FeedContent(
     val scope = rememberCoroutineScope()
 
     // ---------- 帖子详情二级页（盖入式；状态外置：返回再进不重载） ----------
-    var openedThread by remember { mutableStateOf<HupuThread?>(null) }
-    // 1.192: 本层「已计数」标记——连点多个条目时 enter 只发生一次，防 Tab 栏计数泄漏
-    var threadEntered by remember { mutableStateOf(false) }
-    var threadClosing by remember { mutableStateOf(false) }
-    var threadLoading by remember { mutableStateOf(false) }
-    var threadLoadingMore by remember { mutableStateOf(false) }
-    var threadSortSeq by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val threadDetails = remember { mutableStateMapOf<String, HupuThreadDetail>() }
-
-    // ---------- 楼中楼三级页（数据状态同样外置缓存） ----------
-    val floorStates = remember { mutableStateMapOf<String, HupuFloorReplies>() }
-    val floorLoading = remember { mutableStateMapOf<String, Boolean>() }
-    val floorLoadingMore = remember { mutableStateMapOf<String, Boolean>() }
-
-    /** 打开楼层：同步置 loading + 错峰网络请求（帖子详情同款策略） */
-    fun openFloor(tid: String, r: HupuReply) {
-        if (floorStates.containsKey(r.pid)) return
-        floorLoading[r.pid] = true
-        scope.launch {
-            delay(120)
-            if (floorStates.containsKey(r.pid)) {
-                floorLoading[r.pid] = false
-                return@launch
-            }
-            val fr = repo.floorReplies(tid, r)
-            if (fr != null) floorStates[r.pid] = fr
-            floorLoading[r.pid] = false
-        }
-    }
-
-    /** 楼中楼上滑翻页（maxpid=最后一条直接子回复） */
-    fun loadFloorMore(tid: String, pid: String, fr: HupuFloorReplies) {
-        if (floorLoadingMore[pid] == true || !fr.hasMore) return
-        val lastPid = fr.subReplies.lastOrNull { it.depth == 0 }?.pid ?: return
-        floorLoadingMore[pid] = true
-        scope.launch {
-            val next = repo.floorReplies(tid, HupuReply(pid = pid), maxpid = lastPid)
-            val cur = floorStates[pid]
-            if (next != null && cur != null) {
-                val merged = (cur.subReplies + next.subReplies).distinctBy { it.pid }
-                floorStates[pid] = cur.copy(subReplies = merged, hasMore = next.hasMore)
-            }
-            floorLoadingMore[pid] = false
-        }
-    }
+    // 1.343：详情页状态与逻辑抽到 UserDetailHost —— 首页与搜索层共用同一份实现。
+    val detailHost = rememberThreadDetailHost(repo)
+    // 详情状态一律从 detailHost 取（见 ThreadDetailHost.kt）
 
     // ---------- 搜索二级页 ----------
-    var searchOpen by remember { mutableStateOf(false) }
 
-    fun openThread(t: HupuThread) {
-        HupuPrefs.addHistory(
-            HupuHistoryEntry(
-                tid = t.tid,
-                title = t.title,
-                topicName = t.topic?.name ?: "",
-                lights = t.lights,
-                replies = t.replies,
-                read = t.read,
-                visitedAt = System.currentTimeMillis(),
-            )
-        )
-        threadClosing = false
-        if (!threadEntered) { threadEntered = true; SecondaryPage.enter() }
-        openedThread = t
-        // 加载态在交互瞬间同步置位（频道页同款）：无缓存→骨架屏第一帧出现
-        threadLoading = !threadDetails.containsKey(t.tid)
-    }
+    fun openThread(t: HupuThread) = detailHost.open(t)
 
-    fun closeThread() {
-        threadClosing = true
-    }
-
-    // 打开的帖子：无缓存则拉取（loading 已在打开瞬间置位；网络请求错峰到盖入动画完成后）
-    // 1.123: 详情页时效性——每次进入都强刷；有缓存秒开第一帧，新数据到达后无缝替换
-    LaunchedEffect(openedThread?.tid) {
-        val t = openedThread ?: return@LaunchedEffect
-        val tid = t.tid
-        val mySeq = threadSortSeq
-        if (threadDetails.containsKey(tid)) {
-            // 秒开旧数据，后台强刷换新（已翻页过的帖子按 pid 合并保留深层回复）
-            val old = threadDetails[tid]
-            val fresh = repo.threadDetail(tid, refresh = true)
-            if (fresh != null && openedThread?.tid == tid && mySeq == threadSortSeq) {
-                threadDetails[tid] = repo.mergeThreadDetail(old, fresh)
-            }
-        } else {
-            // 无内存缓存：先用磁盘缓存秒开（如有），再后台强刷
-            threadLoading = true
-            val cached = repo.threadDetailCached(tid)
-            if (cached != null && openedThread?.tid == tid && mySeq == threadSortSeq) {
-                threadDetails[tid] = cached
-                threadLoading = false
-                val fresh = repo.threadDetail(tid, refresh = true)
-                if (fresh != null && openedThread?.tid == tid && mySeq == threadSortSeq) {
-                    threadDetails[tid] = repo.mergeThreadDetail(threadDetails[tid], fresh)
-                }
-            } else {
-                delay(120) // 盖入动画 280ms + 余量
-                if (threadDetails.containsKey(tid)) return@LaunchedEffect
-                val d = repo.threadDetail(tid)
-                if (d != null && mySeq == threadSortSeq) threadDetails[tid] = d
-                if (openedThread?.tid == tid) threadLoading = false
-            }
-        }
-    }
+    fun closeThread() = detailHost.requestClose()
 
     // 刷新计数：每次成功刷新后 +1，驱动列表回顶
     var refreshVersion by remember { mutableIntStateOf(0) }
 
     // 主页频道：用户自定义优先，否则官方热门（「我的」页保存后版本号变化自动刷新）
-    val effectiveTopics = remember(data.hotTopics, HupuPrefs.homeTopicsVersion) {
-        HupuPrefs.effectiveHomeTopics(data.hotTopics)
+    val effectiveTopics = remember(hotTopics, HupuPrefs.homeTopicsVersion) {
+        HupuPrefs.effectiveHomeTopics(hotTopics)
     }
     // 1.192: 「热帖」隐藏开关——隐藏后横滑条不再显示它
     // （设置页已保证「热帖 + 已选话题」≥1；这里再兜底：话题为空时仍显示热帖，页面不会 0 tab）
@@ -321,14 +310,14 @@ private fun FeedContent(
     // 做法：仅在黑名单非空时，按 tid 从 `/api/v2/threads?tid=` 补取作者（4 条一批 + 批间小睡），
     // 结果按 tid 长期缓存（作者几乎不变）——所以只有第一次会补，之后秒开；没有黑名单则零请求。
     var hotAuthors by remember { mutableStateOf<Map<String, HupuAuthor>>(emptyMap()) }
-    LaunchedEffect(data.threads, HupuPrefs.blacklistVersion) {
+    LaunchedEffect(hotList, HupuPrefs.blacklistVersion) {
         if (HupuPrefs.loadBlacklist().isEmpty()) {
             hotAuthors = emptyMap()
             return@LaunchedEffect
         }
         val cache = HupuPrefs.loadThreadAuthors()
         val seeded = LinkedHashMap<String, HupuAuthor>()
-        data.threads.forEach { t ->
+        hotList.forEach { t ->
             cache[t.tid]?.let { v ->
                 val i = v.indexOf('|')
                 val p = if (i >= 0) v.substring(0, i) else v
@@ -337,7 +326,11 @@ private fun FeedContent(
             }
         }
         hotAuthors = seeded
-        val missing = data.threads.map { it.tid }.filter { it.isNotEmpty() && !cache.containsKey(it) }
+        // 1.32x：新数据源每条都自带 author（puid + userName），只有真缺作者时才补请求
+        val missing = hotList
+            .filter { it.author?.puid.isNullOrEmpty() && it.author?.euid.isNullOrEmpty() }
+            .map { it.tid }
+            .filter { it.isNotEmpty() && !cache.containsKey(it) }
         if (missing.isEmpty()) return@LaunchedEffect
         val fresh = LinkedHashMap<String, String>()
         missing.chunked(4).forEach { chunk ->
@@ -355,9 +348,13 @@ private fun FeedContent(
         if (fresh.isNotEmpty()) HupuPrefs.putThreadAuthors(fresh)
     }
     // 把补齐的作者并回列表（未补到的保持原样 = 不过滤，宁可漏杀不可错杀）
-    val hotThreads = remember(data.threads, hotAuthors) {
-        if (hotAuthors.isEmpty()) data.threads
-        else data.threads.map { t -> hotAuthors[t.tid]?.let { a -> t.copy(author = a) } ?: t }
+    val hotFiltered = remember(hotList, hotAuthors) {
+        hotList.map { t ->
+            // 1.32x：新数据源自带 author，优先用列表里的
+            val own = t.author?.takeIf { it.puid.isNotEmpty() || it.euid.isNotEmpty() }
+            if (own != null) t
+            else hotAuthors[t.tid]?.let { a -> t.copy(author = a) } ?: t
+        }
     }
 
     // 1.310：**跨「热帖 ↔ 话题」切换时，先给一小段骨架遮罩**。
@@ -367,16 +364,20 @@ private fun FeedContent(
     // 参照 NBA 数据页的做法：切换瞬间让内容**先退场**，等布局稳定后再一次性画进去，
     // 位移就发生在"没人看得见的骨架期"。只对跨这两种形态的切换生效，
     // 话题 ↔ 话题（高度相同）仍然同帧直切，不牺牲利索。
-    var prevFeedSel by remember { mutableStateOf(selected) }
-    var switchMasking by remember { mutableStateOf(false) }
+    // 1.317：**遮罩必须在组合期就生效**。
+    // 之前是在 LaunchedEffect 里置位（effect 在首帧之后才跑），于是切到热帖时会先画出一帧
+    // 真实内容（热帖带图，非常显眼）→ 下一帧才变骨架 → 再变内容，看起来"闪两下"。
+    // 现在：跨形态切换时，本帧的初始状态就是"骨架"，effect 只负责 180ms 后把它关掉。
+    val isHotNow = selected == "hot"
+    var lastShownHot by remember { mutableStateOf(isHotNow) }
+    val crossFormNow = lastShownHot != isHotNow
+    val switchMaskingState = remember(selected) { mutableStateOf(crossFormNow) }
     LaunchedEffect(selected) {
-        val crossForm = (prevFeedSel == "hot") != (selected == "hot")
-        prevFeedSel = selected
-        if (crossForm) {
-            switchMasking = true
+        if (switchMaskingState.value) {
             delay(180)
-            switchMasking = false
+            switchMaskingState.value = false
         }
+        lastShownHot = isHotNow
     }
 
     // 话题首屏加载：有缓存直接显示，无缓存才进加载态（下拉刷新时绕过缓存）
@@ -480,14 +481,20 @@ private fun FeedContent(
         header = {
         PageHeader(title = "虎扑") {
             // 1.223：搜索键升级为与返回键同源的液态玻璃按钮（同款落影 + 按压手感）
-            // 与标题的竖直对齐由 PageHeader 统一处理（标题与右侧内容同一竖直中心）。
             // 1.223b：图标放大到 24dp——20dp 时放大镜的「镜圈」偏小，看着像羽毛球拍。
-            LiquidIconButton(
-                icon = HupuIcons.SearchOutlined,
-                contentDescription = "搜索",
-                onClick = { searchOpen = true },
-                iconSize = 24.dp,
-            )
+            // 1.336：搜索被用户挪到底栏时，顶栏不再显示这个按钮（避免两处入口重复）。
+            if (HupuPrefs.searchPositionVersion >= 0 &&
+                HupuPrefs.loadSearchPosition() == 0
+            ) {
+                LiquidIconButton(
+                    icon = HupuIcons.SearchOutlined,
+                    contentDescription = "搜索",
+                    // 1.341：统一走全局搜索层（不再在首页内自建一套），
+                    // 这样顶栏/底栏两个入口打开的是同一个页面、行为完全一致。
+                    onClick = { HupuUiSignals.requestSearch() },
+                    iconSize = 24.dp,
+                )
+            }
         }
         // 话题横滑条：固定在标题栏下方，单选切换内容流（再点已选返回热帖）
         TopicBar(effectiveTopics, selected, showHot) {
@@ -553,12 +560,15 @@ private fun FeedContent(
             val selKey = if (sel == "hot") "hot" else "$sel#${selectedSort ?: sel}"
             when {
                 // 1.310：跨「热帖 ↔ 话题」的切换：先只画骨架（位移藏在这一帧里）
-                switchMasking -> SkeletonFeedCards(topPadding = topInset + FEED_TOP_GAP)
+                switchMaskingState.value -> SkeletonFeedCards(topPadding = topInset + FEED_TOP_GAP)
                 // 默认：全站热帖（70 条一次性，无分页）
                 sel == "hot" -> FeedList(
-                    threads = hotThreads,
+                    threads = hotFiltered,
                     useBigCards = true,
-                    resetKey = "hot-$refreshVersion-$hotResetTick",
+                    canLoadMore = hotHasMore,
+                    loadingMore = hotLoadingMore,
+                    onLoadMore = { onLoadMoreHot() },
+                    resetKey = "hot-$refreshVersion-$hotResetTick-$hotRefreshTick",
                     topInset = topInset + FEED_TOP_GAP,
                     onOpenThread = { openThread(it) },
                 )
@@ -581,113 +591,14 @@ private fun FeedContent(
                 }
             }
         }
-        }
     } // FrostedHeaderLayout 内容块关闭（overlay 挂 Box 内、骨架外）
 
-    // ---------- 搜索二级页：盖入式（挂在 Box 内、帖子详情之前——同 zIndex 2 时组合顺序决定层叠，详情页绘制在搜索页之上） ----------
-    // 搜索结果打开帖子：不关闭搜索页——详情页直接盖在搜索页之上，
-    // 关闭详情后回到搜索页（状态保留、结果流位置不变）
-    if (searchOpen) {
-        SearchPage(
-            onOpenThread = { s ->
-                openThread(
-                    HupuThread(
-                        tid = s.tid,
-                        title = s.title,
-                        cover = s.picture,
-                        replies = s.replies,
-                        lights = s.lights,
-                        // 1.223w: 带上版块名——否则从搜索页进帖子时，历史记录里的专区名会是空的
-                        topic = s.forumName.takeIf { it.isNotBlank() }
-                            ?.let { n -> com.java.myapplication.data.HupuTopic(name = n) },
-                    )
-                )
-            },
-            onClose = { searchOpen = false },
-        )
-    }
-
-    // ---------- 帖子详情二级页：盖入式转场（组合顺序在搜索页之后 → 盖在搜索页之上） ----------
-    val ot = openedThread
-    if (ot != null) {
-        // 1.192: 本层离开组合时兜底回收计数（正常退场已由 onExitStart 提前回收）
-        androidx.compose.runtime.DisposableEffect(Unit) {
-            onDispose { if (threadEntered) { threadEntered = false; SecondaryPage.exit() } }
-        }
-        val d = threadDetails[ot.tid]
-        ThreadDetailOverlay(
-            tid = ot.tid,
-            titleText = ot.title,
-            detail = d,
-            loading = threadLoading,
-            loadingMore = threadLoadingMore,
-            closing = threadClosing,
-            onBack = { closeThread() },
-            onExitStart = { if (threadEntered) { threadEntered = false; SecondaryPage.exit() } },
-            onClosed = {
-                threadClosing = false
-                openedThread = null
-                // 1.228c：关闭即清掉该帖缓存 —— 页码跳转是临时视图状态，
-                // 重开必须回到第 1 页（否则会停在上次跳到的页）。
-                threadDetails.remove(ot.tid)
-            },
-            onRefresh = {
-                val mySeq = threadSortSeq
-                scope.launch {
-                    threadLoading = true
-                    val cur = threadDetails[ot.tid]
-                    val desc = cur?.descReplies == true
-                    val nd = repo.threadDetailDirected(ot.tid, desc, refresh = true)
-                    if (nd != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) threadDetails[ot.tid] = if (desc) nd else repo.mergeThreadDetail(cur, nd)
-                    threadLoading = false
-                }
-            },
-            onLoadMore = {
-                val cur = threadDetails[ot.tid] ?: return@ThreadDetailOverlay
-                if (threadLoadingMore || !repo.hasMoreReplies(cur)) return@ThreadDetailOverlay
-                val mySeq = threadSortSeq
-                scope.launch {
-                    threadLoadingMore = true
-                    val next = repo.threadRepliesNext(ot.tid, cur)
-                    if (next != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) {
-                        val merged = (cur.replies + next.replies).distinctBy { it.pid }
-                        threadDetails[ot.tid] = next.copy(replies = merged)
-                    }
-                    threadLoadingMore = false
-                }
-            },
-            onJumpReplyPage = { page ->
-                val cur = threadDetails[ot.tid] ?: return@ThreadDetailOverlay
-                if (threadLoadingMore) return@ThreadDetailOverlay
-                val mySeq = threadSortSeq
-                scope.launch {
-                    threadLoadingMore = true
-                    val jumped = repo.threadRepliesJump(ot.tid, cur, page)
-                    if (jumped != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) {
-                        threadDetails[ot.tid] = jumped
-                    }
-                    threadLoadingMore = false
-                }
-            },
-            onSortChanged = { desc ->
-                // 1.185c: 每次意图推进序号——迟到的旧响应据此被丢弃（连点不再来回闪）
-                val mySeq = ++threadSortSeq
-                val cur = threadDetails[ot.tid]
-                if (cur != null && cur.descReplies != desc) {
-                    scope.launch {
-                        val d = repo.repliesDirected(ot.tid, cur, desc)
-                        if (d != null && mySeq == threadSortSeq && openedThread?.tid == ot.tid) threadDetails[ot.tid] = d
-                    }
-                }
-            },
-            floorStates = floorStates,
-            floorLoading = floorLoading.filterValues { it }.keys,
-            floorLoadingMore = floorLoadingMore.filterValues { it }.keys,
-             onOpenFloor = { r -> openFloor(ot.tid, r) },
-             onFloorLoadMore = { pid, fr -> loadFloorMore(ot.tid, pid, fr) },
-         )
-    }
+    // ---------- 帖子详情二级页：盖入式转场 ----------
+    // 1.343：装配统一走共享的 RenderThreadDetailOverlay —— 首页与搜索层调用方式完全一致，
+    // 不会再出现"一处精简、一处完整"的走样。
+    RenderThreadDetailOverlay(state = detailHost)
     } // Box
+}
 }
 
 /**

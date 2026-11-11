@@ -475,6 +475,88 @@ suspend fun fetchSpaceApi(path: String, fast: Boolean = false): String? {
         }
     }
 
+    /**
+     * 1.32x：步行街推荐流（首页热帖新数据源）。
+     *
+     * `m.hupu.com/api/v2/bbs/walkingStreet/threads?page=1&cursor=`
+     *  - **不需要登录**（匿名实测可拿完整数据）
+     *  - 每页 10 条，`data.cursor` 为下一页游标（时间戳），必须与 page **配对**使用：
+     *    只传 cursor 不传 page 会拿到同一批
+     *  - 每次打开新 cursor 都会换一批（实测 60s 后重开：10 条里 9 条是新的）
+     *
+     * 走全局 throttle（1 秒/次）：首屏 1 次 + 每翻页 1 次，压力与原来的版块页同级。
+     */
+    suspend fun fetchWalkingStreet(page: Int, cursor: String): String? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            throttle.acquire()
+            val url = "https://m.hupu.com/api/v2/bbs/walkingStreet/threads" +
+                "?page=$page&cursor=$cursor"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", MOBILE_UA)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Referer", "https://m.hupu.com/gambia")
+                .build()
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    if (!body.contains("\"threadList\"")) return@use null
+                    body
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    /**
+     * 1.332：抓取一个板块页（首页热帖「多板块轮转」用）。
+     *
+     * 与通用 [fetchHtml] 的差异：
+     *  · **不然后全局 1s 节流**：多板块并行时若共用一个时间片会被串行化（3 页要 3s+）。
+     *    首页热帖是用户主动触发的低频操作（下拉刷新才发 3~4 个），实测并发可控。
+     *  · **单独超时**：部分板块首次请求会慢到 5~11s，不能被拖住整体首屏；
+     *    超时/失败只让该板块缺席，其余照常合并。
+     *
+     * @param path 板块路径，如 `/`、`/all-nba`（见 [HupuBoardRotation.POOL]）
+     * @return SSR HTML；超时或失败返回 null（调用方按「该板块缺席」处理）
+     */
+    suspend fun fetchBoardPage(path: String): String? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("$BASE$path")
+                .header("User-Agent", DESKTOP_UA)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                .header("Referer", "$BASE/")
+                .apply {
+                    if (HupuAccount.isLoggedIn) {
+                        header("Cookie", HupuAccount.loadCookieHeaderPublic())
+                    }
+                }
+                .build()
+            val call = client.newCall(request)
+            try {
+                // withTimeout 控制整体等待：超时抛 TimeoutCancellationException 被下面吞掉
+                kotlinx.coroutines.withTimeout(BOARD_TIMEOUT_MS) {
+                    call.execute().use { response ->
+                        if (!response.isSuccessful) return@use null
+                        val html = response.body?.string() ?: return@use null
+                        if (!html.contains("window.\$\$data=")) return@use null
+                        html
+                    }
+                }
+            } catch (e: Exception) {
+                // 超时 / 网络异常 → 该板块缺席，不影响其他板块
+                null
+            }
+        }
+    }
+
+    /** 板块页抓取超时（实测多数 ~1s；少数首次 5~11s，给 8s 上限 + 缺席可接受） */
+    private const val BOARD_TIMEOUT_MS = 8_000L
+
     /** 供图片加载参考的基础地址 */
     const val HOST = "bbs.hupu.com"
 }
