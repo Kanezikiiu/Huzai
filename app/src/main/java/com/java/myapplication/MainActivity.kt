@@ -484,7 +484,11 @@ fun PocketLedgerApp() {
                 },
                 onClose = { globalSearchOpen = false },
             )
-            com.java.myapplication.ui.pages.RenderThreadDetailOverlay(state = searchHost)
+            // 1.366：搜索页自身是 zIndex(2f)，详情 overlay 内部也是 2f —— 同值时靠绘制顺序
+            // 侥幸正确。这里再包一层显式提到 3f，保证"搜索 → 帖子详情"永远在搜索页之上。
+            Box(Modifier.fillMaxSize().zIndex(3f)) {
+                com.java.myapplication.ui.pages.RenderThreadDetailOverlay(state = searchHost)
+            }
         }
         // 1.223: 全局统一提示（位置 / 时长 / Q 弹出入场统一）——根 Box 最后一个子节点，盖过所有页面
         com.java.myapplication.ui.components.HuzaiToastHost()

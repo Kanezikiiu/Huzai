@@ -1,8 +1,8 @@
 {
-  "versionCode": 216,
-  "versionName": "1.206",
-  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.206/huzai-1.206-release.apk",
-  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.206",
-  "changelog": "· 图标改动:软件图标焕新，外观设置新增「应用图标」，提供两款图标可切换（新图标与经典图标）\n· 功能优化:首页热帖改为多板块热帖聚合（原为步行街热帖单一来源），每次刷新随机从 NBA、CBA、英雄联盟、游戏、国际足球、中国足球、综合体育、影视娱乐、装备等板块热帖中抽取聚合，上滑可继续加载未出现过的板块\n· 功能优化:NBA 数据与足球数据表格重新设计，字号与行高增大，新增卡片描边、斑马纹与等宽数字，并适配系统字体缩放，放大字体后不再截断\n· 功能新增:外观设置新增「搜索按钮位置」，可选择放在顶栏、底栏左侧或底栏右侧\n· 功能新增:默认事项新增「视频默认静音」，可选择打开视频时是否静音",
+  "versionCode": 217,
+  "versionName": "1.207",
+  "apkUrl": "https://github.com/Kanezikiiu/Huzai/releases/download/v1.207/huzai-1.207-release.apk",
+  "releaseUrl": "https://github.com/Kanezikiiu/Huzai/releases/tag/v1.207",
+  "changelog": "· 图标改动:软件图标焕新，外观设置新增「应用图标」，提供两款图标可切换（新图标与经典图标）\n· 功能优化:首页热帖改为多板块热帖聚合（原为步行街热帖单一来源），每次刷新随机从 NBA、CBA、英雄联盟、游戏、国际足球、中国足球、综合体育、影视娱乐、装备等板块热帖中抽取聚合，上滑可继续加载未出现过的板块\n· 功能优化:NBA 数据与足球数据表格重新设计，字号与行高增大，新增卡片描边、斑马纹与等宽数字，并适配系统字体缩放，放大字体后不再截断\n· 功能新增:外观设置新增「搜索按钮位置」，可选择放在顶栏、底栏左侧或底栏右侧\n· 功能新增:默认事项新增「视频默认静音」，可选择打开视频时是否静音\n· 问题修复:修复帖子详情页、用户主页在部分入口打开时会被下层顶栏遮挡的层级问题",
   "forceUpdate": false
 }

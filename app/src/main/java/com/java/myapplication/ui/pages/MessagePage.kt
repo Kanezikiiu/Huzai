@@ -313,7 +313,14 @@ fun MessageCenterPage(onClose: () -> Unit) {
                 chatAuthorEuid?.let { eu ->
                     if (chatProfileEpoch > 0) {
                         androidx.compose.runtime.key(chatProfileEpoch) {
-                            UserProfilePage(euid = eu, onClose = { chatProfileEpoch = 0; chatAuthorEuid = null })
+                            // 1.366：**显式提层**。PmPage（聊天页）是 zIndex(1f)，而 UserProfilePage
+                            // 默认也是 1f —— 之前两者相同，只靠"后绘制在上"侥幸正确；
+                            // 一旦组合顺序调整就会翻车（顶栏/聊天页压在用户主页上）。
+                            UserProfilePage(
+                                euid = eu,
+                                onClose = { chatProfileEpoch = 0; chatAuthorEuid = null },
+                                zIndex = 2f,
+                            )
                         }
                     }
                 }

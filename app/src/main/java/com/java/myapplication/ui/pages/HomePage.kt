@@ -182,21 +182,36 @@ fun HomePage(modifier: Modifier = Modifier) {
         load(refresh = true)
     }
 
-    when {
-        hotThreads.isNotEmpty() -> FeedContent(
-            hotList = hotThreads,
-            hotTopics = hotTopics,
-            hotHasMore = hotHasMore,
-            hotLoadingMore = hotLoadingMore,
-            onLoadMoreHot = { loadMoreHot() },
-            isRefreshing = refreshing,
-            onRefresh = { scope.launch { load(refresh = true) } },
-            hotResetTick = tabResetTick,
-            hotRefreshTick = hotRefreshTick,
-            modifier = modifier,
-        )
-        loading -> SkeletonHome(modifier)
-        else -> ErrorRetry(modifier) { scope.launch { load(refresh = true) } }
+    // 1.365：详情宿主提到本层 —— 详情 overlay 要与「首页内容（含浮空顶栏）」同父，
+    // zIndex(2f) 才比较得到顶栏那一层（之前它在 FeedContent 内，顶栏压不住）。
+    val detailHost = rememberThreadDetailHost(repo)
+
+    // 1.365：**外层再包一层 Box**，把「详情页」放在与「首页内容（含浮空顶栏）」**同父**的位置。
+    //
+    // 之前详情页渲染在 FeedContent 内部（FrostedHeaderLayout 的内容区旁边），
+    // 与顶栏不是同一个父布局 → `zIndex(2f)` 比较不到顶栏那一层，
+    // 于是详情打开后首页顶栏仍然压在它上面（真机反馈「点进帖子详情，首页顶栏依旧显示」）。
+    // 现在两者是同父兄弟：详情 zIndex 2f > 内容层 0 → 一定盖住顶栏。
+    Box(modifier.fillMaxSize()) {
+        when {
+            hotThreads.isNotEmpty() -> FeedContent(
+                hotList = hotThreads,
+                hotTopics = hotTopics,
+                hotHasMore = hotHasMore,
+                hotLoadingMore = hotLoadingMore,
+                onLoadMoreHot = { loadMoreHot() },
+                isRefreshing = refreshing,
+                onRefresh = { scope.launch { load(refresh = true) } },
+                hotResetTick = tabResetTick,
+                hotRefreshTick = hotRefreshTick,
+                detailHost = detailHost,
+                modifier = Modifier.fillMaxSize(),
+            )
+            loading -> SkeletonHome(Modifier.fillMaxSize())
+            else -> ErrorRetry(Modifier.fillMaxSize()) { scope.launch { load(refresh = true) } }
+        }
+        // 帖子详情二级页：与上面内容同父，靠 zIndex 盖住顶栏
+        RenderThreadDetailOverlay(state = detailHost)
     }
 }
 
@@ -213,6 +228,8 @@ private fun FeedContent(
     onRefresh: () -> Unit,
     hotResetTick: Int = 0,
     hotRefreshTick: Int = 0,
+    /** 1.365：详情宿主由 HomePage 持有并传进来（详情 overlay 渲染在 HomePage 层，才压得住顶栏） */
+    detailHost: ThreadDetailHostState,
     modifier: Modifier = Modifier,
 ) {
     val repo = remember { HupuRepository() }
@@ -238,10 +255,8 @@ private fun FeedContent(
     var refreshTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    // ---------- 帖子详情二级页（盖入式；状态外置：返回再进不重载） ----------
-    // 1.343：详情页状态与逻辑抽到 UserDetailHost —— 首页与搜索层共用同一份实现。
-    val detailHost = rememberThreadDetailHost(repo)
-    // 详情状态一律从 detailHost 取（见 ThreadDetailHost.kt）
+    // ---------- 帖子详情 ----------
+    // 1.365：detailHost 由 HomePage 传入（overlay 渲染在 HomePage 层）
 
     // ---------- 搜索二级页 ----------
 
@@ -593,10 +608,6 @@ private fun FeedContent(
         }
     } // FrostedHeaderLayout 内容块关闭（overlay 挂 Box 内、骨架外）
 
-    // ---------- 帖子详情二级页：盖入式转场 ----------
-    // 1.343：装配统一走共享的 RenderThreadDetailOverlay —— 首页与搜索层调用方式完全一致，
-    // 不会再出现"一处精简、一处完整"的走样。
-    RenderThreadDetailOverlay(state = detailHost)
     } // Box
 }
 }
